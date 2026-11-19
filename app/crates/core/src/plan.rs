@@ -1,12 +1,3 @@
-//! The open folder's study plan, as the window shows it: the exam it is for,
-//! the goal being worked on and its steps, and the plan's own list of what to
-//! study. It is read fresh each time from the runtime's digest, the record's
-//! last checkpoint and the plan file, and never kept by the window.
-//!
-//! After each turn the manager reads it again and tells the page what
-//! changed, so a screen that shows the plan follows the tutor's edits without
-//! polling.
-
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -17,53 +8,31 @@ use crate::gaplog::{self, Table};
 use crate::runtime::{self, Step};
 use crate::study;
 
-/// The largest plan file read, as the runtime's digest reads it.
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
-/// The most items a plan lists to the window.
 const MAX_ITEMS: usize = 60;
 
-/// One thing on the plan's list of what to study, as the plan file holds it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanItem {
-    /// Stable while the item's title is, wherever the plan moves it: a slug
-    /// of the title, made unique within the plan.
     pub id: String,
     pub title: String,
-    /// "todo", "doing" or "done".
     pub status: String,
-    /// The day the plan puts it on, as "2026-11-14", when it names one.
     pub day: Option<String>,
-    /// The plan's own words about it, such as its purpose or length.
     pub note: Option<String>,
 }
 
-/// The open folder's study plan. Every field is empty when the folder has
-/// none: a folder with no plan is not behind on anything.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plan {
-    /// The plan's key, the name of its folder under `Study/`: "midterm-2".
     pub target: Option<String>,
-    /// "Midterm 2".
     pub title: Option<String>,
-    /// "2026-11-20", or none when the plan has no date.
     pub exam_date: Option<String>,
-    /// The goal being worked on, from the record's last session.
     pub goal: Option<String>,
-    /// That goal's route, from the record's last checkpoint.
     pub steps: Vec<Step>,
-    /// The plan's ordered list of what to study.
     pub items: Vec<PlanItem>,
-    /// The plan file's Markdown, for a screen that shows it as a document.
     pub text: Option<String>,
-    /// The plan file, relative to the study root: "Study/midterm-2/plan.md".
     pub path: Option<String>,
-    /// When any of the above last changed, in ms since the epoch: the plan
-    /// file's time, or the last time the window saw the goal or its steps
-    /// change, whichever is later.
     pub changed_ms: Option<i64>,
 }
 
-/// One part of the plan that a turn changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanPart {
@@ -82,9 +51,6 @@ fn text(value: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The steps of the goal of the folder's most recently changed lesson, as
-/// the record holds them. None known gives none, and then the rail shows the
-/// goal alone.
 pub fn goal_steps(root: &Path) -> Vec<Step> {
     runtime::lesson(root, None)
         .flatten()
@@ -92,9 +58,6 @@ pub fn goal_steps(root: &Path) -> Vec<Step> {
         .unwrap_or_default()
 }
 
-/// The open folder's plan, read fresh: the nearest dated plan the digest
-/// lists (as the course page chooses its exam), the goal of the record's
-/// last lesson and its steps.
 pub fn read(folder: &Path) -> Plan {
     let Ok(digest) = runtime::digest(folder) else {
         return Plan::default();
@@ -135,7 +98,6 @@ pub fn read(folder: &Path) -> Plan {
     plan
 }
 
-/// A plain slug of a title: "Paper B (timed)" is "paper-b-timed".
 fn slug(title: &str) -> String {
     let mut slug = String::new();
     for c in title.chars() {
@@ -153,7 +115,6 @@ fn slug(title: &str) -> String {
     }
 }
 
-/// The status a plan's Status cell names: "done", "doing" or "todo".
 fn status_of(cell: &str) -> &'static str {
     let cell = cell.to_lowercase();
     if ["done", "✓", "✔", "[x]", "finished", "complete"]
@@ -171,10 +132,6 @@ fn status_of(cell: &str) -> &'static str {
     }
 }
 
-/// The plan's list of what to study: the rows of its Blocks table, in the
-/// plan's order. The runtime reads the Block column; the window also reads
-/// a Status column and a Day column when the plan has them, and the
-/// Purpose column as the item's note.
 pub fn items(markdown: &str) -> Vec<PlanItem> {
     let table: Table = gaplog::table(gaplog::section(markdown, "Blocks"));
     let mut seen: Vec<String> = Vec::new();
@@ -208,8 +165,6 @@ pub fn items(markdown: &str) -> Vec<PlanItem> {
         .collect()
 }
 
-/// What differs between two readings of the plan, in a fixed order. Empty
-/// when nothing does.
 pub fn changes(before: &Plan, after: &Plan) -> Vec<PlanPart> {
     let mut what = Vec::new();
     if before.exam_date != after.exam_date {

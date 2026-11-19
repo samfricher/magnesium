@@ -1,17 +1,6 @@
-//! Help levels: the teaching policy's ladder for a kind of problem (#31).
-//!
-//! The first time the learner has no starting move on a kind of problem they
-//! get a full worked example, the next time a partly worked one, then the
-//! problem alone. Help goes back one step when they do not solve a problem of
-//! that kind alone. The tutor judges the kind and whether the learner could
-//! start, and reports both on the attempt. The runtime keeps the count: each
-//! change replays the kind's attempts, in order, from the step a memory stated
-//! before schema 5, and stores the result in `help_levels`.
 use super::*;
 use rusqlite::{Connection, OptionalExtension, params};
 
-/// One step of the ladder: the help given the last time the learner had no
-/// starting move on the kind.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Level {
     Full,
@@ -37,7 +26,6 @@ impl Level {
         }
     }
 
-    /// As the teaching policy and the tool result write it.
     pub(crate) fn words(level: Option<Self>) -> &'static str {
         match level {
             None => "none yet",
@@ -47,8 +35,6 @@ impl Level {
         }
     }
 
-    /// The learner is stuck on a new problem of the kind: give one step less
-    /// help than last time.
     pub(crate) fn forward(level: Option<Self>) -> Self {
         match level {
             None => Self::Full,
@@ -57,8 +43,6 @@ impl Level {
         }
     }
 
-    /// The learner did not solve a problem of the kind alone: one step back,
-    /// so "partly worked" becomes "full" and "full" is removed.
     pub(crate) fn back(level: Option<Self>) -> Option<Self> {
         match level {
             None | Some(Self::Full) => None,
@@ -67,7 +51,6 @@ impl Level {
         }
     }
 
-    /// The help this step gives.
     pub(crate) fn give(self) -> &'static str {
         match self {
             Self::Full => {
@@ -81,7 +64,6 @@ impl Level {
     }
 }
 
-/// One attempt of a kind, as the ladder sees it.
 #[derive(Clone, Debug)]
 pub(crate) struct Step {
     pub(crate) attempt_id: String,
@@ -90,7 +72,6 @@ pub(crate) struct Step {
     pub(crate) help: AttemptHelp,
 }
 
-/// What a step does to the ladder, if anything.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Move {
     Forward,
@@ -102,14 +83,11 @@ pub(crate) fn move_of(step: &Step) -> Option<Move> {
         return Some(Move::Forward);
     }
     match (step.mark, step.help) {
-        // A decline is not a try, and a right answer alone holds the step.
         (FirstTry::Declined, _) | (FirstTry::Right, AttemptHelp::None) => None,
         _ => Some(Move::Back),
     }
 }
 
-/// The level after these steps, from `base`, and the attempt that last moved
-/// it.
 pub(crate) fn replay(base: Option<Level>, steps: &[Step]) -> (Option<Level>, Option<String>) {
     let mut level = base;
     let mut basis = None;
@@ -127,14 +105,10 @@ pub(crate) fn replay(base: Option<Level>, steps: &[Step]) -> (Option<Level>, Opt
     (level, basis)
 }
 
-/// The kind as stored: its words with spacing made single.
 pub(crate) fn kind_text(kind: &str) -> String {
     kind.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Work out one kind's level again from its base and every attempt of it,
-/// and store it. Called in the update's transaction after an attempt of the
-/// kind is stored or corrected.
 pub(crate) fn refresh(tx: &Connection, kind_key: &str, now: i64) -> Result<()> {
     let row: Option<(String, Option<String>)> = tx
         .query_row(
@@ -185,7 +159,6 @@ pub(crate) fn refresh(tx: &Connection, kind_key: &str, now: i64) -> Result<()> {
     Ok(())
 }
 
-/// A kind's level as stored.
 #[derive(Clone, Debug)]
 pub(crate) struct Stored {
     pub(crate) kind: String,
@@ -210,7 +183,6 @@ pub(crate) fn stored(conn: &Connection, kind_key: &str) -> Result<Option<Stored>
         .optional()?)
 }
 
-/// Each kind's level in words, by kind key, for the kinds that have one.
 pub(crate) fn all_levels(
     conn: &Connection,
 ) -> Result<std::collections::BTreeMap<String, &'static str>> {
@@ -226,7 +198,6 @@ pub(crate) fn all_levels(
         .collect())
 }
 
-/// Every kind the store knows, in the words last used, for reuse.
 pub(crate) fn known_kinds(conn: &Connection) -> Result<Vec<String>> {
     let mut statement = conn.prepare("SELECT kind FROM help_levels ORDER BY kind_key")?;
     Ok(statement
@@ -234,10 +205,6 @@ pub(crate) fn known_kinds(conn: &Connection) -> Result<Vec<String>> {
         .collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-/// Read once, when the store is upgraded to schema 5: each "example step
-/// (KIND): …" and each topic reading the active memories state in words. A
-/// kind stated in two memories keeps the step with less help, as the
-/// state-and-evidence contract merged them.
 pub(crate) fn import_phrases(conn: &Connection, now: i64) -> Result<()> {
     let mut statement = conn.prepare(
         "SELECT m.memory_id, m.state_text,
@@ -293,15 +260,11 @@ pub(crate) fn import_phrases(conn: &Connection, now: i64) -> Result<()> {
     Ok(())
 }
 
-/// Each "example step (KIND): full" or "example step (KIND): partly worked"
-/// in a memory's text.
 pub(crate) fn example_steps(text: &str) -> Vec<(String, Level)> {
     const MARK: &str = "example step (";
     let lower = text.to_lowercase();
     let mut found = Vec::new();
     let mut from = 0;
-    // Lowercasing can change byte lengths, so search the lowered text and
-    // read the kind from it too; a kind's case does not matter to its key.
     while let Some(at) = lower[from..].find(MARK) {
         let start = from + at + MARK.len();
         from = start;
@@ -338,9 +301,6 @@ pub(crate) fn example_steps(text: &str) -> Vec<(String, Level)> {
     found
 }
 
-/// The first topic reading a memory states, such as "conditional: needs
-/// TAG, which is open" or "sound from MockA Q3": a clause that starts with
-/// the word and goes on as a reading does. Only sound and conditional count.
 pub(crate) fn reading_phrase(text: &str) -> Option<(&'static str, String)> {
     for clause in text.split(['\n', ';', '.']) {
         let clause = clause.trim().trim_start_matches(['-', '*', ' ']);
@@ -360,7 +320,6 @@ pub(crate) fn reading_phrase(text: &str) -> Option<(&'static str, String)> {
                 "sound" | "conditional" => {
                     Some((reading, clause.chars().take(200).collect::<String>()))
                 }
-                // The first stated reading is open or untested: nothing to keep.
                 _ => None,
             };
         }
@@ -398,21 +357,17 @@ mod tests {
         let stuck = step(true, FirstTry::Declined, AttemptHelp::None);
         let failed = step(false, FirstTry::Wrong, AttemptHelp::None);
         let hinted = step(false, FirstTry::Right, AttemptHelp::Hint);
-        // Partly worked becomes full, and full is removed.
         let (level, basis) = replay(None, &[stuck.clone(), stuck.clone(), failed.clone()]);
         assert_eq!(level, Some(Level::Full));
         assert_eq!(basis.as_deref(), Some(failed.attempt_id.as_str()));
         let (level, _) = replay(None, &[stuck.clone(), hinted]);
         assert_eq!(level, None);
-        // Nothing to step back from.
         assert_eq!(replay(None, std::slice::from_ref(&failed)).0, None);
-        // A decline is not a try.
         let declined = step(false, FirstTry::Declined, AttemptHelp::Solution);
         assert_eq!(
             replay(Some(Level::Partial), &[declined]).0,
             Some(Level::Partial)
         );
-        // From a step a memory stated before.
         assert_eq!(
             replay(Some(Level::Partial), &[stuck]).0,
             Some(Level::ProblemOnly)
@@ -449,7 +404,6 @@ mod tests {
             reading_phrase("Week 2 work. Sound from MockA Q3 part b").map(|r| r.0),
             Some("sound")
         );
-        // Words that only start like a reading are not one.
         assert_eq!(
             reading_phrase("Conditional probability with two dice"),
             None

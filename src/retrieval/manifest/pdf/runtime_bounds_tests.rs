@@ -59,9 +59,6 @@ fn unsuccessful_worker_cannot_publish_a_content_failure_reply() {
 
 #[test]
 fn cancelled_pdf_process_terminates_child_without_waiting_for_deadline() {
-    // Sleep helper sleeps 30s; cancellation must terminate it promptly,
-    // well before the 30s deadline. Mirrors the existing sleep helper
-    // pattern in manifest tests without duplicating its harness.
     let mut command = std::process::Command::new("sleep");
     command.arg("30");
     let flag = Arc::new(AtomicBool::new(true));
@@ -82,9 +79,6 @@ fn cancelled_pdf_process_terminates_child_without_waiting_for_deadline() {
 
 #[test]
 fn cancellation_after_process_start_terminates_running_child() {
-    // The production extractor is replaced with the ignored in-test sleep
-    // helper so the child is running when cancellation arrives. The helper
-    // sleeps 5s, so finishing well under that shows the worker killed it.
     let mut command = std::process::Command::new(std::env::current_exe().expect("test executable"));
     command
         .args([

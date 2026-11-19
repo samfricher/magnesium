@@ -1,13 +1,3 @@
-//! The models the agent offers, as it reports them, and the one the learner
-//! picked to start lessons on.
-//!
-//! The list is the agent's own: Claude Code sends it in its reply to the
-//! `initialize` request that opens every conversation, and the window keeps
-//! the last one it was sent. The window also asks for it without a lesson,
-//! when it opens and when the list is wanted and missing, from a Claude Code
-//! started for that alone and sent no message. Magnesium keeps no list of
-//! models of its own, and adds nothing to what the agent says about each one.
-
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
@@ -21,41 +11,24 @@ use serde_json::{json, Value};
 
 use crate::agent::{AgentError, AgentResult, Applied};
 
-/// What every lesson in the window ran on before the learner could pick:
-/// Claude Code's default on 2026-11-11, named so that a later change of that
-/// default could not change the tutor unseen. A window that kept state
-/// before the pick existed starts on it, and so does a session it began.
 pub const EARLIER: &str = "claude-fable-5-2";
-/// Its name, for the start line before the agent has sent a list.
 pub const EARLIER_NAME: &str = "Fable 5.2";
 
-/// One model the agent offers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelOption {
-    /// What the agent takes as the model: an alias such as `opus`, the word
-    /// `default`, or a full id such as `claude-opus-4-6`.
     pub value: String,
-    /// The full id `value` stands for, when the agent says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved: Option<String>,
-    /// Its name, as the agent shows it.
     pub name: String,
-    /// The agent's one line about it.
     #[serde(default)]
     pub description: String,
-    /// The effort levels it takes, as the agent names them, in its order.
-    /// Empty when it takes none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub efforts: Vec<String>,
-    /// Listed with the current models. An older one is a full id that no
-    /// alias in the same list stands for.
     #[serde(default)]
     pub current: bool,
 }
 
 impl ModelOption {
-    /// The id a pick of this row keeps: what it resolves to, so that a
-    /// later change of what an alias stands for does not change the pick.
     pub fn id(&self) -> &str {
         self.resolved.as_deref().unwrap_or(&self.value)
     }
@@ -65,22 +38,16 @@ impl ModelOption {
     }
 }
 
-/// The model and effort the learner picked for new sessions.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pick {
-    /// The model's full id, as the agent takes it.
     pub model: String,
-    /// Its name as the agent's list showed it, for the start line before the
-    /// list has arrived.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// The effort level, or none for the agent's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
 }
 
 impl Pick {
-    /// What every lesson ran on before the pick existed.
     pub fn earlier() -> Self {
         Self {
             model: EARLIER.into(),
@@ -90,8 +57,6 @@ impl Pick {
     }
 }
 
-/// The models in the agent's reply to `initialize`, current ones marked.
-/// None when the reply has no list of models.
 pub fn parse(reply: &Value) -> Option<Vec<ModelOption>> {
     let rows = reply["models"].as_array()?;
     let mut models: Vec<ModelOption> = rows
@@ -130,14 +95,6 @@ pub fn parse(reply: &Value) -> Option<Vec<ModelOption>> {
             })
         })
         .collect();
-    // Current models are the ones an alias stands for, and the aliases come
-    // first in the agent's own order. A list with no alias at all, such as
-    // one from a provider that names every model in full, is not split.
-    //
-    // A full id among the aliases is current too. Claude Code 2.1.326,
-    // started with `--model claude-fable-5-2`, sends that id in place of the
-    // `fable` row it would otherwise send, at the same place in the list; a
-    // session on Fable 5.2 then showed it as an older model.
     let split = models.iter().any(ModelOption::is_alias);
     let last_alias = models.iter().rposition(ModelOption::is_alias);
     let covered: Vec<String> = models
@@ -155,8 +112,6 @@ pub fn parse(reply: &Value) -> Option<Vec<ModelOption>> {
     Some(models)
 }
 
-/// The row a pick shows as: a current model before the default row, the
-/// default row before an older one. None when the list does not offer it.
 pub fn find<'a>(models: &'a [ModelOption], model: &str) -> Option<&'a ModelOption> {
     let matches = |m: &&ModelOption| m.id() == model || m.value == model;
     models
@@ -167,13 +122,10 @@ pub fn find<'a>(models: &'a [ModelOption], model: &str) -> Option<&'a ModelOptio
         .or_else(|| models.iter().find(matches))
 }
 
-/// The agent's default, as the list resolves it.
 pub fn default_of(models: &[ModelOption]) -> Option<&ModelOption> {
     models.iter().find(|m| m.value == "default")
 }
 
-/// A model name the window may pass on a command line: no space, no leading
-/// dash, so it can never be read as a flag.
 pub fn usable_model(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 200
@@ -183,20 +135,13 @@ pub fn usable_model(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "._:-[]/@".contains(c))
 }
 
-/// An effort level the window may pass: one lowercase word.
 pub fn usable_effort(level: &str) -> bool {
     (1..=16).contains(&level.len()) && level.chars().all(|c| c.is_ascii_lowercase())
 }
 
-/// How long the window waits for an agent started only to list its models.
-/// Claude Code 2.1.322 answers in under a second on a warm Mac.
 const LIST_LIMIT: Duration = Duration::from_secs(20);
 const LIST_ID: &str = "models_1";
 
-/// Start the agent, ask for its list of models, and stop it. The agent
-/// answers `initialize` before it is sent anything to work on, and it is
-/// sent nothing, so no request reaches a model. None when it answered with
-/// no list. `command` is the agent on its stream-json pipes.
 pub(crate) fn list(mut command: Command) -> AgentResult<Option<Vec<ModelOption>>> {
     let mut child = command
         .stdin(Stdio::piped())
@@ -228,7 +173,6 @@ pub(crate) fn list(mut command: Command) -> AgentResult<Option<Vec<ModelOption>>
                     break;
                 }
             }
-            // The agent stops when its input ends, so the pipe is held open until its answer is in.
             drop(stdin);
         });
     }
@@ -252,11 +196,8 @@ pub(crate) fn list(mut command: Command) -> AgentResult<Option<Vec<ModelOption>>
     }
 }
 
-/// How long the window waits for the agent to answer one control request.
-/// Claude Code answers these between its own work, in milliseconds.
 const ASK_LIMIT: Duration = Duration::from_secs(8);
 
-/// Control requests the window sent and waits on, by id.
 #[derive(Default)]
 pub(crate) struct Asked(Mutex<HashMap<String, Sender<Result<Value, String>>>>);
 
@@ -267,8 +208,6 @@ impl Asked {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Hand a `control_response` to the request waiting on it. False when no
-    /// request of the window's waits on that id.
     pub(crate) fn deliver(&self, value: &Value) -> bool {
         let response = &value["response"];
         let Some(id) = response["request_id"].as_str() else {
@@ -288,12 +227,10 @@ impl Asked {
         true
     }
 
-    /// The agent stopped: nothing waiting will be answered.
     pub(crate) fn drop_all(&self) {
         self.lock().clear();
     }
 
-    /// Send one control request with `write` and wait for its answer.
     pub(crate) fn ask(
         &self,
         id: String,
@@ -318,8 +255,6 @@ impl Asked {
     }
 }
 
-/// What a running conversation is on, from the agent's reply to
-/// `get_settings`.
 pub(crate) fn read_applied(settings: &Value) -> Option<Applied> {
     let applied = &settings["applied"];
     let model = applied["model"].as_str().filter(|m| usable_model(m))?;
@@ -332,7 +267,6 @@ pub(crate) fn read_applied(settings: &Value) -> Option<Applied> {
     })
 }
 
-/// Ask what a running conversation is on.
 pub(crate) fn applied(ask: impl Fn(Value) -> Result<Value, String>) -> AgentResult<Applied> {
     let settings = ask(json!({"subtype": "get_settings"})).map_err(|why| {
         AgentError(format!(
@@ -343,9 +277,6 @@ pub(crate) fn applied(ask: impl Fn(Value) -> Result<Value, String>) -> AgentResu
         .ok_or_else(|| AgentError("Claude Code did not say which model it runs on.".into()))
 }
 
-/// Change a running conversation's model and effort, as Claude Code takes
-/// them on its control stream, and read back what it is on. `effort` none
-/// takes away any level set before, so the agent's own applies.
 pub(crate) fn change(
     ask: impl Fn(Value) -> Result<Value, String>,
     model: &str,
@@ -356,9 +287,6 @@ pub(crate) fn change(
     }
     ask(json!({"subtype": "set_model", "model": model}))
         .map_err(|why| AgentError(format!("Claude Code did not change the model: {why}.")))?;
-    // A level it does not know, it drops without saying so: what it runs at
-    // is read back below. The settings this merges into (the lesson's own
-    // rules, from the command line) are kept.
     ask(json!({"subtype": "apply_flag_settings", "settings": {"effortLevel": effort}}))
         .map_err(|why| AgentError(format!("Claude Code did not change the effort: {why}.")))?;
     let now = applied(&ask)?;
@@ -382,9 +310,6 @@ pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The shape of the list one account was sent by Claude Code 2.1.322:
-    /// fourteen rows, five of them aliases. Its names and lines are
-    /// stand-ins written for the test.
     pub(crate) fn fourteen() -> Value {
         let row = |value: &str, resolved: &str, name: &str, efforts: Option<&[&str]>| {
             let mut row = json!({"value": value, "resolvedModel": resolved, "displayName": name, "description": format!("{name}, as the agent says it")});
@@ -447,7 +372,6 @@ pub(crate) mod tests {
     #[test]
     fn a_pick_shows_as_the_current_row_that_stands_for_it() {
         let models = parse(&fourteen()).unwrap();
-        // The default and `opus` are one model here: the pick shows as Opus.
         assert_eq!(find(&models, "claude-opus-5-5").unwrap().value, "opus");
         assert_eq!(find(&models, EARLIER).unwrap().value, "fable");
         assert_eq!(
@@ -459,8 +383,6 @@ pub(crate) mod tests {
 
     #[test]
     fn a_full_id_in_place_of_an_alias_stays_current() {
-        // What Claude Code 2.1.326 sends a session started with
-        // `--model claude-fable-5-2`: the full id where `fable` was.
         let mut reply = fourteen();
         reply["models"][2]["value"] = json!("claude-fable-5-2");
         reply["models"][2]["displayName"] = json!("Fable 5.2");

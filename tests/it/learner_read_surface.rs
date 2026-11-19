@@ -1,4 +1,3 @@
-//! Real subprocess API/schema checks. These do not simulate a tutoring model.
 use crate::support::mcp::McpClient;
 use crate::support::{TestEnvironment, v2::*};
 use rusqlite::Connection;

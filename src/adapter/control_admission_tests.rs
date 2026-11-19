@@ -1,4 +1,3 @@
-//! Independent safety-boundary regressions. No host model or UI is involved.
 use super::control_safety::Guard;
 use crate::{
     learner::{HostContext, LearnerStore, SCHEMA},
@@ -231,8 +230,6 @@ fn paused_snapshot_in_conversation_a_does_not_delay_conversation_b_controls() {
     use std::time::Duration;
     let f = Fixture::new();
     f.start();
-    // Isolate the admission boundary from SQLite's legitimate rollback-journal
-    // reader/writer serialization. This reader owns a real WAL snapshot.
     f.store
         .conn
         .execute_batch("PRAGMA journal_mode=WAL")
@@ -259,7 +256,6 @@ fn paused_snapshot_in_conversation_a_does_not_delay_conversation_b_controls() {
             }),
         );
         let _scope = crate::request::enter_request_cancellation(&cancellation);
-        // This is the same split used by dispatch: no gate exists during SQL.
         let prepared = crate::learner::read::prepare_snapshot(
             &store.conn,
             &host.host_kind,
@@ -426,8 +422,6 @@ fn default_journal_read_snapshot_does_not_delay_the_other_host_deny_boundary() {
         }
         std::thread::sleep(Duration::from_millis(1));
     };
-    // SQLite may serialize canonical COMMIT against this reader, but the deny
-    // boundary has already been reached and protects capture fail-closed.
     let early_result = control_rx.try_recv();
     let canonical_waited = matches!(early_result, Err(mpsc::TryRecvError::Empty));
     release_tx.send(()).unwrap();
@@ -756,13 +750,10 @@ fn control_directory_flush_is_recorded_once_and_redone_for_a_stale_record() {
     );
     assert_eq!(fs::read_to_string(&record).unwrap(), expected);
 
-    // A matching record means the flush already happened: no rewrite, no flush.
     let written = fs::symlink_metadata(&record).unwrap().ino();
     drop(Guard::acquire(&f.workspace, &f.host).unwrap());
     assert_eq!(fs::symlink_metadata(&record).unwrap().ino(), written);
 
-    // A record that names either directory wrongly is stale: flush again and
-    // rewrite it.
     for stale in [
         format!("{} 0:0\n", identity(f.workspace.control())),
         format!("0:0 {}\n", identity(&directory)),
@@ -778,7 +769,6 @@ fn control_directory_flush_is_recorded_once_and_redone_for_a_stale_record() {
         );
     }
 
-    // A symlinked record fails closed, even when its target matches.
     let target = f.root.join("matching-record");
     fs::write(&target, &expected).unwrap();
     fs::remove_file(&record).unwrap();

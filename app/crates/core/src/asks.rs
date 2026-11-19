@@ -1,30 +1,13 @@
-//! A permission request from the agent, as the window puts it to the learner.
-//!
-//! Claude Code's request names a tool, what the tool was given, and what a
-//! "don't ask again" would save. Its own words for these are the tool's name
-//! and a path (Claude Code 2.1.322 sent `display_name: "Edit"` and
-//! `description: "Study/midterm-1/plan.md"`), so the words here come from
-//! what Magnesium knows about the request: the study folder and its plans,
-//! which the runtime's digest lists, and the tools a lesson is given
-//! (`claude::TOOLS`). A tool outside those is said to be one the window does
-//! not know, and what it was given is shown as it is. Where the words alone
-//! cannot say which thing is allowed (a file outside the course, a web
-//! address, a command), the card shows the thing itself too.
-
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
 use crate::claude::clip;
 
-/// A permission request in the learner's words.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Ask {
-    /// What the tutor asks, as a sentence.
     pub title: String,
-    /// What it would touch, in plain words, or empty.
     pub detail: String,
-    /// The exact thing, when the plain words cannot show all of it.
     pub exact: Option<String>,
 }
 
@@ -36,19 +19,12 @@ fn ask(title: &str, detail: impl Into<String>) -> Ask {
     }
 }
 
-/// Where a path is, as the learner knows it.
 enum Place {
-    /// One of the folder's plans, by its name.
     Plan(String),
-    /// A file in the study folder, by its name.
     Course(String),
-    /// Somewhere else on the Mac: the file's name and its folder's, and the
-    /// whole path, since two places can share both names.
     Outside(String, String),
 }
 
-/// The study root and the open folder, each as given and as the disk
-/// resolves it (`/tmp` is `/private/tmp` on a Mac).
 fn roots(folder: &Path) -> Vec<PathBuf> {
     let mut all = vec![crate::direct::study_root(folder), folder.to_path_buf()];
     for each in all.clone() {
@@ -60,10 +36,6 @@ fn roots(folder: &Path) -> Vec<PathBuf> {
     all
 }
 
-/// Where a path really is: its nearest part that exists, with every link in
-/// it followed, then the rest as written. A file reached through a link is
-/// where the link points, so one in the course that points out of it is
-/// outside; a file not made yet is found by the nearest folder that is.
 fn resolve(path: &Path) -> Option<PathBuf> {
     let mut rest = Vec::new();
     for base in path.ancestors() {
@@ -75,7 +47,6 @@ fn resolve(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The path inside the study root, if it is really in it.
 fn inside(path: &Path, folder: &Path) -> Option<PathBuf> {
     let path = if path.is_absolute() {
         path.to_path_buf()
@@ -94,9 +65,6 @@ fn inside(path: &Path, folder: &Path) -> Option<PathBuf> {
     real.strip_prefix(&real_root).ok().map(Path::to_path_buf)
 }
 
-/// The folder a rule's path pattern names, as Claude Code reads one:
-/// `//abs/**` from the root of the disk, `~/…` from the home folder, and any
-/// other from the study folder.
 fn rule_folder(glob: &str, folder: &Path) -> Option<PathBuf> {
     let dir = glob.strip_suffix("/**")?;
     Some(if let Some(absolute) = dir.strip_prefix("//") {
@@ -114,8 +82,6 @@ fn name_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// "other.txt, in Downloads": a file's name and its folder's. The card shows
-/// the whole path under it.
 fn named_with_folder(path: &Path) -> String {
     let name = name_of(path);
     match path
@@ -128,7 +94,6 @@ fn named_with_folder(path: &Path) -> String {
     }
 }
 
-/// "Midterm 1" from "midterm-1", for a plan the digest does not name.
 fn title_of_target(target: &str) -> String {
     let words = target.replace(['-', '_'], " ");
     let mut chars = words.chars();
@@ -138,8 +103,6 @@ fn title_of_target(target: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The plan a path in the study root belongs to: the digest's plan whose file
-/// it is, or whose folder holds it (a plan's `graph.yaml`).
 fn plan_of(relative: &Path, folder: &Path) -> Option<String> {
     let parts: Vec<String> = relative
         .components()
@@ -175,7 +138,6 @@ fn place(path: &str, folder: &Path) -> Place {
             Some(plan) => Place::Plan(plan),
             None => Place::Course(name_of(&relative)),
         },
-        // Named where it really is: through a link, that is where it points.
         None => {
             let absolute = if path.is_absolute() {
                 path.to_path_buf()
@@ -191,7 +153,6 @@ fn place(path: &str, folder: &Path) -> Place {
     }
 }
 
-/// A card that also shows the exact thing it would allow.
 fn with_exact(ask: Ask, exact: String) -> Ask {
     Ask {
         exact: Some(exact).filter(|e| !e.is_empty()),
@@ -199,7 +160,6 @@ fn with_exact(ask: Ask, exact: String) -> Ask {
     }
 }
 
-/// "en.wikipedia.org" from a web address.
 fn site(url: &str) -> String {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
@@ -211,9 +171,6 @@ fn quoted(text: &str) -> String {
     format!("“{}”", clip(text, 200))
 }
 
-/// Magnesium's own tools, by what each does: from its plugin's server, or
-/// from the server a direct lesson names `magnesium`. Another server whose
-/// name merely contains Magnesium's is not one.
 fn magnesium_tool(tool: &str) -> Option<&'static str> {
     let name = ["mcp__plugin_magnesium_magnesium__", "mcp__magnesium__"]
         .iter()
@@ -228,8 +185,6 @@ fn magnesium_tool(tool: &str) -> Option<&'static str> {
     .filter(|words| !words.is_empty())
 }
 
-/// A permission request as the learner reads it: what the tutor asks, what it
-/// would touch, and the exact thing when the words cannot show all of it.
 pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> Ask {
     let field = |name: &str| input[name].as_str().map(str::trim).unwrap_or_default();
     let file = || field("file_path").to_owned() + field("notebook_path");
@@ -241,8 +196,6 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                 Place::Plan(plan) => ask("change your plan", plan),
                 Place::Course(name) if new => ask("add a file to this space", name),
                 Place::Course(name) => ask("change a file in this space", name),
-                // Outside the course the path is shown whole: "config, in .ssh"
-                // alone does not say which one.
                 Place::Outside(name, path) if new => {
                     with_exact(ask("add a file outside this space", name), path)
                 }
@@ -279,15 +232,11 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                 },
             }
         }
-        // The address is shown whole: its path and query are what is fetched,
-        // and a query can carry words out.
         "WebFetch" => with_exact(
             ask("open a web page", site(field("url"))),
             clip(field("url"), 400),
         ),
         "WebSearch" => ask("search the web", quoted(field("query"))),
-        // The command is shown whole: the tutor's own words for it are what it
-        // says it does, and the learner allows what it does.
         "Bash" => Ask {
             exact: Some(clip(field("command"), 400)).filter(|c| !c.is_empty()),
             ..ask("run a command", clip(field("description"), 200))
@@ -304,7 +253,6 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
                     None if input.is_null() => String::new(),
                     _ => format!(" {}", clip(&input.to_string(), 300)),
                 };
-                // Claude Code's own subtitle, when it is words and not a path.
                 let said = request["description"]
                     .as_str()
                     .map(str::trim)
@@ -320,20 +268,12 @@ pub fn describe(tool: &str, input: &Value, request: &Value, folder: &Path) -> As
     }
 }
 
-/// What "always" would allow, and the agent's own rules for it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grant {
-    /// The choice's label: "Always allow pages from en.wikipedia.org".
     pub label: String,
-    /// The agent's suggestions the window echoes back when it is chosen.
     pub rules: Vec<Value>,
 }
 
-/// One rule of the agent's, as the thing it allows: "pages from
-/// en.wikipedia.org". None for a rule the window cannot put in words, which
-/// is then never echoed back. A rule for files is put in words only when its
-/// folder is the study folder or in it: named by its last folder alone, one
-/// elsewhere could be any folder of that name.
 fn rule_words(rule: &Value, folder: &Path) -> Option<String> {
     let tool = rule["toolName"].as_str()?;
     let content = rule["ruleContent"].as_str().map(str::trim);
@@ -365,10 +305,6 @@ fn rule_words(rule: &Value, folder: &Path) -> Option<String> {
     }
 }
 
-/// What the agent suggests saving for "don't ask again", as one choice: only
-/// suggestions for this folder (`localSettings`) or this sitting (`session`)
-/// that the window can put in words. None when there is none, or when the
-/// agent says no lasting rule fits this request.
 pub fn grant(request: &Value, folder: &Path) -> Option<Grant> {
     if request["suppress_always_allow_rule"].as_bool() == Some(true) {
         return None;
@@ -383,15 +319,12 @@ pub fn grant(request: &Value, folder: &Path) -> Option<Grant> {
             continue;
         }
         let said: Option<Vec<String>> = match suggestion["type"].as_str() {
-            // Claude Code's mode for accepting edits, for the rest of the sitting.
             Some("setMode") if suggestion["mode"] == "acceptEdits" => {
                 Some(vec!["changes to files".into()])
             }
             Some("addRules") if suggestion["behavior"] == "allow" => suggestion["rules"]
                 .as_array()
                 .and_then(|list| list.iter().map(|rule| rule_words(rule, folder)).collect()),
-            // A folder the agent may reach: said only when it is the study
-            // folder, which the agent works in already.
             Some("addDirectories") => suggestion["directories"]
                 .as_array()
                 .filter(|dirs| {
@@ -433,7 +366,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// A study folder with one plan, as `magnesium init` and a plan leave it.
     fn course() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".magnesium")).unwrap();
@@ -443,8 +375,6 @@ mod tests {
         dir
     }
 
-    /// The requests Claude Code 2.1.322 sent on 2026-11-15 for the tools a
-    /// lesson has, with the paths moved into a made-up folder.
     #[test]
     fn each_tool_a_lesson_has_is_said_in_the_learners_words() {
         let dir = course();
@@ -456,7 +386,6 @@ mod tests {
         };
         let words = |title: &str, detail: &str| (title.to_owned(), detail.to_owned(), None);
 
-        // No digest without the program: the plan is named from its folder.
         assert_eq!(
             said(
                 "Edit",
@@ -482,7 +411,6 @@ mod tests {
             said("Edit", json!({"file_path": at("notes.md")})),
             words("The tutor asks to change a file in this space", "notes.md")
         );
-        // Outside the course, and for a web page, the exact place is shown too.
         let exact = |title: &str, detail: &str, exact: &str| {
             (title.to_owned(), detail.to_owned(), Some(exact.to_owned()))
         };
@@ -542,8 +470,6 @@ mod tests {
                 Some("latexmk paper.tex".to_owned())
             )
         );
-        // Every tool a lesson is given has words of its own: a tool added to
-        // the lesson without them would be called one the window does not know.
         for tool in crate::claude::TOOLS {
             if tool == "AskUserQuestion" {
                 continue;
@@ -553,7 +479,6 @@ mod tests {
         }
     }
 
-    /// A link in the course that points out of it is where it points.
     #[test]
     fn a_file_reached_through_a_link_is_where_the_link_points() {
         let dir = course();
@@ -585,7 +510,6 @@ mod tests {
             read.title,
             "The tutor asks to read a file outside this space"
         );
-        // Named, and shown, where the link points.
         assert_eq!(
             read.detail,
             format!(
@@ -594,7 +518,6 @@ mod tests {
             )
         );
         assert_eq!(read.exact.as_deref(), Some(real("secrets.txt").as_str()));
-        // A plan's file that is a link out of the course is not the plan.
         let plan = describe(
             "Edit",
             &json!({"file_path": folder.join("Study/linked/plan.md").display().to_string()}),
@@ -605,7 +528,6 @@ mod tests {
             plan.title,
             "The tutor asks to change a file outside this space"
         );
-        // A new file under a linked folder is found by the folder's real place.
         let new = describe(
             "Write",
             &json!({"file_path": folder.join("Study/linked/new.md").display().to_string()}),
@@ -613,7 +535,6 @@ mod tests {
             folder,
         );
         assert_eq!(new.title, "The tutor asks to add a file outside this space");
-        // Inside, the real file in the course is in the course.
         let inside = describe(
             "Edit",
             &json!({"file_path": folder.join("notes.md").display().to_string()}),
@@ -644,7 +565,6 @@ mod tests {
             ask.exact.as_deref(),
             Some(r#"create_event {"title":"Exam"}"#)
         );
-        // Magnesium's own tools are said by what they do.
         let own = describe(
             "mcp__plugin_magnesium_magnesium__learning_step",
             &json!({}),
@@ -659,7 +579,6 @@ mod tests {
                 None
             )
         );
-        // Another server whose name holds Magnesium's is not Magnesium's.
         let other = describe(
             "mcp__not_magnesium__learning_step",
             &json!({}),
@@ -676,7 +595,6 @@ mod tests {
         );
     }
 
-    /// The suggestions Claude Code 2.1.322 sent with each request on 2026-11-15.
     #[test]
     fn always_says_what_it_would_allow() {
         let dir = course();
@@ -684,8 +602,6 @@ mod tests {
         let label = |suggestions: Value| {
             grant(&json!({"permission_suggestions": suggestions}), folder).map(|g| g.label)
         };
-        // An edit's "don't ask again" is Claude Code's mode for accepting
-        // every edit, for the rest of the sitting.
         assert_eq!(
             label(json!([{"type": "setMode", "mode": "acceptEdits", "destination": "session"}]))
                 .as_deref(),
@@ -707,7 +623,6 @@ mod tests {
             .as_deref(),
             Some("Always allow web searches")
         );
-        // A rule for files is offered only for a folder in the course.
         let real = std::fs::canonicalize(folder).unwrap();
         assert_eq!(
             label(json!([{"type": "addRules", "destination": "session", "behavior": "allow",
@@ -723,7 +638,6 @@ mod tests {
             .as_deref(),
             Some("Allow changes to files in this space this session")
         );
-        // A command, and the study folder the agent works in already.
         assert_eq!(
             label(json!([
                 {"type": "addRules", "destination": "localSettings", "behavior": "allow",
@@ -748,10 +662,6 @@ mod tests {
         let dir = course();
         let folder = dir.path();
         let grant_of = |request: Value| grant(&request, folder);
-        // A folder outside the course, a rule for files outside it (as Claude
-        // Code 2.1.322 suggested for a read there), one for a single file, a
-        // mode the window has no words for, a rule for every folder, and
-        // nothing at all.
         for suggestions in [
             json!([{"type": "addDirectories", "destination": "session", "directories": ["/Users/someone"]}]),
             json!([{"type": "addRules", "destination": "session", "behavior": "allow",
@@ -770,7 +680,6 @@ mod tests {
             );
         }
         assert_eq!(grant_of(json!({})), None);
-        // The agent says no lasting rule fits this request.
         assert_eq!(
             grant_of(
                 json!({"suppress_always_allow_rule": true, "permission_suggestions": [
@@ -778,7 +687,6 @@ mod tests {
             ),
             None
         );
-        // What it cannot say is not echoed back with what it can.
         let both = grant_of(json!({"permission_suggestions": [
             {"type": "addRules", "destination": "localSettings", "behavior": "allow", "rules": [{"toolName": "WebSearch"}]},
             {"type": "addDirectories", "destination": "session", "directories": ["/Users/someone"]},

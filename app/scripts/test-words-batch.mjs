@@ -1,12 +1,6 @@
-// Checks for gathering a streamed reply's words into one change a frame
-// (src/wordsBatch.ts). Run by scripts/check.sh.
-//
-//   node scripts/test-words-batch.mjs
-
 import assert from "node:assert/strict";
 import { wordsBatch } from "../src/wordsBatch.ts";
 
-/** A clock run by hand: `tick()` is a frame, `pass(ms)` lets time go by. */
 function handClock() {
   let frames = [];
   let timers = [];
@@ -37,7 +31,6 @@ function handClock() {
   };
 }
 
-// Many pieces between two frames are handed on once, whole and in order.
 {
   const clock = handClock();
   const out = [];
@@ -51,7 +44,6 @@ function handClock() {
   assert.deepEqual(out, ["The standard error is s/√n."], "a frame with nothing new hands on nothing");
 }
 
-// The next frame's words are a change of their own.
 {
   const clock = handClock();
   const out = [];
@@ -64,7 +56,6 @@ function handClock() {
   assert.deepEqual(out, ["one ", "two three"]);
 }
 
-// Another event flushes first, so the words before it are never handed on after it.
 {
   const clock = handClock();
   const out = [];
@@ -77,7 +68,6 @@ function handClock() {
   assert.deepEqual(out, ["last words", "<turn ended>"]);
 }
 
-// A window that draws no frames (covered, or on another desktop) still gets its words, after the fallback.
 {
   const clock = handClock();
   const out = [];
@@ -89,7 +79,6 @@ function handClock() {
   assert.deepEqual(out, ["unseen "]);
 }
 
-// Dropping lets go of what is held.
 {
   const clock = handClock();
   const out = [];

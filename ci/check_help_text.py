@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Check the /magnesium:help topics and example screens against the plain-English rules.
-
-Usage: check_help_text.py [SKILL.md]. Prints one line per problem and exits 1 when any exist.
-"""
 
 from pathlib import Path
 import re
@@ -30,7 +26,6 @@ TABLE_RULE = re.compile(r"\|[\s|:-]+\|?")
 
 
 def fenced_sections(text: str) -> dict[str, str]:
-    """Map each heading to the body of the first markdown fence under it."""
     sections: dict[str, str] = {}
     heading, fence, language, body = "", "", "", []
     for line in text.splitlines():
@@ -53,7 +48,6 @@ def words(text: str) -> list[str]:
 
 
 def code_as_words(text: str) -> str:
-    """Count `/magnesium:help papers` as two words, so a code span cannot hide sentence length."""
     return re.sub(r"`([^`]*)`", lambda match: " ".join("C" for _ in match.group(1).split()) or "C", text)
 
 

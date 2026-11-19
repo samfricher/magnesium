@@ -1,6 +1,3 @@
-//! `magnesium progress` prints each skill's passes, the level they add up
-//! to, what is due and the days with a marked answer. A study window reads
-//! it, so that what it shows is what the record holds.
 use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use chrono::{Days, Local};
 use rusqlite::Connection;
@@ -72,7 +69,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
 
-    // Before any answer: nothing to show, and no day.
     let empty = progress(&e);
     assert_eq!(empty["active"], true, "{empty}");
     assert_eq!(empty["other"]["skills"], json!([]), "{empty}");
@@ -83,8 +79,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(empty["days"], json!([]), "{empty}");
 
-    // Day one. A right, cold, unaided answer on a skill that is never got
-    // wrong, a miss that makes a quick check, and a declined question.
     answer(
         &e,
         "a-1",
@@ -119,8 +113,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!({"redos": 0, "checks": 0, "checks_alone": 0}),
         "{first_day}"
     );
-    // Each skill names the first day its next pass can count: no answer
-    // later today can be cold, so for both it is tomorrow.
     let tomorrow = Local::now()
         .date_naive()
         .checked_add_days(Days::new(1))
@@ -133,16 +125,11 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
     );
     assert_eq!(sign["next_on"], json!(tomorrow), "{sign}");
 
-    // Day two. The check is due, and passing it cold earns its first pass.
-    // The other skill is answered right again, on its second day.
     days_pass(&e, 1);
     let due = progress(&e);
     assert_eq!(due["due"]["checks"], 1, "{due}");
-    // How many the checks alone would pose, which the window offers.
     assert_eq!(due["due"]["checks_alone"], 1, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
-    // A skill with no check has no schedule: it can pass again today, and
-    // nothing asks for it.
     let units = skill(&due, "units of a rate");
     assert_eq!(
         (units["next_on"].clone(), units["due"].clone()),
@@ -161,7 +148,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "µM per second again",
         json!({"label":"units of a rate","question":"What are the units of a rate?","first_try":"right","help":"none","cold":true}),
     );
-    // A right answer after a hint is no pass.
     answer(
         &e,
         "b-3",
@@ -190,7 +176,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!(today.checked_add_days(Days::new(1)).unwrap().to_string()),
         "{value}"
     );
-    // Right only after a hint: no pass, and a check due the next day.
     let hinted = skill(&value, "competitive inhibition");
     assert_eq!(
         (
@@ -206,8 +191,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         json!(today.checked_add_days(Days::new(1)).unwrap().to_string()),
         "{hinted}"
     );
-    // Each pass names the answer that earned it, by the record's own id, so
-    // a window can say which day of three an answer was.
     let listed = e.command().args(["attempts", "--json"]).output().unwrap();
     let listed: Value = serde_json::from_slice(&listed.stdout).unwrap();
     let id_of = |question: &str| {
@@ -239,7 +222,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "{hinted}"
     );
 
-    // Three skills in no plan: counts, and no level.
     assert_eq!(
         value["other"]["progress"],
         json!({"skills": 3, "proven": 0, "in_progress": 3}),
@@ -258,7 +240,6 @@ fn chat_lessons_earn_passes_for_a_check_and_for_a_skill_never_got_wrong() {
         "{value}"
     );
 
-    // The text form says the same to a person in a terminal.
     let output = e.command().arg("progress").output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).unwrap();
@@ -289,9 +270,6 @@ fn a_due_check_answered_today_without_a_pass_is_counted_due_tomorrow_not_today()
     assert_eq!(due["due"]["checks"], 1, "{due}");
     assert_eq!(skill(&due, "sign of b")["due"], true, "{due}");
 
-    // Right only after a hint, on the day it is due: no pass, and the check
-    // stays on its day. No answer later today can be cold, so it is not due
-    // today, in the count or on the skill, and it counts with tomorrow's.
     answer(
         &e,
         "b-1",
@@ -329,8 +307,6 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
     let e = plan_folder();
     let plan_progress = |value: &Value| value["plans"][0]["progress"].clone();
 
-    // A chat answer on a skill the graph names, written another way, is
-    // recorded under the graph's name and moves the plan's level.
     answer(
         &e,
         "a-1",
@@ -348,8 +324,6 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
         .unwrap();
     assert_eq!(label, "lineweaver-burk");
 
-    // Answers under new names in no plan, right and wrong, leave the plan's
-    // level as it was. They are listed with their passes, in no level.
     answer(
         &e,
         "a-2",
@@ -372,7 +346,6 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
     assert!(after["other"]["progress"].get("level").is_none(), "{after}");
 }
 
-/// A study folder with one plan, `midterm-1`, whose graph has two tags.
 fn plan_folder() -> TestEnvironment {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
@@ -400,7 +373,6 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
         json!({"label":"lineweaver-burk","question":format!("Read Km from plot {id}."),
             "first_try":first_try,"help":"none","cold":first_try == "right"})
     };
-    // A miss makes a check. Two cold passes on its due days follow.
     answer(&e, "a-1", "Km is the y intercept", km("a-1", "wrong"));
     days_pass(&e, 1);
     answer(
@@ -423,13 +395,11 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
         json!({"passes": 2, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
         "{passed}"
     );
-    // The check is due again, and the learner gets it wrong.
     days_pass(&e, 7);
     answer(&e, "d-1", "the slope", km("d-1", "wrong"));
     let failed = progress(&e);
     let skill = &failed["plans"][0]["skills"][0];
     assert_eq!(skill["skill"], "lineweaver-burk", "{failed}");
-    // The dots and the counts tell the truth: the passes start again.
     assert_eq!(
         (
             skill["passes"].as_i64(),
@@ -439,7 +409,6 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
         (Some(0), Some(2), Some(2)),
         "{skill}"
     );
-    // The level, and the passes to the next, stay where they were.
     assert_eq!(
         level(&failed),
         json!({"passes": 0, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
@@ -456,7 +425,6 @@ fn progress_counts_what_the_learner_did_today() {
         progress(&e)["today_counts"],
         json!({"answered": 0, "started": 0, "passes": 0, "due_tomorrow": 0})
     );
-    // Yesterday: a miss on one skill makes a check, due today.
     answer(
         &e,
         "a-1",
@@ -464,10 +432,6 @@ fn progress_counts_what_the_learner_did_today() {
         json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
     );
     days_pass(&e, 1);
-    // Today: the check is passed, a new skill is answered right, cold and
-    // alone (a pass, with no check), a paper answer on a third skill earns a
-    // pass, and a question is declined, which is no answer and makes a check
-    // due tomorrow.
     answer(
         &e,
         "b-1",
@@ -499,7 +463,6 @@ fn progress_counts_what_the_learner_did_today() {
         json!({"answered": 3, "started": 2, "passes": 3, "due_tomorrow": 1}),
         "{value}"
     );
-    // The date stays where it was.
     assert_eq!(
         value["today"],
         json!(Local::now().date_naive().to_string()),
@@ -519,7 +482,6 @@ fn progress_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_change
         .unwrap()
         .query_row("SELECT workspace_id FROM workspace_meta", [], |r| r.get(0))
         .unwrap();
-    // The record as the release of 21 October made it.
     fs::remove_file(&store).unwrap();
     let old = Connection::open(&store).unwrap();
     old.execute_batch(include_str!("../fixtures/learner_model/schema-2.sql"))
@@ -567,8 +529,6 @@ fn a_new_conversation_on_a_topic_hears_the_answers_already_given_on_it() {
         "µM per second",
         json!({"label":"units of a rate","question":"What are the units of Vmax?","first_try":"right","help":"none","cold":true}),
     );
-    // Another topic that shares only common words with the goal: "what",
-    // "with", "find".
     answer(
         &e,
         "a-3",
@@ -607,7 +567,6 @@ fn the_first_due_check_gives_its_stored_question_and_never_its_key() {
         json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false,
             "next":{"question":"In 2x² − 9x + 4 = 0, what is b?","answer_key":"KEY-minus-nine"}}),
     );
-    // Made today, the check is due from tomorrow: nothing to pose yet.
     assert_eq!(progress(&e)["first_check"], Value::Null);
 
     days_pass(&e, 1);
@@ -623,10 +582,8 @@ fn the_first_due_check_gives_its_stored_question_and_never_its_key() {
     );
     let id = due["first_check"]["id"].as_str().unwrap().to_owned();
     assert!(!id.is_empty() && !id.contains("sign of b"), "{id}");
-    // Nothing posed yet.
     assert_eq!(due["posed_check"], Value::Null, "{due}");
 
-    // A message after the gap begins a sitting, which takes the check; a reply poses it.
     Connection::open(e.workspace.join(".magnesium/sittings.sqlite"))
         .unwrap()
         .execute(

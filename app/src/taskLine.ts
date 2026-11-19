@@ -1,39 +1,13 @@
-/**
- * Find a task's words in a reply as the page drew it, so the line can be put
- * beside them without moving any text. The task comes from the record in the
- * tutor's markdown; the page has turned that into paragraphs, bold, links and
- * typeset formulas. Both are brought to one plain form: the words as read,
- * with each formula as a key of its TeX, which KaTeX keeps beside what it
- * draws.
- *
- * No imports, so `scripts/test-task-line.mjs` can run it under node.
- */
-
-/** A run of the drawn reply in order: a text node's text, or a whole formula (`atomic`) as its TeX. */
 export type Piece = { text: string; atomic: boolean };
 
-/** Where the task's words begin and end among the pieces: the piece, and the character in it (none for a formula). */
 export type Found = { start: { piece: number; at: number }; end: { piece: number; at: number } };
 
 const ENVIRONMENT = /^\\begin\{([A-Za-z]+\*?)\}/;
 
-/**
- * A formula's TeX as it is compared: no spaces, no braces, and `\text{…}` as
- * its words. The page sets some subscripts upright before typesetting (V_max
- * and V_{max} both become V_{\text{max}}), so the TeX KaTeX keeps can differ
- * from the tutor's in that. Both sides lose the same things, so two formulas
- * that differ only there compare as one.
- */
 export function texKey(tex: string): string {
   return tex.replace(/\\text\{([^{}]*)\}/g, "$1").replace(/[\s{}]+/g, "");
 }
 
-/**
- * The markdown with each formula and code span swapped for `keep(content)`,
- * found by the rules the page typesets by (render.ts): $$…$$, \[…\], \(…\),
- * a bare \begin{…}…\end{…}, and $…$ with no space inside either sign and no
- * digit after the closing one, within a paragraph.
- */
 function setAside(src: string, keep: (text: string, tex: boolean) => string): string {
   let out = "";
   let i = 0;
@@ -100,41 +74,31 @@ function setAside(src: string, keep: (text: string, tex: boolean) => string): st
   return out;
 }
 
-/** The words of a task in markdown, as the page shows them, with each formula as its TeX key. */
 export function taskPlain(markdown: string): string {
   const kept: string[] = [];
   const keep = (text: string, tex: boolean) => `\u0000${kept.push(tex ? texKey(text) : text) - 1}\u0000`;
-  // The words a due quick check opens with are drawn as "From earlier", which is not the task.
   const words = markdown.replace(/^\s*(?:\*\*)?quick check\s+\d+(?:\s+of\s+\d+)?\s*[:.]?\s*(?:\*\*)?\s*[:.]?\s*/i, "");
   const text = setAside(words, keep)
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2")
     .replace(/(?<![\p{L}\p{N}*])\*(?=\S)([\s\S]*?\S)\*(?![\p{L}\p{N}*])/gu, "$1")
     .replace(/(?<![\p{L}\p{N}_])_(?=\S)([\s\S]*?\S)_(?![\p{L}\p{N}_])/gu, "$1")
-    // Marks left open at either end, where the task's words start or stop inside bold or italics.
     .replace(/^(\*{1,3}|_{1,3})(?=\S)|(?<=\S)(\*{1,3}|_{1,3})$/g, "")
     .replace(/\\([\\`*_{}[\]()#+\-.!|<>~$])/g, "$1");
   return normal(text.replace(/\u0000(\d+)\u0000/g, (_whole, n: string) => kept[Number(n)]));
 }
 
-/** Runs of white space as one space, and no-break spaces as spaces. */
 export function normal(text: string): string {
   return text.replace(/[\s\u00a0]+/g, " ").trim();
 }
 
-/**
- * Where `task` (already plain) stands in the pieces, at its last place.
- * None when it is not there, or when it would begin or end inside a formula.
- */
 export function locate(pieces: Piece[], task: string): Found | null {
   const wanted = normal(task);
   if (wanted === "") return null;
   let text = "";
-  // For each character of `text`: its piece, and its place in that piece (-1 for a formula).
   const from: { piece: number; at: number }[] = [];
   let space = true;
   pieces.forEach((piece, index) => {
-    // By UTF-16 unit, so places in `text` and in `from` agree.
     if (piece.atomic) {
       const tex = texKey(piece.text);
       if (tex === "") return;
@@ -167,7 +131,6 @@ export function locate(pieces: Piece[], task: string): Found | null {
   const last = from[finish];
   const before = from[begin - 1];
   const after = from[finish + 1];
-  // A formula is one thing on the page: the task cannot take part of one.
   if (first.at === -1 && before?.piece === first.piece) return null;
   if (last.at === -1 && after?.piece === last.piece) return null;
   return {
@@ -176,14 +139,6 @@ export function locate(pieces: Piece[], task: string): Found | null {
   };
 }
 
-/**
- * What to do with the line once the task's words are measured: draw it where
- * they are, clear it when they are not on the page, or keep it as it is. A
- * reply out of view may be skipped (prose.css: content-visibility), and then
- * its words have no boxes at all though they are still there; clearing the
- * line then would leave the task without it when the reply comes back into
- * view at the same size, as nothing would draw it again.
- */
 export function ruleAction(boxes: number, skipped: boolean): "draw" | "clear" | "keep" {
   if (boxes > 0) return "draw";
   return skipped ? "keep" : "clear";

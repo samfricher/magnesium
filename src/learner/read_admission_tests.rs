@@ -1,4 +1,3 @@
-//! Generated boundary regressions for attribution and encoded whole-record reads.
 use super::*;
 use rusqlite::params;
 use serde_json::{Value, json};
@@ -303,7 +302,6 @@ fn canonical_snapshots_reject_corrupt_json_and_missing_required_history_fields()
         .update(&fixture.host, fixture.payload("valid", &event, "state"))
         .unwrap();
     let memory = &result.references["memory"];
-    // Simulate malformed persisted data, including corruption blocked by ordinary SQL writes.
     fixture
         .store
         .conn
@@ -546,8 +544,6 @@ fn encoded_records_preserve_single_readable_legacy_observations() {
     request["memory_edits"] = json!([]);
     let result = fixture.store.update(&fixture.host, request).unwrap();
     let observation = &result.references["observation"];
-    // Emulate an already-stored record admitted under the previous decoded-byte
-    // bounds. It must not lose its valid explicit whole-record read path.
     fixture.store.conn.execute(
         "UPDATE observations SET description = ?2, conditions_text = ?3 WHERE observation_id = ?1",
         params![observation, "\u{1}".repeat(limits::OBSERVATION_BYTES), "\u{1}".repeat(limits::CONDITIONS_BYTES)],
@@ -571,7 +567,6 @@ fn encoded_records_preserve_single_readable_legacy_observations() {
         .unwrap();
     assert_eq!(packet["records"][0]["assistance_text"], assistance);
     assert!(serde_json::to_vec(&packet).unwrap().len() <= limits::PACKET_BYTES);
-    // New admission still reserves both forms, including any future support call.
     let mut request = fixture.payload("new-too-large-observation", &event, "unused");
     request["memory_edits"] = json!([]);
     request["observations"][0]["description"] = json!("\u{1}".repeat(limits::OBSERVATION_BYTES));

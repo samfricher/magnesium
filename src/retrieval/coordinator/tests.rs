@@ -92,9 +92,6 @@ fn search_budget_widens_the_recheck_only_once_nothing_waits_for_indexing() {
         1_024
     );
 
-    // A recheck still in progress, such as a widened pass that ran out of
-    // time, falls back to the smaller recheck so the next call commits.
-    // Unsupported files leave nothing pending, so only the recheck counts.
     for index in 0..3 {
         fixture.write(&format!("added-{index}.bin"), b"\x00binary\n");
     }
@@ -849,8 +846,6 @@ fn a_recheck_leaves_unchanged_files_excluded_for_their_content() {
 fn preparation_budget_exhaustion_is_partial_but_caller_cancellation_is_an_error() {
     let fixture = Fixture::new("preparation-budget-disposition");
     fixture.write("lesson.md", b"source text\n");
-    // Real workspace initialization now provisions the cache explicitly;
-    // a deadline-expired read must not create it as a hidden side effect.
     drop(
         crate::retrieval::initialize_index(
             &fixture.index(),
@@ -931,8 +926,6 @@ fn resumed_scan_reenumeration_stays_metadata_bounded_and_completes() {
     assert_eq!(present(&fixture.index(), "finder-mid-scan.pdf"), 1);
 }
 
-/// Run passes until the scan has saved `nested` on its cursor with some
-/// of its entries still to list.
 fn leave_nested_directory_unfinished(fixture: &Fixture, budget: CoordinatorBudget) {
     for _ in 0..8 {
         coordinate_source_query(&fixture.root, &fixture.index(), Path::new(""), &[], budget)
@@ -990,7 +983,6 @@ fn resumed_scan_skips_a_saved_directory_that_became_ignored() {
     }
     let budget = budget(3);
     leave_nested_directory_unfinished(&fixture, budget);
-    // Files this scan already listed stay until the next scan.
     let listed_before = manifest_count(&fixture.index());
     assert!(listed_before < 8);
 
@@ -1154,9 +1146,6 @@ fn parallel_queries_recover_from_reconciliation_conflicts() {
             b"parallel recovery source\n",
         );
     }
-    // Seed the shared index once, then let all four passes load the same
-    // cursor state and race to commit. First-time schema creation is not
-    // the race under test and is not claimed as repaired here.
     load_or_start_reconciliation(
         &fixture.index(),
         r#"{"version":1,"directories":[{"relative_path":[],"processed_entries":[]}]}"#,
@@ -1388,8 +1377,6 @@ fn deferred_search_serves_only_the_persisted_snapshot() {
     assert_eq!(indexed.candidates.len(), 1);
     let persisted_hash = indexed.candidates[0].content_sha256.clone();
 
-    // A competing writer changes the source and advances the cursor while
-    // this pass is in flight; the failed pass's view must be discarded.
     let _hook = install_cursor_load_hook(
         &fixture.index(),
         std::sync::Arc::new(|root: &Path, index: &Path, _attempt: usize| {
@@ -1626,7 +1613,6 @@ fn text_deferred_discovery_before_manifest_resumes_with_exact_source_identity() 
         &format!("{}/config.toml", crate::workspace::CONTROL_DIR),
         b"schema_version = 1\nworkspace_id = \"fixture\"\n",
     );
-    // Initialize only the real resumable cursor; no fixture SQL inserts.
     coordinate_source_query(
         &fixture.root,
         &fixture.index(),
@@ -1648,9 +1634,6 @@ fn text_deferred_discovery_before_manifest_resumes_with_exact_source_identity() 
         },
     };
     {
-        // Existing deterministic competing-owner hook forces both real
-        // passes to lose the cursor CAS. Its normal reconciliation API
-        // advances the cursor, without sleeps or direct SQL mutation.
         let _hook = install_cursor_load_hook(
             &fixture.index(),
             Arc::new(|root, index, _attempt| advance_persisted_cursor(root, index)),
@@ -1691,7 +1674,6 @@ fn text_deferred_discovery_before_manifest_resumes_with_exact_source_identity() 
             .iter()
             .all(|hit| hit.candidate.content_sha256 == hash)
     );
-    // The original semantic request remains one final retrieval oracle.
     request.lexical.query = "end mark".into();
     let searched = retrieve_workspace_sources(
         &fixture.root,
@@ -1729,15 +1711,12 @@ fn budget(max_metadata_entries: usize) -> CoordinatorBudget {
     }
 }
 
-/// Deterministic competing writer: reload the persisted cursor and advance
-/// it so the pass that loaded the previous value must conflict.
 fn advance_persisted_cursor(root: &Path, index: &Path) {
     let initial = r#"{"version":1,"directories":[]}"#;
     let state = load_or_start_reconciliation(index, initial, &OperationCancellation::none())
         .expect("load competing cursor");
     let mut cursor: serde_json::Value =
         serde_json::from_str(&state.cursor_json).expect("parse competing cursor");
-    // Serde ignores this test-only field; it only makes the cursor differ.
     let writes = cursor["competing_writes"].as_u64().unwrap_or(0);
     cursor["competing_writes"] = serde_json::json!(writes + 1);
     reconcile_batch(root, index, Vec::new(), &state, Some(&cursor.to_string()))
@@ -1806,7 +1785,6 @@ fn request_cancellation_scope_is_observed_by_none_tokens_and_restored() {
     use std::sync::{Arc, atomic::AtomicBool};
     let flag = Arc::new(AtomicBool::new(false));
     let request = OperationCancellation::with_flag(Arc::clone(&flag));
-    // Outside a worker scope, a helper `none()` token is never cancelled.
     assert!(!OperationCancellation::none().is_cancelled());
     {
         let _scope = enter_request_cancellation(&request);
@@ -1821,8 +1799,6 @@ fn request_cancellation_scope_is_observed_by_none_tokens_and_restored() {
         );
         assert!(OperationCancellation::none().check().is_err());
     }
-    // The guard restores the previous scope so pooled blocking threads do
-    // not inherit stale cancellation.
     assert!(!OperationCancellation::none().is_cancelled());
     let later = Arc::new(AtomicBool::new(false));
     let _later_scope = enter_request_cancellation(&OperationCancellation::with_flag(later));

@@ -1,8 +1,3 @@
-"""Small authored PDF fixtures, generated with standard-library bytes only.
-
-These contain real text objects on two physical pages, or an image-only page.
-No Chrome, Docling, models, network sources, or user documents are required.
-"""
 from pathlib import Path
 import zlib
 
@@ -16,7 +11,6 @@ def write_pdf(path, pages=TEXT_PAGES, *, image_only=False):
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>", b"", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]
     page_ids = []
     if image_only:
-        # White pixel as a real image XObject, no hidden text layer.
         image = zlib.compress(b"\xff\xff\xff")
         objects.append(b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n" % len(image) + image + b"\nendstream")
         pages = (None,)

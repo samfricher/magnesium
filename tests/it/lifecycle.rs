@@ -1,4 +1,3 @@
-//! Native lifecycle and bounded MCP transport for the current local runtime.
 use crate::support::mcp::McpClient;
 use crate::support::v2::*;
 use crate::support::{TestEnvironment, run_hook};

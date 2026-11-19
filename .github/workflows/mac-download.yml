@@ -1,15 +1,5 @@
 name: Mac download
 
-# Builds Magnesium's window as a disk image for Apple Silicon Macs, with the
-# magnesium program inside it, and uploads it to a draft pre-release. Started
-# by hand from main only: it never runs on a push or a pull request. The owner
-# publishes the draft; this workflow never does.
-#
-# Two jobs. The build runs install and build scripts from third-party npm and
-# Cargo packages, so it gets a token that can only read, and the checkout does
-# not keep even that one. The upload runs no third-party code, and only it can
-# write to the repository.
-
 on:
   workflow_dispatch:
     inputs:
@@ -38,7 +28,6 @@ jobs:
             echo "::error::Start this workflow from main, not $GITHUB_REF."
             exit 1
           fi
-          # A tag with a suffix is not a release: the install guide skips it.
           if ! printf '%s\n' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
             echo "::error::The tag must be a release candidate, such as v0.3.0-rc.1."
             exit 1
@@ -64,7 +53,6 @@ jobs:
             echo "::error::The tag $TAG already exists."
             exit 1
           fi
-          # This token sees published releases only. The upload job checks drafts.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::A release named $TAG already exists."
             exit 1
@@ -129,7 +117,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           version=${TAG#v}
-          # This token also sees drafts, which the build job's could not.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::A release named $TAG already exists, perhaps as a draft."
             exit 1

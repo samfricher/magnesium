@@ -1,12 +1,3 @@
-//! How lessons are paid for, and signing in, against the stand-in agent.
-//!
-//! The learner chooses their plan or an API key. The window starts the agent
-//! so the choice holds, shows what the agent itself reports, and says so when
-//! a lesson is paid another way. It never reads a credential.
-//!
-//! This file sets an API key in its own process environment, as a learner's
-//! shell can, so it runs apart from the other pipe tests.
-
 #![cfg(unix)]
 
 use std::fs;
@@ -54,8 +45,6 @@ impl Bench {
         ClaudeCode::with_program(self.program.clone())
     }
 
-    /// Start a lesson paid as chosen, and return what the agent reported
-    /// before its first reply.
     fn lesson(&self, payment: Payment) -> Vec<AgentEvent> {
         let (sender, events) = channel();
         let sender = Mutex::new(sender);
@@ -76,7 +65,6 @@ impl Bench {
         seen
     }
 
-    /// Whether the agent's last start saw an API key in its environment.
     fn last_start_had_a_key(&self) -> bool {
         let text = fs::read_to_string(&self.log).unwrap();
         let starts: Vec<Value> = text
@@ -119,7 +107,6 @@ fn payment_notices(events: &[AgentEvent]) -> Vec<String> {
 
 #[test]
 fn the_plan_is_used_even_with_an_api_key_on_the_mac_and_the_window_shows_which() {
-    // A key in the learner's environment, such as one their shell exports.
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key");
     let bench = Bench::new(&[]);
 
@@ -140,8 +127,6 @@ fn the_plan_is_used_even_with_an_api_key_on_the_mac_and_the_window_shows_which()
     assert!(bench.last_start_had_a_key());
     assert!(payment_notices(&seen).is_empty(), "{seen:#?}");
 
-    // A key the agent keeps in its own settings is not in the environment,
-    // so the window cannot hold it back. It says so, before and during.
     let helper = Bench::new(&[("STAND_IN_KEY_HELPER", "1")]);
     let account = helper.agent().account(Payment::Plan);
     assert_eq!(account.paid_with, Some(Payment::ApiKey));

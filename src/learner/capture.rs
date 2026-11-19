@@ -1,14 +1,10 @@
 use super::*;
 use rusqlite::{OptionalExtension, params};
-/// Whether this call changed canonical controls or only returned a historical receipt.
-/// This is deliberately outside the stored receipt: retries must not authorize
-/// clearing safety state created by a later failed control.
 pub(crate) struct ControlOutcome {
     pub receipt: serde_json::Value,
     pub applied: bool,
 }
 impl LearnerStore {
-    /// Origin and allow_start are adapter decisions; tool text never supplies them.
     pub fn capture(
         &self,
         host: &HostContext,
@@ -16,8 +12,6 @@ impl LearnerStore {
         origin: &str,
         allow_start: bool,
     ) -> Result<Vec<String>> {
-        // No raw input means no capture operation. Semantic completion has its
-        // own transactional admission and must not depend on teaching activity.
         if events.is_empty() {
             return Ok(vec![]);
         }
@@ -47,9 +41,6 @@ impl LearnerStore {
         if !["host_observed", "model_reported"].contains(&origin) {
             return Err(LearnerError::new("invalid_variant", "origin"));
         }
-        // New start/resume input is not evidence for a previously bound
-        // session. Bind it only when that semantic session operation commits.
-        // Existing external-key retries retain their original association.
         let session = if allow_start { None } else { session };
         let mut ids = vec![];
         let mut inserted = false;
@@ -102,8 +93,6 @@ impl LearnerStore {
             let processing = if event.speaker == Speaker::Learner {
                 "pending"
             } else {
-                // Tutor delivery, source material and checker output remain in
-                // the original log, without posing as uninterpreted learner work.
                 "not_applicable"
             };
             tx.execute("INSERT INTO learning_events(event_id,session_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,occurred_at_ms,captured_at_ms,processing) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![id,session,host.host_kind,host.host_thread_id,event.external_event_key,event.speaker,event.kind,origin,event.text,metadata,event.occurred_at_ms,store::now_ms(),processing])?;
@@ -146,9 +135,6 @@ impl LearnerStore {
         limits::text("request_id", request_id, 256)?;
         let request = serde_json::json!({"action":action,"host_kind":host.host_kind,"host_thread_id":host.host_thread_id,"event_key":current_learner_event.external_event_key});
         let hash = super::update::payload_hash(&request)?;
-        // Take the write lock first: a read lock cannot wait to become a
-        // write lock, so a deferred start would fail at once while another
-        // process writes instead of waiting for it.
         let tx = rusqlite::Transaction::new_unchecked(
             &self.conn,
             rusqlite::TransactionBehavior::Immediate,
@@ -178,9 +164,6 @@ impl LearnerStore {
         )?;
         match action {
             "pause" | "stop" => {
-                // Conversation-scoped, like the deny marker and admission lock
-                // that protect it when this write fails. session.pause stops
-                // the whole lesson atomically.
                 tx.execute("UPDATE host_bindings SET learning_active=0 WHERE host_kind=?1 AND host_thread_id=?2",params![host.host_kind,host.host_thread_id])?;
             }
             _ => {
@@ -208,8 +191,6 @@ impl LearnerStore {
     }
 }
 
-// Stop/off are safety transitions and must finish once admitted. Recording-on
-// grants capture permission, so cancellation can still abort before commit.
 fn check_control_grant_cancellation(action: &str) -> Result<()> {
     if action == "recording_on" && crate::request::OperationCancellation::none().is_cancelled() {
         return Err(LearnerError::new(

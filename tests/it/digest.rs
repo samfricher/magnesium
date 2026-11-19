@@ -1,4 +1,3 @@
-//! `magnesium digest` gathers folder and learner-record facts for /magnesium:help without writing.
 use crate::support::{TestEnvironment, v2};
 use serde_json::{Value, json};
 use std::fs;
@@ -18,7 +17,6 @@ fn update(e: &TestEnvironment, request: Value) -> Value {
     receipt
 }
 
-/// One lesson with a checkpoint and three review suggestions, one due in the year 3000.
 fn seed_lesson(e: &TestEnvironment) {
     let started = v2::start(e, "claude", THREAD);
     let session = started["references"]["session"].as_str().unwrap();
@@ -118,7 +116,6 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
         "magnesium digest changed the folder"
     );
     assert_eq!(value["active"], true);
-    // Hidden entries and AGENTS.md are skipped; the plan files are a level too deep.
     assert_eq!(
         value["files"],
         json!({"count":3,"listed":["Study/","Study/midterm-1/","lesson.md"],"truncated":false})
@@ -162,7 +159,6 @@ fn digest_reports_files_plans_checkpoint_and_ready_reviews_without_writing() {
     assert_eq!(plan["scores"][0]["score"], "14/30");
     assert_eq!(plan["planned_sessions_today"], json!([]));
     assert_eq!(plan["unreadable"], json!([]));
-    // The goal does not name the target, so no session is matched to the plan.
     assert_eq!(plan["session"], Value::Null);
 }
 
@@ -302,7 +298,6 @@ fn digest_of_a_new_study_folder_is_empty_and_outside_one_is_inactive() {
     assert_eq!(value["files"]["listed"], json!(["lesson.md"]));
 }
 
-/// The copies of the record kept before an upgrade.
 fn record_copies(control: &Path) -> usize {
     fs::read_dir(control.join("backups"))
         .map(|entries| {
@@ -329,7 +324,6 @@ fn digest_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_changes_
         .unwrap()
         .query_row("SELECT workspace_id FROM workspace_meta", [], |r| r.get(0))
         .unwrap();
-    // The record as the release of 21 October made it.
     fs::remove_file(&store).unwrap();
     let old = rusqlite::Connection::open(&store).unwrap();
     old.execute_batch(include_str!("../fixtures/learner_model/schema-2.sql"))
@@ -350,7 +344,6 @@ fn digest_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_changes_
     assert_eq!(fs::read(&store).unwrap(), before, "the record is as it was");
     assert_eq!(record_copies(&control), 0, "no copy was made");
 
-    // The upgrade keeps a copy, and the digest then reads the record.
     let output = e
         .command()
         .args(["init", "--upgrade-instructions", "--json"])
@@ -362,7 +355,6 @@ fn digest_of_a_folder_an_earlier_version_set_up_asks_for_an_upgrade_and_changes_
     assert!(value.get("upgrade_needed").is_none(), "{value}");
     assert_eq!(value["record"]["sessions"], json!([]));
 
-    // Teaching instructions an earlier version installed also need the upgrade.
     let pointer = control.join("instructions/active.json");
     let current = fs::read(&pointer).unwrap();
     fs::write(

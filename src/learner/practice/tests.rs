@@ -78,10 +78,8 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_from_the_tutor() {
         ("open", None),
         "waits for its repair"
     );
-    // The repair on day 0 dates the first redo on day 1, never the same day.
     row.events.push(event(2, EventKind::Repair, 0, None));
     assert_eq!(derive(&row, None).next_on, Some(day(1)));
-    // A right answer before the redo is due counts neither way.
     row.events.push(right(0, 3));
     let state = derive(&row, None);
     assert_eq!(
@@ -91,7 +89,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_from_the_tutor() {
     row.events.push(right(1, 4));
     let state = derive(&row, None);
     assert_eq!((state.status(), state.next_on), ("1 of 3", Some(day(4))));
-    // A second pass the same day is not a second day.
     row.events.push(right(1, 5));
     assert_eq!(derive(&row, None).effect_of(5), Some(Effect::NoCount));
     row.events.push(right(4, 6));
@@ -126,7 +123,6 @@ fn a_failed_redo_starts_the_row_again_and_waits_for_a_new_repair() {
     assert_eq!((state.status(), state.next_on), ("open", None));
     assert_eq!(state.history, vec![format!("{} fail", day(4))]);
     assert_eq!(state.confidence, Some(Confidence::Guess));
-    // A hinted answer on a due row is not a pass, so it fails it too.
     row.events.push(event(5, EventKind::Repair, 5, None));
     row.events.push(event(
         6,
@@ -145,15 +141,11 @@ fn the_gaps_shorten_before_the_test_and_a_row_can_run_out_of_days() {
         event(2, EventKind::Repair, 0, None),
         right(1, 3),
     ];
-    // Test on day 6: two redos left need days 4 and 5 at the latest.
     let state = derive(&row, Some(day(6)));
     assert_eq!(state.next_on, Some(day(4)));
-    // Test on day 3: the gap never shortens below one day.
     assert_eq!(derive(&row, Some(day(3))).next_on, Some(day(2)));
-    // A test already past shortens nothing.
     assert_eq!(derive(&row, Some(day(1))).next_on, Some(day(4)));
     assert_eq!(derive(&row, Some(day(0))).next_on, Some(day(4)));
-    // No test, or one far off: the plain gaps.
     assert_eq!(derive(&row, None).next_on, Some(day(4)));
     assert_eq!(derive(&row, Some(day(60))).next_on, Some(day(4)));
 }
@@ -203,7 +195,6 @@ fn a_quick_check_follows_the_rules_of_26() {
     )];
     let state = derive(&check, None);
     assert_eq!((state.next_on, state.misses.len()), (Some(day(1)), 1));
-    // Helped right on a due check: no pass and no fail.
     check.events.push(event(
         2,
         EventKind::Attempt,
@@ -215,7 +206,6 @@ fn a_quick_check_follows_the_rules_of_26() {
         (state.effect_of(2), state.passes),
         (Some(Effect::Helped), 0)
     );
-    // A decline is free.
     check.events.push(event(
         3,
         EventKind::Attempt,
@@ -226,7 +216,6 @@ fn a_quick_check_follows_the_rules_of_26() {
     check.events.push(right(1, 4));
     let state = derive(&check, None);
     assert_eq!((state.passes, state.next_on), (1, Some(day(4))));
-    // A miss before the next is due starts it over for the next day.
     check.events.push(event(
         5,
         EventKind::Attempt,
@@ -243,7 +232,6 @@ fn a_quick_check_follows_the_rules_of_26() {
 #[test]
 fn a_right_answer_reached_with_a_hint_is_asked_cold_the_next_day_and_keeps_its_passes() {
     for help in [AttemptHelp::Hint, AttemptHelp::Step] {
-        // Made by the helped answer itself.
         let mut check = item(Origin::Chat);
         check.events = vec![event(
             1,
@@ -254,10 +242,8 @@ fn a_right_answer_reached_with_a_hint_is_asked_cold_the_next_day_and_keeps_its_p
         let state = derive(&check, None);
         assert_eq!((state.passes, state.next_on), (0, Some(day(1))), "{help:?}");
         assert!(state.misses.is_empty(), "a helped answer is not a miss");
-        // Asked cold the next day, it passes, and is next due 3 days on.
         check.events.push(right(1, 2));
         assert_eq!(derive(&check, None).passes, 1);
-        // Helped again before that: back to the next day, its pass kept.
         check.events.push(event(
             3,
             EventKind::Attempt,
@@ -269,7 +255,6 @@ fn a_right_answer_reached_with_a_hint_is_asked_cold_the_next_day_and_keeps_its_p
             (state.effect_of(3), state.passes, state.next_on),
             (Some(Effect::Helped), 1, Some(day(3)))
         );
-        // On the due day, an answer after a hint earns no pass and stays due.
         check.events.push(event(
             4,
             EventKind::Attempt,
@@ -286,7 +271,6 @@ fn a_right_answer_reached_with_a_hint_is_asked_cold_the_next_day_and_keeps_its_p
 
 #[test]
 fn i_dont_know_brings_a_check_the_next_day_and_a_declined_due_check_stays_free() {
-    // "I don't know" on a new task makes a check for the next day.
     let mut check = item(Origin::Chat);
     check.events = vec![event(
         1,
@@ -297,7 +281,6 @@ fn i_dont_know_brings_a_check_the_next_day_and_a_declined_due_check_stays_free()
     let state = derive(&check, None);
     assert_eq!((state.passes, state.next_on), (0, Some(day(1))));
     assert!(state.misses.is_empty(), "a decline is not a miss");
-    // Declined when due: free, still due.
     check.events.push(event(
         2,
         EventKind::Attempt,
@@ -309,7 +292,6 @@ fn i_dont_know_brings_a_check_the_next_day_and_a_declined_due_check_stays_free()
         (state.effect_of(2), state.next_on),
         (Some(Effect::Declined), Some(day(1)))
     );
-    // Passed, then "I don't know" before the next is due: the next day again.
     check.events.push(right(1, 3));
     check.events.push(event(
         4,

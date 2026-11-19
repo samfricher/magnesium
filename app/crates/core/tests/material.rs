@@ -1,10 +1,3 @@
-//! Course material added from the window, against the runtime built from this
-//! same checkout: a PDF dropped on a course is in the study folder and the
-//! tutor's own search finds a phrase from it; a scan, a file left out by a
-//! word in its name, and a kind search does not read are each said in a line;
-//! an answer key is added and never named. A folder that was never set up is
-//! judged by the rules it will have, and nothing sets it up.
-
 #![cfg(unix)]
 
 use std::fs;
@@ -26,8 +19,6 @@ fn repo_root() -> PathBuf {
         .expect("the repository root")
 }
 
-/// The runtime of this checkout, as `cargo build` at the root makes it.
-/// `MAGNESIUM_TEST_BINARY` names one already built.
 fn runtime_binary() -> PathBuf {
     if let Some(binary) = std::env::var_os("MAGNESIUM_TEST_BINARY").filter(|v| !v.is_empty()) {
         return PathBuf::from(binary);
@@ -43,8 +34,6 @@ fn runtime_binary() -> PathBuf {
     root.join("target/release/magnesium")
 }
 
-/// A one-page PDF with a text layer, or with a blank page (a scan, as a
-/// text reader sees it).
 fn pdf(text: Option<&str>) -> Vec<u8> {
     let content = text
         .map(|t| format!("BT /F1 18 Tf 72 700 Td ({t}) Tj ET"))
@@ -81,8 +70,6 @@ fn pdf(text: Option<&str>) -> Vec<u8> {
     bytes
 }
 
-/// The tests choose the runtime through one environment variable, so they
-/// take turns.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 fn alone() -> MutexGuard<'static, ()> {
@@ -129,8 +116,6 @@ impl Scratch {
         ]
     }
 
-    /// A program the window can run as `magnesium`: the runtime, in a
-    /// scratch home.
     fn wrapper(&self) -> PathBuf {
         let wrapper = self.root.join("magnesium");
         let mut script = String::from("#!/bin/sh\nexec env -i");
@@ -159,7 +144,6 @@ impl Scratch {
         manager
     }
 
-    /// What the tutor's own search returns for a phrase, once its index has caught up.
     fn search(&self, query: &str) -> Vec<Value> {
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
@@ -223,7 +207,6 @@ fn a_pdf_dropped_on_a_course_is_found_by_the_tutors_search_and_a_scan_is_said() 
         ])
         .unwrap();
 
-    // Each file is in the study folder, under the same name.
     for name in [
         "Week 4 slides.pdf",
         "Scanned notes.pdf",
@@ -236,12 +219,10 @@ fn a_pdf_dropped_on_a_course_is_found_by_the_tutors_search_and_a_scan_is_said() 
             "{name}"
         );
     }
-    // The key is added and never named.
     assert_eq!(added.keys, 1);
     assert_eq!(added.saved.len(), 4, "{added:?}");
     let said = added.lines.join("\n");
     assert!(!said.contains("answer key.pdf"), "{said}");
-    // The three things search cannot read are each said, in plain words.
     assert!(
         said.contains(
             "\"Scanned notes.pdf\" is a scan with no text, so its text cannot be searched."
@@ -255,7 +236,6 @@ fn a_pdf_dropped_on_a_course_is_found_by_the_tutors_search_and_a_scan_is_said() 
     assert!(said.contains("Search does not read .pptx files"), "{said}");
     assert!(!said.contains("Week 4 slides.pdf\" is a scan"), "{said}");
 
-    // The tutor's own search finds a phrase from the PDF, at its page.
     let hits = scratch.search("posterior proportional prior likelihood");
     let hit = hits
         .iter()
@@ -263,7 +243,6 @@ fn a_pdf_dropped_on_a_course_is_found_by_the_tutors_search_and_a_scan_is_said() 
         .unwrap_or_else(|| panic!("search did not find the dropped PDF: {hits:?}"));
     assert_eq!(hit["anchor_kind"], "page");
     assert_eq!(hit["anchor_start"], 1);
-    // And it does not find what was said to be left out.
     assert!(scratch
         .search("posterior")
         .iter()

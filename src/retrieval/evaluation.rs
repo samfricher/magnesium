@@ -1,8 +1,3 @@
-//! Test-only quality and operational regression for structural+FTS5 source search.
-//!
-//! Fixed queries and independent relevance judgments live under
-//! `tests/fixtures/retrieval`.
-
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

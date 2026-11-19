@@ -1,4 +1,3 @@
-//! Test commands must not inherit the caller's workspace, identity or host capabilities.
 use crate::support::TestEnvironment;
 
 const CONTEXT_VARIABLES: [&str; 15] = [
@@ -70,8 +69,6 @@ fn default_commands_strip_inherited_context_and_keep_explicit_test_configuration
         command
             .env(PHASE, "poisoned")
             .env("MAGNESIUM_TEST_BINARY", "synthetic-magnesium-test-binary");
-        // Poison only this subprocess. These paths belong to this synthetic fixture;
-        // no global environment mutation or real host/account access is needed.
         for variable in CONTEXT_VARIABLES {
             command.env(
                 variable,

@@ -1,8 +1,5 @@
 use super::*;
 
-// No test here mutates process-global state: worker configs pass
-// explicitly, and fake response paths bake into their scripts.
-
 fn valid_response(source_sha256: &str) -> serde_json::Value {
     serde_json::json!({
         "version": 1,
@@ -37,7 +34,6 @@ fn validation_accepts_a_well_formed_extraction() {
 fn validation_rejects_mismatches_and_bad_shapes() {
     let sha = "a".repeat(64);
     let other = "b".repeat(64);
-    // Wrong source: never attribute another file's conversion.
     assert!(validate_extraction(&valid_response(&other), &sha).is_err());
     let mut versioned = valid_response(&sha);
     versioned["version"] = serde_json::json!(999);
@@ -51,14 +47,11 @@ fn validation_rejects_mismatches_and_bad_shapes() {
     let mut method = valid_response(&sha);
     method["method"] = serde_json::json!("");
     assert!(validate_extraction(&method, &sha).is_err());
-    // Oversized text is rejected before it can poison an index.
     let mut big = valid_response(&sha);
     big["blocks"] = serde_json::json!([
         {"anchor_kind": "page", "anchor_start": 1, "anchor_end": 1, "text": "x".repeat(MAX_WORKER_TEXT_BYTES + 1)},
     ]);
     assert!(validate_extraction(&big, &sha).is_err());
-    // Coverage spellings: partial keeps its missing list, anything
-    // else is an honest unavailable with a bounded reason.
     let mut partial = valid_response(&sha);
     partial["coverage"] = serde_json::json!("partial");
     partial["missing"] = serde_json::json!(["page 3"]);
@@ -82,17 +75,11 @@ fn validation_rejects_mismatches_and_bad_shapes() {
 
 #[test]
 fn worker_config_defaults_to_unconfigured() {
-    // Read-only: in a configured developer shell this opt-in may be
-    // present, in which case there is nothing default to assert.
     if std::env::var_os(WORKER_ENV).is_none() && std::env::var_os(WORKER_OPT_IN_ENV).is_none() {
         assert!(worker_config_from_env().is_none());
     }
 }
 
-/// Fake worker harness: a shell script serving one canned framed
-/// response baked into its own directory. It drains the complete request
-/// before responding; `mode` selects success, junk, failure, sleep, or
-/// a helper-held output pipe. No environment is touched.
 struct FakeWorker {
     dir: PathBuf,
 }
@@ -120,18 +107,11 @@ impl FakeWorker {
             }
             "fail" => "exit 3\n".to_owned(),
             "sleep" => "sleep 60\n".to_owned(),
-            // Emits the framed response, exits at once, and leaves a
-            // helper holding the inherited stdout descriptor: the
-            // parent must still complete within the deadline instead
-            // of hanging in an unbounded reader join.
             "helper-hold" => format!(
                 "cat \"{}\"\n(sleep 2; touch \"{}\") &\nexit 0\n",
                 response_path.display(),
                 dir.join("helper-done").display(),
             ),
-            // Same, but the helper outlives any reasonable wait: with
-            // a pre-cancelled token the parent must abort and reap
-            // the whole tree instead of blocking on the pipe.
             "helper-hold-cancelled" => format!(
                 "(sleep 60) &\ncat \"{}\"\nexit 0\n",
                 response_path.display(),
@@ -144,9 +124,6 @@ impl FakeWorker {
             _ => unreachable!("fake worker mode"),
         };
         let path = dir.join("worker.sh");
-        // Real workers consume the complete framed request before responding.
-        // Otherwise an instantly exiting canned worker races the parent's
-        // stdin write and tests pipe scheduling instead of the protocol.
         std::fs::write(&path, format!("#!/bin/sh\ncat >/dev/null\n{script}"))
             .expect("fake worker script");
         #[cfg(unix)]
@@ -200,9 +177,6 @@ fn worker_round_trip_validates_and_returns_blocks() {
 #[test]
 #[cfg(unix)]
 fn large_valid_response_drains_while_the_worker_runs() {
-    // A valid response larger than pipe capacity (64 KiB on macOS)
-    // must succeed through the real parent process path: draining
-    // stdout only after worker exit deadlocks until the deadline.
     let sha = "a".repeat(64);
     let big_text = "x".repeat(256 * 1024);
     let body = serde_json::to_vec(&serde_json::json!({
@@ -231,10 +205,6 @@ fn large_valid_response_drains_while_the_worker_runs() {
 #[test]
 #[cfg(unix)]
 fn helper_held_stdout_completes_within_the_deadline() {
-    // The direct worker exits at once while a helper holds the
-    // inherited stdout descriptor for ~2s: completion must wait for
-    // the output (not just the exit) yet stay inside the deadline
-    // instead of hanging in an unbounded reader join.
     let sha = "a".repeat(64);
     let body = serde_json::to_vec(&valid_response(&sha)).expect("response JSON");
     let worker = FakeWorker::new(&FakeWorker::framed(&body), "helper-hold");
@@ -262,8 +232,6 @@ fn helper_held_stdout_completes_within_the_deadline() {
 #[test]
 #[cfg(unix)]
 fn cancelled_conversion_reaps_helper_held_stdout() {
-    // Pre-cancelled with a 60s helper hold: the parent must abort and
-    // reap the whole tree at once instead of blocking on the pipe.
     let sha = "a".repeat(64);
     let body = serde_json::to_vec(&valid_response(&sha)).expect("response JSON");
     let worker = FakeWorker::new(&FakeWorker::framed(&body), "helper-hold-cancelled");
@@ -290,7 +258,6 @@ fn cancelled_conversion_reaps_helper_held_stdout() {
 #[cfg(unix)]
 fn worker_failures_are_typed_never_silent() {
     let sha = "a".repeat(64);
-    // Junk framing fails validation.
     let junk = FakeWorker::new(b"not framed at all", "junk");
     let junk_config = junk.configure();
     let snapshot = junk.snapshot();
@@ -299,7 +266,6 @@ fn worker_failures_are_typed_never_silent() {
         matches!(junk_result, Err(WorkerError::InvalidOutput(_))),
         "junk output must fail validation: {junk_result:?}"
     );
-    // Nonzero exit is a bounded failure, not a conversion.
     let failing = FakeWorker::new(b"", "fail");
     let failing_config = failing.configure();
     let failing_result = convert_with_worker(&failing_config, &snapshot, &sha, "pdf", 1, 1, None);
@@ -307,7 +273,6 @@ fn worker_failures_are_typed_never_silent() {
         matches!(failing_result, Err(WorkerError::Failed(_))),
         "nonzero exit must fail: {failing_result:?}"
     );
-    // Unsupported kinds and bad ranges never spawn.
     assert!(matches!(
         convert_with_worker(&junk_config, &snapshot, &sha, "txt", 1, 1, None),
         Err(WorkerError::Unavailable(_))
@@ -356,9 +321,6 @@ fn cancellation_after_worker_consumes_request_reaps_running_helper() {
     let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let trigger = flag.clone();
     let cancel = std::thread::spawn(move || {
-        // The marker is emitted only after the worker drains framed stdin
-        // and starts its helper. Time is a deadlock guard, not an ordering
-        // oracle: cancellation follows the real subprocess handshake.
         let deadline = Instant::now() + Duration::from_secs(20);
         while !marker.exists() {
             assert!(

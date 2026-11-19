@@ -31,7 +31,6 @@ fn reshaped_tables_are_read_by_header_name() {
         value["scores"],
         json!([{"paper":"Diagnostic","date":"2026-10-15","score":"18/30"}])
     );
-    // The papers skill writes the When cell with its ISO date first; other forms give no date.
     assert_eq!(value["when"], "Wed Oct 21, 12:30");
     assert_eq!(value["date"], Value::Null);
     assert_eq!(value["days_left"], Value::Null);

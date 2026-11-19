@@ -1,10 +1,3 @@
--- Tables added by schema 3. A fresh store runs this after schema.sql; the
--- upgrade from schema 2 runs it once, inside its transaction.
-
--- One row per answer the tutor marked, in chat or on a paper (#29). The
--- observation is the evidence and the learner event holds their own words or
--- photo; this row holds the facts code counts. Help given before the answer is
--- stored as given, and a helped answer is never cold.
 CREATE TABLE attempts (
   attempt_no INTEGER PRIMARY KEY,
   attempt_id TEXT NOT NULL UNIQUE,
@@ -24,8 +17,6 @@ CREATE TABLE attempts (
   cold INTEGER NOT NULL CHECK (cold IN (0,1)),
   answered_at_ms INTEGER NOT NULL,
   seconds INTEGER CHECK (seconds >= 0),
-  -- Filled by later work: the practice item this answer redoes (#30) and the
-  -- kind of problem whose help level it moves (#31).
   item_id TEXT REFERENCES practice_items(item_id),
   problem_kind TEXT,
   created_at_ms INTEGER NOT NULL,
@@ -35,9 +26,6 @@ CREATE TABLE attempts (
   CHECK (marks IS NULL OR (out_of > 0 AND marks >= 0 AND marks <= out_of))
 );
 
--- Something the learner got wrong, to be reproduced cold on later days: a
--- quick check from chat or a gap row from a paper (#30). The runtime works out
--- its passes, status and next date from its attempts. Empty until #30.
 CREATE TABLE practice_items (
   item_id TEXT PRIMARY KEY,
   origin TEXT NOT NULL CHECK (origin IN ('chat','paper')),
@@ -56,8 +44,6 @@ CREATE TABLE practice_items (
   updated_at_ms INTEGER NOT NULL
 );
 
--- The help level for each kind of problem, moved by the teaching policy's
--- ladder from the attempts (#31). Empty until #31.
 CREATE TABLE help_levels (
   kind_key TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -66,8 +52,6 @@ CREATE TABLE help_levels (
   updated_at_ms INTEGER NOT NULL
 );
 
--- A skill the learner's own work has shown, on a topic (#31, if anchors move
--- out of memory text there). Empty until then.
 CREATE TABLE anchors (
   anchor_id TEXT PRIMARY KEY,
   topic_key TEXT NOT NULL,

@@ -97,8 +97,6 @@ fn revision_trigger_names_only_existing_material_columns() {
             |row| row.get(0),
         )
         .unwrap();
-    // SQLite silently accepts nonexistent UPDATE OF names. Inspect the actual
-    // installed trigger, then prove behavior independently in the next test.
     let listed: Vec<&str> = trigger
         .split_once("AFTER UPDATE OF")
         .unwrap()
@@ -195,8 +193,6 @@ fn each_material_field_advances_revision_only_when_changed_with_recursive_trigge
                 );
                 assert_eq!(revision(&connection), 3);
             }
-            // Nullable fields start NULL, so the loop explicitly covers
-            // NULL->value, identical value, value->NULL, and identical NULL.
         }
     }
 }
@@ -463,9 +459,6 @@ fn fresh_source_cache_is_schema_ten_and_schema_nine_stays_byte_preserved() {
         if wal {
             owner.pragma_update(None, "journal_mode", "WAL").unwrap();
         }
-        // Reconstruct the previous cache schema by omitting only this repair's
-        // counter and trigger. Identity rejection must preserve even live WAL
-        // artifacts without attempting a migration or opening their contents.
         let (before_trigger, trigger_and_rest) = INDEX_SCHEMA
             .split_once("CREATE TRIGGER source_manifest_revision")
             .unwrap();

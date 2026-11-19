@@ -1,16 +1,3 @@
-//! A receipt: one line of evidence from the record under an answer that
-//! earned a pass.
-//!
-//! It names the last miss on the skill before the answer (its day and the
-//! label the record keeps for it) and how many calendar days the answer came
-//! after the learner's previous answer on that skill. Both come from the
-//! attempts table and the practice items. The tutor's words are never read.
-//!
-//! `magnesium progress --json` carries a receipt for each answer that earned
-//! a pass the skill holds now, by the record's id for the answer, and the
-//! study window shows its `text` under that answer. In a terminal, the
-//! PostToolUse hook after the `learning_step` that recorded the answer shows
-//! the same text. Both read the same JSON, so the two say the same thing.
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
@@ -21,7 +8,6 @@ use crate::learner::label_key;
 use crate::learner::practice::{EventKind, local_day};
 use crate::practice::Item;
 
-/// One marked answer, as a receipt needs it.
 #[derive(Clone, Debug)]
 pub(crate) struct Answer {
     pub(crate) id: String,
@@ -31,31 +17,20 @@ pub(crate) struct Answer {
     pub(crate) day: NaiveDate,
 }
 
-/// What the record knows of a practice item beyond its answers.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ItemFacts {
     pub(crate) label: String,
     pub(crate) paper: Option<String>,
-    /// A gap-log row, from a paper, rather than a quick check from chat.
     pub(crate) from_a_paper: bool,
-    /// For a gap-log row brought in from a file, which no answer in the
-    /// record made: the day of the paper that lost the mark.
     pub(crate) brought_in_on: Option<NaiveDate>,
-    /// The day of the last pass that item was brought in with.
     pub(crate) brought_in_pass_on: Option<NaiveDate>,
-    /// The redos a gap-log file's Passes cell held when the row was brought
-    /// in, "2026-11-03 pass, 2026-11-06 fail": each day, and whether it
-    /// failed.
     pub(crate) brought_in_redos: Vec<(NaiveDate, bool)>,
 }
 
-/// The miss a receipt names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Miss {
     pub(crate) day: NaiveDate,
     pub(crate) label: String,
-    /// "wrong" or "partly"; "lost" for a gap-log row whose answer is not in
-    /// the record; "failed" for a failed redo a gap-log file held.
     pub(crate) mark: String,
     pub(crate) paper: Option<String>,
 }
@@ -63,14 +38,10 @@ pub(crate) struct Miss {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Receipt {
     pub(crate) miss: Option<Miss>,
-    /// The day of the learner's previous answer on the skill.
     pub(crate) previous: Option<NaiveDate>,
-    /// Calendar days from that answer to this one.
     pub(crate) days: Option<i64>,
 }
 
-/// The receipt for each answer in `wanted`. `links` names the practice items
-/// each answer is an event of, and `items` what is known of each item.
 pub(crate) fn receipts(
     answers: &[Answer],
     links: &BTreeMap<String, BTreeSet<String>>,
@@ -85,17 +56,12 @@ pub(crate) fn receipts(
             continue;
         }
         let own_items = items_of(&answer.id);
-        // The skill as the pass count takes it: the label's key, under the
-        // name the record filed the answer by (a chat answer on a course
-        // graph's tag is filed under the tag's name), and the practice
-        // items the answer counts for.
         let mut names: BTreeSet<String> = own_items
             .iter()
             .filter_map(|item| items.get(item))
             .map(|item| label_key(&item.label))
             .collect();
         names.insert(label_key(&answer.label));
-        // A declined question is not an answer.
         let before: Vec<&Answer> = answers[..at]
             .iter()
             .filter(|other| other.mark != "declined")
@@ -115,9 +81,6 @@ pub(crate) fn receipts(
                 mark: other.mark.clone(),
                 paper: other.paper.clone(),
             });
-        // A row brought in from a gap-log file is a lost mark the record
-        // holds with no answer of its own, and the redos its Passes cell
-        // held are answers too: a failed one is the later miss.
         for item in own_items.iter().filter_map(|item| items.get(item)) {
             let redos = item.brought_in_redos.iter().copied();
             let days = [item.brought_in_on, item.brought_in_pass_on]
@@ -127,8 +90,6 @@ pub(crate) fn receipts(
             for day in days.filter(|day| *day < answer.day) {
                 previous = Some(previous.map_or(day, |known| known.max(day)));
             }
-            // A quick check an earlier version kept says only the day it was
-            // made, not what the answer was, so it names no miss.
             let lost = item
                 .brought_in_on
                 .filter(|_| item.from_a_paper)
@@ -165,13 +126,10 @@ pub(crate) fn receipts(
     out
 }
 
-/// "2026-11-10" as "Tue 10 Nov", as the study window writes a day.
 fn short_day(day: NaiveDate) -> String {
     day.format("%a %-d %b").to_string()
 }
 
-/// The miss, as the record has it: "Not right on Tue 10 Nov: sign of b."
-/// A paper's lost mark says the paper, as the gap log does.
 fn miss_words(miss: &Miss) -> String {
     let day = short_day(miss.day);
     let label = miss.label.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -188,8 +146,6 @@ fn miss_words(miss: &Miss) -> String {
     }
 }
 
-/// The days since the learner's previous answer on the skill, said as what
-/// this answer held through.
 fn held_words(days: i64) -> String {
     if days == 1 {
         "It held through the day since you last answered it.".to_owned()
@@ -199,7 +155,6 @@ fn held_words(days: i64) -> String {
 }
 
 impl Receipt {
-    /// The line the window and a terminal show.
     pub(crate) fn text(&self) -> String {
         let mut said: Vec<String> = Vec::new();
         if let Some(miss) = &self.miss {
@@ -242,8 +197,6 @@ fn load_answers(conn: &Connection) -> rusqlite::Result<Vec<Answer>> {
         .collect()
 }
 
-/// The receipts for the answers `wanted`, from the record, as the JSON
-/// `magnesium progress` prints under `pass_receipts`: by the answer's id.
 pub(crate) fn of(conn: &Connection, items: &[Item], wanted: &BTreeSet<String>) -> Value {
     if wanted.is_empty() {
         return json!({});
@@ -287,9 +240,6 @@ pub(crate) fn of(conn: &Connection, items: &[Item], wanted: &BTreeSet<String>) -
     )
 }
 
-/// The redos in a gap-log file's Passes cell, "2026-11-03 pass, 2026-11-06
-/// fail", as the runtime brought it in: each dated entry, and whether it
-/// says fail.
 fn redos_in(history: &str) -> Vec<(NaiveDate, bool)> {
     history
         .split([',', ';'])
@@ -300,8 +250,6 @@ fn redos_in(history: &str) -> Vec<(NaiveDate, bool)> {
         .collect()
 }
 
-/// The ids of the answers that earned the passes each skill holds now, in
-/// what `magnesium progress --json` printed.
 pub(crate) fn passing_answers(skills: &[Value]) -> BTreeSet<String> {
     skills
         .iter()
@@ -312,10 +260,6 @@ pub(crate) fn passing_answers(skills: &[Value]) -> BTreeSet<String> {
 
 const PASS_WORDS: [&str; 3] = ["First", "Second", "Third"];
 
-/// What a terminal shows after the `learning_step` that recorded `answers`:
-/// for each that earned a pass, which of three days it was and its receipt,
-/// from what `magnesium progress --json` printed. None when no answer
-/// earned a pass with a receipt.
 pub(crate) fn terminal_lines(progress: &Value, answers: &BTreeSet<String>) -> Option<String> {
     let plans = progress["plans"].as_array().into_iter().flatten();
     let skills = plans
@@ -340,8 +284,6 @@ pub(crate) fn terminal_lines(progress: &Value, answers: &BTreeSet<String>) -> Op
                 continue;
             }
             let pass = PASS_WORDS.get(at).copied().unwrap_or("Another");
-            // A terminal has no answer just above the line, so it names the
-            // skill unless the miss it names is that skill.
             let name = skill["skill"].as_str().unwrap_or_default().trim();
             let named = progress["pass_receipts"][id]["missed"]
                 .as_str()
@@ -356,10 +298,6 @@ pub(crate) fn terminal_lines(progress: &Value, answers: &BTreeSet<String>) -> Op
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
-/// The answers a `learning_step` result names as recorded, under
-/// `practice.attempts`. Claude Code hands an MCP tool's result to a hook as
-/// its content, whose text holds the runtime's JSON, so strings are read as
-/// JSON too.
 pub(crate) fn recorded_answers(response: Option<&Value>) -> BTreeSet<String> {
     fn walk(value: &Value, depth: u8, found: &mut BTreeSet<String>) {
         if depth > 6 {
@@ -403,9 +341,6 @@ pub(crate) fn recorded_answers(response: Option<&Value>) -> BTreeSet<String> {
     found
 }
 
-/// The receipt lines for a terminal after a committed `learning_step`, or
-/// none. The study window shows receipts from the record itself, under the
-/// answer, so a lesson it started gets none here and nothing is said twice.
 pub(crate) fn for_hook(
     workspace: &crate::workspace::Workspace,
     response: Option<&Value>,

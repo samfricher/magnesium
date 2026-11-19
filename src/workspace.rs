@@ -24,13 +24,8 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 
 const MAX_WORKSPACE_ID_BYTES: usize = 128;
 
-/// Set to `1` to skip every flush to the disk. The test helpers set it for
-/// each `magnesium` they start, because a flush on a Mac waits for the drive
-/// and the tests make thousands of them. Never set it to study: a crash or a
-/// power cut can then lose or damage what was written last.
 pub(crate) const NO_SYNC_ENV: &str = "MAGNESIUM_UNSAFE_NO_SYNC";
 
-/// Whether a write waits for the disk. Unit tests never wait.
 pub(crate) fn syncs_to_disk() -> bool {
     static SYNCS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *SYNCS.get_or_init(|| {
@@ -38,8 +33,6 @@ pub(crate) fn syncs_to_disk() -> bool {
     })
 }
 
-/// Flush a file or a directory to the disk, unless [`NO_SYNC_ENV`] is set.
-/// `clippy.toml` refuses a direct `sync_all` anywhere else.
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn sync_to_disk(file: &fs::File) -> io::Result<()> {
     if syncs_to_disk() {
@@ -49,8 +42,6 @@ pub(crate) fn sync_to_disk(file: &fs::File) -> io::Result<()> {
     }
 }
 
-/// Apply [`NO_SYNC_ENV`] to a SQLite connection. The setting lasts as long as
-/// the connection and changes nothing in the database file.
 pub(crate) fn apply_sync_policy(connection: &rusqlite::Connection) -> rusqlite::Result<()> {
     if syncs_to_disk() {
         Ok(())
@@ -59,7 +50,6 @@ pub(crate) fn apply_sync_policy(connection: &rusqlite::Connection) -> rusqlite::
     }
 }
 
-/// The per-workspace control directory. Every control path derives from it.
 pub(crate) const CONTROL_DIR: &str = ".magnesium";
 
 pub(crate) fn source_index_path(root: &Path) -> PathBuf {
@@ -104,8 +94,6 @@ impl Workspace {
         self.control.join("config.toml")
     }
 
-    /// Whether the runtime restates the core teaching rules after a
-    /// compaction in this study folder. An unreadable config means on.
     pub(crate) fn core_rules_on(&self) -> bool {
         config::WorkspaceConfig::load(&self.config_path())
             .map_or(true, |config| config.core_rules())
@@ -118,7 +106,6 @@ impl Workspace {
         config.save().map_err(invalid)
     }
 
-    /// How a sitting opens in this study folder. An unreadable config means on.
     pub(crate) fn opener(&self) -> config::OpenerMode {
         config::WorkspaceConfig::load(&self.config_path())
             .map_or(config::OpenerMode::On, |config| config.opener())
@@ -168,10 +155,6 @@ pub(crate) fn create_private_dir_all(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Create exactly one private directory. Unlike `create_private_dir_all`, an
-/// existing path is an error, which prevents a caller allocating an
-/// unpredictable temporary path from accidentally reusing an attacker-created
-/// directory.
 pub(crate) fn create_private_dir(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -203,15 +186,6 @@ where
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-/// Atomic file replacements whose directory flushes wait for `finish`.
-///
-/// Each file is written to a temporary file in its own directory, flushed,
-/// and renamed over the target, so a reader sees the old or the new file and
-/// never a partial one. `finish` flushes each directory once, after all of
-/// its files are in place: every file is durable when `finish` returns, as
-/// with one flushed replacement per file. A batch dropped on an error path
-/// still flushes the directories of the files it already replaced. Windows
-/// keeps `atomicwrites`, whose write-through move needs no directory flush.
 #[derive(Default)]
 #[must_use = "replaced files are durable only after `finish`"]
 pub(crate) struct AtomicWrites {
@@ -220,7 +194,6 @@ pub(crate) struct AtomicWrites {
 }
 
 impl AtomicWrites {
-    /// Replace `path` with an owner-only (0600) file.
     pub(crate) fn replace(
         &mut self,
         path: &Path,
@@ -229,8 +202,6 @@ impl AtomicWrites {
         self.replace_with_mode(path, 0o600, write)
     }
 
-    /// Replace `path` with a file created with `mode`, which the umask
-    /// filters as for any new file. Windows ignores `mode`.
     pub(crate) fn replace_with_mode(
         &mut self,
         path: &Path,
@@ -269,8 +240,6 @@ impl AtomicWrites {
             .map_err(io::Error::from)
     }
 
-    /// `replace` with owner-only permissions, creating private parent
-    /// directories as needed.
     pub(crate) fn write_private(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
         let parent = path
             .parent()
@@ -330,8 +299,6 @@ pub(crate) fn write_user_owned_atomic(path: &Path, bytes: &[u8]) -> io::Result<(
         None
     };
 
-    // A new user-owned file gets the umask default, as any editor would
-    // create it; an existing file keeps its mode below.
     let mut writes = AtomicWrites::default();
     writes.replace_with_mode(path, 0o666, |file| file.write_all(bytes))?;
     writes.finish()?;
@@ -381,8 +348,6 @@ pub(crate) fn open_private_lock(path: &Path) -> io::Result<fs::File> {
             let mut existing = OpenOptions::new();
             existing.read(true).write(true);
             let file = existing.open(path)?;
-            // Creation applies the Windows DACL. Rewriting it while another
-            // process holds the lock file fails with ERROR_ACCESS_DENIED.
             #[cfg(unix)]
             restrict_private_path(path)?;
             Ok(file)

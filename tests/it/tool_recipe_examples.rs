@@ -1,4 +1,3 @@
-//! Execute shipped model-facing JSON without supplying driver-only shape hints.
 use crate::support::{TestEnvironment, mcp::McpClient, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -180,8 +179,6 @@ fn shipped_recipes_execute_through_mcp_across_new_conversations() {
     run_examples(true);
 }
 
-/// A tutor that cites, as a new observation, the one it named in its
-/// previous request gets it, and is not refused and made to retry.
 #[test]
 fn a_memory_edit_may_cite_the_observation_its_previous_request_named() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -220,7 +217,6 @@ fn a_memory_edit_may_cite_the_observation_its_previous_request_named() {
     let described = call(describe);
     assert_eq!(described["update_status"], "committed", "{described}");
 
-    // A name no earlier request gave is still refused.
     let mut unknown = recipe(&text, "describe_and_checkpoint");
     unknown["request_id"] = json!("monday-unknown");
     unknown["memory_edits"][0]["client_ref"] = json!("other_memory");
@@ -238,8 +234,6 @@ fn a_memory_edit_may_cite_the_observation_its_previous_request_named() {
     assert!(said.contains("unknown_reference"), "{said}");
 }
 
-/// A lesson start carries what context.prepare returns for its goal, so a
-/// new conversation has the learner's record without a call of its own.
 #[test]
 fn a_session_start_carries_the_memory_on_its_goal() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -283,7 +277,6 @@ fn a_session_start_carries_the_memory_on_its_goal() {
     let described = call("monday", describe);
     let memory = described["references"]["quadratic_memory"].clone();
 
-    // Another conversation starts a lesson on the same goal.
     let started = call(
         "tuesday",
         json!({"schema":"learner-model/v2","action":"update","request_id":"tuesday-start",
@@ -292,6 +285,5 @@ fn a_session_start_carries_the_memory_on_its_goal() {
     assert_eq!(started["update_status"], "committed", "{started}");
     let memories = started["context"]["memories"].to_string();
     assert!(memories.contains(memory.as_str().unwrap()), "{started}");
-    // An update that starts no session carries no context.
     assert!(described.get("context").is_none(), "{described}");
 }

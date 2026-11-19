@@ -109,7 +109,6 @@ fn an_over_long_record_and_an_unlabeled_source_are_saved_and_the_cuts_named() {
         .map(|source| source["available_form"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(forms, ["model_reported", "model_reported", "excerpt"]);
-    // A retry replays the same receipt, notes included.
     let replayed = f.store.update(&f.host, payload).unwrap();
     assert_eq!(replayed.shortened, saved.shortened);
 }
@@ -261,8 +260,6 @@ fn unknown_store_and_workspace_rejected_without_mutation() {
         LearnerStore::open(&f.path, "wrong").err().unwrap().code,
         "workspace_mismatch"
     );
-    // The schema CHECK pins version 5, so a store from a newer build can only
-    // be simulated with constraint checking off.
     f.store
         .conn
         .execute_batch(
@@ -1161,7 +1158,6 @@ fn complete_captured_refuses_an_attempt_before_checking_it() {
     );
 }
 
-/// Labels made of letters only, so none reads as a problem.
 fn check_label(n: usize) -> String {
     let letters = b"abcdefghijklmnopqrstuvwxyz";
     format!(
@@ -1171,9 +1167,6 @@ fn check_label(n: usize) -> String {
     )
 }
 
-/// Start a lesson in the fixture's conversation and leave `count` quick
-/// checks open, one per wrong chat answer. Returns the lesson and the first
-/// attempt.
 fn lesson_with_quick_checks(f: &Fixture, count: usize) -> (String, String) {
     let session = f.start().references["session"].clone();
     let event = f.event("answer", "b is 7", None);
@@ -1211,7 +1204,6 @@ fn lesson_with_quick_checks(f: &Fixture, count: usize) -> (String, String) {
     (session, attempt)
 }
 
-/// Everything a practice write or a lesson close could change.
 fn practice_state(f: &Fixture) -> Value {
     let one = |sql: &str| -> Value {
         f.store
@@ -1262,7 +1254,6 @@ fn closing_a_lesson_from_an_inactive_conversation_cannot_carry_practice_writes()
         );
         assert_eq!(practice_state(&f), before);
     }
-    // The bare close itself is still admitted.
     f.store.update(&tuesday, pause()).unwrap();
 }
 
@@ -1374,8 +1365,6 @@ fn resolved_change_basis_preserves_authored_order_and_never_processes_unrequeste
             .unwrap(),
         "pending"
     );
-    // Reusing only the stored observation also retains that pending support;
-    // participation authorizes an explicit disposition but never creates one.
     let mut reuse = existing_observation_edit(&f, &other, &saved.references["additional"]);
     reuse["request_id"] = json!("reuse-without-disposition");
     reuse["event_dispositions"] = json!([]);

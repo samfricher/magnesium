@@ -127,8 +127,6 @@ fn initialize(
         LearnerState::Empty
     };
 
-    // Native-start tickets use a local provenance key, never provider credentials.
-    // Create it during explicit init so ordinary inactive hooks store no text.
     crate::adapter::native_capture::initialize(&super::Workspace {
         root: root.clone(),
         control: control.clone(),
@@ -157,8 +155,6 @@ fn initialize(
         report.created(&magnesiumignore_path);
     }
 
-    // Install the exact approved bundle and activate its version pointer.
-    // Existing version directories containing edits are never overwritten.
     let instruction_bundle_dir = control.join("instructions/v2");
     let bundle_existed = instruction_bundle_dir
         .try_exists()
@@ -447,10 +443,6 @@ fn resolve_git_exclusion(
     )))
 }
 
-/// Whether Git could find a repository for `root`. Git looks for a `.git`
-/// entry in the folder and in each folder above it, unless `GIT_DIR` names a
-/// repository. Asking the file system first means a folder outside every
-/// repository never starts `git`, which is the slowest step of `init`.
 fn may_be_in_git_repository(root: &Path) -> bool {
     non_empty_env("GIT_DIR").is_some()
         || root
@@ -681,7 +673,6 @@ fn non_empty_env(name: &str) -> Option<OsString> {
 }
 
 const CLAUDE_PLUGIN_ID: &str = "magnesium@magnesium";
-/// Claude Code's permission rule for every tool of the plugin's `magnesium` MCP server.
 const CLAUDE_MCP_RULE: &str = "mcp__plugin_magnesium_magnesium__*";
 const CLAUDE_PLUGIN_FILES: &[(&str, &str)] = &[
     (
@@ -753,15 +744,12 @@ const CLAUDE_PLUGIN_FILES: &[(&str, &str)] = &[
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClaudePluginStatus {
-    /// Declared in the user settings and enabled in this folder only.
     Enabled {
         settings: PathBuf,
         local: PathBuf,
         enabled_everywhere: bool,
-        /// The permission rules this run added to `permissions.allow`.
         added_rules: Vec<String>,
     },
-    /// This folder's settings turn magnesium@magnesium off; that choice is kept.
     Disabled {
         local: PathBuf,
     },
@@ -770,7 +758,6 @@ pub(crate) enum ClaudePluginStatus {
     },
 }
 
-/// Claude Code's user settings file, which its CLI and desktop app share.
 fn claude_settings_path() -> Option<PathBuf> {
     non_empty_env("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
@@ -785,8 +772,6 @@ fn same_directory(left: &Path, right: &Path) -> bool {
     }
 }
 
-/// Read a JSON settings object, or an empty one when the file is absent.
-/// Symbolic links and non-object JSON are refused rather than rewritten.
 fn read_settings_object(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
@@ -827,10 +812,6 @@ fn write_settings_object(
         .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
-/// Declare the plugin directory as the `magnesium` plugin source in the user's
-/// Claude settings without enabling it anywhere; each study folder enables it.
-/// A different `magnesium` entry is kept. Returns whether the user settings also
-/// enable Magnesium for every folder.
 fn declare_claude_marketplace(settings: &Path, plugin_dir: &Path) -> Result<bool, String> {
     let mut object = read_settings_object(settings)?;
     let enabled_everywhere = object
@@ -873,13 +854,6 @@ fn declare_claude_marketplace(settings: &Path, plugin_dir: &Path) -> Result<bool
     }
 }
 
-/// The rules that let Magnesium run in a study folder without permission prompts:
-/// every tool of the plugin's MCP server, reads of the copied plugin, where
-/// the skills keep their templates, a launch of each shipped skill, and the
-/// read-only `magnesium digest` that /magnesium:help runs. Claude Code launches Magnesium's
-/// skills without a Skill rule today; the rules keep launches prompt-free if a
-/// release starts to ask. A skill's own allowed-tools would block plain-words
-/// launches, so /magnesium:help gets its command from here.
 fn claude_permission_rules(plugin_dir: &Path) -> Vec<String> {
     let mut rules = vec![
         CLAUDE_MCP_RULE.to_owned(),
@@ -895,8 +869,6 @@ fn claude_permission_rules(plugin_dir: &Path) -> Vec<String> {
     rules
 }
 
-/// An absolute path as a Claude Code permission rule writes it: `//` and the
-/// path in POSIX form, so `C:\Users` on Windows becomes `//c/Users`.
 fn claude_absolute_path(path: &Path) -> String {
     let mut rule = String::from("/");
     for component in path.components() {
@@ -918,12 +890,6 @@ fn claude_absolute_path(path: &Path) -> String {
     rule
 }
 
-/// Enable Magnesium for this folder only, in its personal (uncommitted) Claude
-/// settings, and add `rules` to `permissions.allow` there. An explicit `false`
-/// for the plugin is the user's choice and is kept. The user's own `ask` and
-/// `deny` rules stay as they are: Claude Code applies them before `allow`.
-/// When `permissions` has another shape, it is kept and a warning is added.
-/// Returns the rules it added, or `None` when the folder turns Magnesium off.
 fn enable_claude_plugin_here(
     root: &Path,
     rules: &[String],
@@ -973,10 +939,6 @@ fn enable_claude_plugin_here(
     Ok(Some(added))
 }
 
-/// Copy the bundled plugin to a stable per-user directory, declare it in the
-/// user's Claude settings, and enable it for this folder only, so Claude Code
-/// loads Magnesium when opened here and nowhere else. Claude loads the directory
-/// in place, so rerunning `magnesium init` after an upgrade refreshes it.
 fn setup_claude_plugin(
     root: &Path,
     plugin_dir: &Path,
@@ -1007,8 +969,6 @@ fn setup_claude_plugin(
     }
 }
 
-/// Write the bundled Claude plugin into its managed directory, skipping files
-/// that already match.
 fn write_claude_plugin_files(plugin_dir: &Path) -> Result<(), String> {
     validate_claude_plugin_paths(plugin_dir)?;
     let mut writes = crate::workspace::AtomicWrites::default();
@@ -1027,10 +987,6 @@ fn write_claude_plugin_files(plugin_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("could not flush {}: {e}", plugin_dir.display()))
 }
 
-/// After a runtime upgrade, rewrite an existing Claude plugin copy: its hook
-/// and MCP command lines pin the plugin version, so the previous copy fails
-/// every version check. Returns false when init never wrote a copy here;
-/// folder settings stay as init left them.
 pub(crate) fn refresh_claude_plugin(plugin_dir: &Path) -> Result<bool, String> {
     if !plugin_dir.exists() {
         return Ok(false);
@@ -1038,10 +994,6 @@ pub(crate) fn refresh_claude_plugin(plugin_dir: &Path) -> Result<bool, String> {
     write_claude_plugin_files(plugin_dir).map(|()| true)
 }
 
-/// Check the managed plugin root and every packaged destination before any
-/// create, read or write: no component from the root down may be a symbolic
-/// link or reparse point, directories must be directories and files files.
-/// Aliases above the managed root (such as /var on macOS) stay allowed.
 fn validate_claude_plugin_paths(plugin_dir: &Path) -> Result<(), String> {
     let refuse = |path: &Path, problem: &str| {
         format!(

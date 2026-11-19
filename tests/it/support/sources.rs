@@ -1,10 +1,3 @@
-//! Make a source file searchable before a test reads it.
-//!
-//! A search indexes only what fits its time budget, so a new file can take
-//! several searches to appear. These helpers repeat the search until the
-//! file is indexed and a hit names it. The test then makes its own request
-//! once, so its own assertions never depend on a retry.
-
 use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -13,12 +6,8 @@ use sha2::{Digest, Sha256};
 
 use super::{TestEnvironment, mcp::McpClient};
 
-/// Long enough for a loaded machine. A file is usually ready within two searches.
 const PREPARATION_DEADLINE: Duration = Duration::from_secs(30);
 
-/// Hold this for the whole of a test that searches or reads sources. The
-/// runtime gives each search 150 ms, so these tests run one at a time: side
-/// by side on a busy machine they run out of that time and fail.
 pub fn source_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
     ONE_AT_A_TIME
@@ -53,7 +42,6 @@ pub fn prepare_pdf_fixture(
     prepare_source_fixture(environment, client, first_id, path, hash);
 }
 
-/// `prepare_text_fixture` through a server of its own, for a test that has none.
 pub fn prepare_text_fixture_separately(
     environment: &TestEnvironment,
     path: &str,
@@ -83,8 +71,6 @@ fn prepare_source_fixture(
             .as_str()
             .unwrap_or_else(|| panic!("search for {path} returned no text: {response}"));
         if response["result"]["isError"] == true {
-            // The server asks for the request again when background indexing
-            // published a newer state of the file first.
             assert!(
                 text.contains("source_superseded"),
                 "search for {path} failed: {response}"
@@ -111,7 +97,6 @@ fn prepare_source_fixture(
     }
 }
 
-/// The file's row in the source index, read without changing it.
 fn index_status(environment: &TestEnvironment, path: &str) -> Option<String> {
     Connection::open_with_flags(
         environment

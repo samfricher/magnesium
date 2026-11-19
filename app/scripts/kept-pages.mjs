@@ -1,18 +1,3 @@
-// Home and a course's page stay on the page behind the tab in front (src/pages/TabPage.tsx). Check, in the real
-// window, what that must not change: where the keyboard is when Home's tab comes back, the words on Home's answer
-// line once they were sent, and the library's order while a lesson runs in another course. Starts no model.
-//
-//   node scripts/kept-pages.mjs <app-binary> <out-dir>
-//
-// Works in a scratch course with a quick check due (scripts/scratch-course.sh, scripts/scratch-record.py) and a
-// scratch window home; lessons run on the stand-in model. Writes kept.json, and exits 1 when:
-// - the keyboard, put on a later row of Home, is elsewhere 1.5 s after Home's tab comes back from Settings;
-// - Home's answer line still holds an answer the session sent, once Home's tab comes back;
-// - a course's page kept in Home's tab notes a visit to its folder (the library's order) after a lesson turn in
-//   another course;
-// - a question Home set over its first row while it was behind, or read while in front but drew only when it came
-//   back, does not have the keyboard when Home comes back.
-
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,8 +18,6 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const TURN_MS = 60_000;
 const ANSWER = "(9·4 + 9·9)/18 = 6.5";
 
-// A course with a quick check due, and the learner's last message four hours ago: the next one begins a sitting, so
-// Home sets the check's question over its first row (as scripts/pages.mjs does for "due-check").
 const scratch = mkdtempSync(join(tmpdir(), "mg-kept-"));
 execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8" });
 execFileSync("python3", [join(APP, "scripts/scratch-record.py"), scratch], { encoding: "utf8" });
@@ -42,7 +25,6 @@ const course = join(scratch, "Intro-Statistics");
 const sittings = join(course, ".magnesium", "sittings.sqlite");
 const FOUR_HOURS_AGO = "import sqlite3,sys,time; c=sqlite3.connect(sys.argv[1]); c.execute('UPDATE meta SET last_learner_ms=?', (int((time.time()-4*3600)*1000),)); c.commit()";
 execFileSync("python3", ["-I", "-c", FOUR_HOURS_AGO, sittings]);
-// Holds the learner's last message four hours back for 40 s, while a lesson turn would move it on.
 const hold = [
   "import sqlite3, sys, time",
   "end = time.time() + 40",
@@ -59,7 +41,6 @@ mkdirSync(home, { recursive: true });
 const stateFile = join(home, "state.json");
 writeFileSync(stateFile, JSON.stringify({ ...listed, folders: {} }, null, 2));
 const agent = join(scratch, "claude");
-// STAND_IN_SLOW_CHECKS: "Just the quick checks." poses the check Home shows, so an answer written on Home is sent.
 writeFileSync(agent, `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "model.log")}'\nexport STAND_IN_SLOW_CHECKS=1\nexec python3 '${join(APP, "crates/core/tests/stand_in_model.py")}' "$@"\n`, { mode: 0o755 });
 
 const driveDir = join(scratch, "drive");
@@ -79,7 +60,6 @@ async function step(label, each) {
   save();
   return answer;
 }
-// When the window last noted a visit to a folder, and the library's order, from its own store.
 const opened = () => {
   const state = JSON.parse(readFileSync(stateFile, "utf8"));
   const of = (name) => Object.entries(state.folders ?? {}).find(([key]) => key.endsWith(`/${name}`))?.[1]?.opened_ms ?? null;
@@ -99,7 +79,6 @@ try {
   report.question_shown = String(shown.text ?? "").includes("pooled variance");
   if (!report.question_shown) report.problems.push("Home does not show the check's question; the answer steps below test nothing");
 
-  // 1. The keyboard on a later row stays there when Home's tab comes back, after Home has read the library again.
   await step("the keyboard on Linear Algebra's row", { op: "focus", target: "workspace-Linear Algebra", by: "drive" });
   await step("open Settings", { op: "click", target: "settings", by: "drive" });
   await sleep(800);
@@ -107,10 +86,6 @@ try {
   report.keyboard = back.focused;
   if (!String(back.focused ?? "").includes("workspace-Linear Algebra")) report.problems.push(`the keyboard left Linear Algebra's row after Home came back: ${back.focused}`);
 
-  // 2. An answer written on Home and sent by the session it starts is gone from Home's line when Home comes back, also
-  // when Home sets the same check over its row again. That happens once the learner's last message is three hours
-  // old: here it is held four hours back while the lesson runs, so Home's read after the turn, made behind the
-  // session, finds a new sitting and the check still due (the stand-in marks nothing).
   if (report.question_shown) {
     await step("write on Home's answer line", { op: "focus", target: "home-answer", by: "drive" });
     await step("the answer", { op: "type", text: ANSWER });
@@ -131,7 +106,6 @@ try {
     if (!report.answer_sent || !report.question_again) report.problems.push(`the answer case did not arise (sent: ${report.answer_sent}, question again on Home: ${report.question_again}); it tested nothing`);
   }
 
-  // 3. A course's page kept in Home's tab does not note a visit to its folder when a lesson in another course ends a turn.
   await step("Home's list", { op: "click", target: "home", by: "drive" });
   await sleep(800);
   await step("Linear Algebra's page in Home's tab", { op: "click", target: "workspace-Linear Algebra", by: "drive" });
@@ -147,16 +121,11 @@ try {
   report.after_turn = opened();
   if (report.before_turn.linear !== report.after_turn.linear)
     report.problems.push(`a turn in Intro Statistics noted a visit to Linear Algebra, kept in Home's tab: opened ${report.before_turn.linear} → ${report.after_turn.linear}`);
-  // Coming back to Home's tab is a visit, as on main: the page is in front of the learner again.
   await step("back to Home's tab", { op: "click", target: "home", by: "drive" });
   await sleep(2000);
   report.after_return = opened();
   if (report.after_return.linear === report.after_turn.linear) report.problems.push("coming back to Linear Algebra's page in Home's tab did not note a visit");
 
-  // 4. A question Home set over its first row while it was behind takes the keyboard when Home comes back, over the
-  // row that had it as Home went behind: typing then writes the answer, and Return starts the checks with it.
-  // The message just sent began nothing new, so Home's list shows no question; a lesson turn with the last message
-  // held four hours back then makes Home, behind the session, read a new sitting and set the check again.
   await step("Home's list again", { op: "click", target: "home", by: "drive" });
   await sleep(2000);
   const plain = await op({ op: "text" });
@@ -179,9 +148,6 @@ try {
     report.problems.push(`the new-question case did not arise (a question as Home went behind: ${report.question_before_leaving}, on its return: ${report.question_on_return}); it tested nothing`);
   else if (!String(returned.focused ?? "").includes("home-answer")) report.problems.push(`a question set while Home was behind did not take the keyboard: ${returned.focused}`);
 
-  // 5. A question Home read while in front, but did not draw (its row was drawn already), is new when Home next comes
-  // back and draws it: it takes the keyboard too. A lesson's reply ends while Home is in front, with the last message
-  // held four hours back, so Home's read then finds the check; Home goes behind Settings and comes back.
   await step("to the session again", { op: "click", target: "tab-2", by: "drive" });
   await step("focus the line", { op: "focus", target: "composer", by: "drive" });
   await step("a message that keeps the sitting", { op: "type", text: "ok" });

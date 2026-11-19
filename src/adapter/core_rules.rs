@@ -1,14 +1,6 @@
-//! The core teaching rules the runtime puts in front of the tutor itself.
-//!
-//! A host compaction drops earlier tool results, and with them the stage
-//! instructions. The runtime restates this short core instead of asking the
-//! tutor to reload. The words are the `## Core rules` section of the served
-//! `MAGNESIUM.md`, so every stage load and every restatement agree.
-
 const ORCHESTRATOR: &str = include_str!("../workspace/learning/MAGNESIUM.md");
 const HEADING: &str = "## Core rules\n\n";
 
-/// The section, from its heading to the next heading.
 pub(crate) fn text() -> &'static str {
     let start = ORCHESTRATOR
         .find(HEADING)
@@ -37,8 +29,6 @@ mod tests {
         ] {
             assert!(core.contains(rule), "{rule}");
         }
-        // The restatement after a compaction carries this section and more inside
-        // Claude Code's 4096-byte limit for a hook's added context.
         assert!(core.len() < 2304, "{} bytes", core.len());
     }
 }

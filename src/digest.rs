@@ -1,11 +1,3 @@
-//! Read-only digest of a study folder and its learner record for `/magnesium:help`.
-//!
-//! Code gathers the facts and does the date arithmetic; the help skill only
-//! renders them. Nothing here writes to the folder or the learner store.
-//!
-//! Input the digest cannot read is never skipped silently. Each plan's
-//! `unreadable` lists it, with the file, section, line and reason, and the
-//! counts leave it out.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 use chrono::{Local, NaiveDate, TimeZone};
@@ -26,21 +18,8 @@ const MAX_QUOTED_CHARS: usize = 40;
 const MAX_PLAN_BYTES: u64 = 256 * 1024;
 const SKIPPED_NAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 
-/// Which of the window's needs this runtime meets, as one number. The window
-/// refuses a runtime that reports a lower number, or none. A version number
-/// cannot tell: a build from an older commit can carry the same one. Raise it
-/// when the window comes to need something new of the runtime.
-///
-/// 1: `progress --json` with `today_counts`.
-/// 2: `sitting_redos`, the due paper redos as data, beside `sitting_checks`.
-/// 3: `repairs_waiting`, the gap-log rows waiting for a repair, in a
-///    `context status` result.
-/// 4: `lesson --json`, and talk: a learner message that opens with the
-///    window's talk line is never an attempt.
 pub(crate) const WINDOW_FEATURES: u64 = 4;
 
-/// Every digest says the number, in a study folder or outside one, so the
-/// window can ask without a folder.
 fn with_window_features(mut value: Value) -> Value {
     if let Some(object) = value.as_object_mut() {
         object.insert("window_features".into(), json!(WINDOW_FEATURES));
@@ -76,9 +55,6 @@ fn digest(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     let id = workspace.id().map_err(|e| e.to_string())?;
     reject_symlink_components(&workspace.store_path(), workspace.control())
         .map_err(|e| e.to_string())?;
-    // Opening an earlier version's record upgrades it. The digest changes
-    // nothing, so it says so and stops: `magnesium init
-    // --upgrade-instructions` upgrades the folder, after keeping a copy.
     if crate::learner::store::needs_upgrade(&workspace.store_path()).map_err(|e| e.to_string())?
         || crate::workspace::instruction_bundle::earlier_bundle_active(workspace.control())
     {
@@ -139,7 +115,6 @@ fn clip(text: &str) -> String {
     }
 }
 
-/// Visible files two levels below the study folder, as the help skill sees them.
 fn files(root: &Path) -> Value {
     let mut listed = Vec::new();
     let mut count = 0usize;
@@ -178,7 +153,6 @@ fn files(root: &Path) -> Value {
                 children.push((dir.join(&name), format!("{path}/"), depth + 1));
             }
         }
-        // Reversed, so the stack visits folders in name order.
         stack.extend(children.into_iter().rev());
     }
     listed.sort();
@@ -194,7 +168,6 @@ struct Session {
     value: Value,
 }
 
-/// Every session, most recently changed first, with its saved checkpoint.
 fn sessions(conn: &Connection, today: NaiveDate) -> rusqlite::Result<Vec<Session>> {
     let mut statement = conn.prepare(
         "SELECT goal,status,checkpoint_json,updated_at_ms FROM learning_sessions ORDER BY updated_at_ms DESC, session_id LIMIT 50",
@@ -234,8 +207,6 @@ fn sessions(conn: &Connection, today: NaiveDate) -> rusqlite::Result<Vec<Session
     .collect()
 }
 
-/// Review suggestions for active memories. A suggestion whose date has come, or
-/// that has no date, is ready: an offer to the learner, not a queue to clear.
 fn reviews(conn: &Connection, now_ms: i64, today: NaiveDate) -> rusqlite::Result<Value> {
     let mut statement = conn.prepare(
         "SELECT r.purpose,r.due_at_ms FROM review_items r JOIN learner_memories m ON m.memory_id=r.memory_id \
@@ -259,9 +230,6 @@ fn reviews(conn: &Connection, now_ms: i64, today: NaiveDate) -> rusqlite::Result
     }))
 }
 
-/// Each `Study/<target>/plan.md` with its date, blocks and gap-log state.
-/// The gap-log state of a plan the runtime has taken over comes from the
-/// learner store, so an edit to its Markdown table changes nothing.
 fn plans(root: &Path, today: NaiveDate, sessions: &[Session], store: &Connection) -> Vec<Value> {
     let study = root.join("Study");
     let Ok(entries) = fs::read_dir(&study) else {
@@ -321,7 +289,6 @@ pub(crate) fn read_small(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
-/// The test date a plan states in its Facts table's When row, if any.
 pub(crate) fn plan_test_date(root: &Path, plan: &str) -> Option<NaiveDate> {
     let text = read_small(&root.join("Study").join(plan).join("plan.md"))?;
     let facts = Table::parse(section(&text, "Facts"));
@@ -431,9 +398,6 @@ fn plan_file(target: &str) -> String {
     format!("Study/{target}/plan.md")
 }
 
-/// Something in a study file that the digest could not read. It is left out of
-/// the counts and listed in the plan's `unreadable`, so the help skill can send
-/// the tutor to fix it instead of showing numbers that silently skip it.
 struct Unreadable {
     file: String,
     section: Option<&'static str>,
@@ -483,16 +447,12 @@ struct Gap<'a> {
     next_redo: Option<NaiveDate>,
 }
 
-/// The gap-log rows the digest can trust, and a note for each it cannot.
 struct GapLog<'a> {
     unfixed: Vec<Gap<'a>>,
     unreadable: Vec<Unreadable>,
 }
 
 impl<'a> GapLog<'a> {
-    /// Rows that are not closed become gaps. A row whose cells do not line up
-    /// with the header, or whose Next redo is not a date, is never guessed at,
-    /// and neither is a row below a break in the table.
     fn read(file: &str, table: &'a Table) -> Self {
         let mut log = Self::read_rows(file, table);
         for &line in &table.later_rows {
@@ -578,13 +538,11 @@ pub(crate) fn says_closed(status: &str) -> bool {
     status == "closed" || status == "3 of 3"
 }
 
-/// The body of a `## ` section and the 1-based line of the file it starts on.
 pub(crate) struct Section<'a> {
     pub(crate) text: &'a str,
     pub(crate) first_line: usize,
 }
 
-/// Body of the first `## ` heading whose text contains `name`, up to the next `## `.
 pub(crate) fn section<'a>(text: &'a str, name: &str) -> Section<'a> {
     let mut start = None;
     let mut offset = 0;
@@ -615,10 +573,6 @@ pub(crate) struct Row {
     pub(crate) cells: Vec<String>,
 }
 
-/// The first Markdown table in a section. Columns are found by header name,
-/// because the agent may add, drop or reorder columns in its copy of a template.
-/// A line that is not a table row ends the table; `later_rows` holds the line
-/// of each table row after that, so a reader can report what it did not read.
 pub(crate) struct Table {
     pub(crate) header: Vec<String>,
     pub(crate) header_line: usize,
@@ -663,14 +617,11 @@ impl Table {
             .position(|h| h.eq_ignore_ascii_case(name))
     }
 
-    /// The cell in `row` under the header `name`, ignoring case.
     pub(crate) fn cell<'a>(&self, row: &'a Row, name: &str) -> Option<&'a str> {
         row.cells.get(self.column(name)?).map(String::as_str)
     }
 }
 
-/// The cells of one table line. One leading and one trailing pipe frame the
-/// row, and `\|` is a pipe inside a cell, not a separator.
 pub(crate) fn split_cells(line: &str) -> Vec<String> {
     let inner = line.strip_prefix('|').unwrap_or(line);
     let inner = match inner.strip_suffix('|') {

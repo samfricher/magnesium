@@ -1,7 +1,3 @@
-//! A search indexes only what fits its own budget. After it returns, the MCP
-//! server keeps indexing the study folder in the background, and stops that
-//! work, including any PDF extractor, when the host closes the connection.
-
 use std::fs;
 use std::path::Path;
 use std::thread;
@@ -51,8 +47,6 @@ fn one_search_leads_to_a_fully_indexed_folder() {
         );
         thread::sleep(Duration::from_millis(50));
     }
-    // A search also rechecks the folder, within its own time budget. On a
-    // busy machine a recheck can take more than one search to finish.
     for id in 3.. {
         let next = client.call_value(id, "search_sources", json!({"query": "spaced retrieval"}));
         if next["coverage"] == "complete" {
@@ -161,8 +155,6 @@ fn alive(pid: u32) -> bool {
         .success()
 }
 
-/// Close to the page limit, so extraction takes long enough that the
-/// extractor is still running when the test closes the server.
 #[cfg(unix)]
 fn long_pdf() -> Vec<u8> {
     use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};

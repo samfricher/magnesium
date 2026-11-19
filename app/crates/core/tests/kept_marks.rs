@@ -1,9 +1,3 @@
-//! A lesson keeps, beside each turn, which of the record's marked answers
-//! appeared for its message, so a reopened session shows each mark on the
-//! answer it was shown on, also when several answers fall in one minute.
-//! It is a test file of its own because it points the window at a stand-in
-//! runtime through the environment, which no other test may share.
-
 #![cfg(unix)]
 
 use std::fs;
@@ -23,13 +17,11 @@ fn executable(path: &Path, script: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// The record's rows, as the stand-in runtime prints them: all in one minute.
 fn record(folder: &Path, ids: &[&str]) {
     let rows: Vec<_> = ids
         .iter()
         .map(|id| json!({"attempt_id": id, "answered_at": "2026-11-13 13:15", "mark": "right", "help": "none", "cold": false, "label": "sign of b", "paper": null}))
         .collect();
-    // Moved into place whole, so the runtime never prints half a file.
     let temp = folder.join("attempts.json.tmp");
     fs::write(&temp, json!({ "attempts": rows }).to_string()).unwrap();
     fs::rename(temp, folder.join("attempts.json")).unwrap();
@@ -38,7 +30,6 @@ fn record(folder: &Path, ids: &[&str]) {
 struct Events(Receiver<AgentEvent>);
 
 impl Events {
-    /// The events up to the first that matches.
     fn until(&self, what: &str, matches: impl Fn(&AgentEvent) -> bool) -> Vec<AgentEvent> {
         let deadline = Instant::now() + Duration::from_secs(30);
         let mut seen = Vec::new();
@@ -56,8 +47,6 @@ impl Events {
         }
     }
 
-    /// The ids of the marks shown live for the message, once the record has
-    /// been read for it.
     fn marked(&self) -> Vec<String> {
         self.until("the record read", |e| matches!(e, AgentEvent::Settled))
             .into_iter()
@@ -78,7 +67,6 @@ fn each_turn_keeps_the_marks_shown_for_its_message() {
     for path in [&folder, &home, &state] {
         fs::create_dir_all(path).unwrap();
     }
-    // A runtime whose record is the file the test writes; it runs in the folder.
     let runtime_program = dir.path().join("magnesium");
     executable(
         &runtime_program,
@@ -110,8 +98,6 @@ fn each_turn_keeps_the_marks_shown_for_its_message() {
     manager.open_session(true).unwrap();
     let events = Events(receiver);
 
-    // Three answers in one minute. The first is marked; the second has two
-    // rows (a task in two parts); the third has none.
     manager
         .send_with("x = 2", Some(Intent::Answer))
         .expect("sent");
@@ -132,13 +118,10 @@ fn each_turn_keeps_the_marks_shown_for_its_message() {
     record(&folder, &["a-1", "a-2", "a-3"]);
     assert_eq!(events.marked(), ["a-2", "a-3"]);
 
-    // The third message's record is still being read when the learner writes
-    // again, so nothing is kept for it; the fourth's row is.
     manager
         .send_with("x = 3", Some(Intent::Answer))
         .expect("sent");
     events.until("end of turn", |e| matches!(e, AgentEvent::TurnEnded { .. }));
-    // After the record's first reading for it, and before its next.
     std::thread::sleep(Duration::from_millis(300));
     manager
         .send_with("x = -3", Some(Intent::Answer))

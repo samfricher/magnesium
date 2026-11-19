@@ -27,9 +27,6 @@ pub(crate) fn source_status_and_size(
         .map_err(|source| sqlite(index_path, "read source status", source))
 }
 
-/// Sources a search may extract, in path order. Failed sources are not listed:
-/// extracting them again fails again until the file changes and
-/// reconciliation marks it pending. An explicit request still retries one.
 pub(crate) fn pending_source_paths(
     index_path: &Path,
     query_scope: &Path,
@@ -65,8 +62,6 @@ pub(crate) fn pending_source_paths(
     Ok(selected)
 }
 
-/// A source that waits for extraction, as its manifest row records it. A
-/// recheck that sees the file change rewrites its size or modified time.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PendingSource {
     pub(crate) path: PathBuf,
@@ -74,15 +69,9 @@ pub(crate) struct PendingSource {
     pub(crate) modified_unix_ns: Option<i64>,
 }
 
-/// What catch-up needs before each step, read from one snapshot.
 pub(crate) struct IndexingProgress {
-    /// The first sources in path order that wait for extraction and that the
-    /// caller wants. Failed sources are not listed: extracting them again
-    /// fails again.
     pub(crate) pending: Vec<PendingSource>,
-    /// Whether any full scan has completed.
     pub(crate) scanned: bool,
-    /// The saved cursor of the scan in progress, if one is in progress.
     pub(crate) scan_cursor: Option<String>,
 }
 
@@ -139,9 +128,6 @@ pub(crate) fn indexing_progress(
     })
 }
 
-/// Last fully reconciled index generation. A deferred pass reports this
-/// generation because it describes the snapshot the caller may actually
-/// search, never the generation of a pass that failed to commit.
 pub(crate) fn current_generation(index_path: &Path) -> Result<i64, ManifestError> {
     let connection = open_index(index_path)?;
     connection
@@ -153,11 +139,6 @@ pub(crate) fn current_generation(index_path: &Path) -> Result<i64, ManifestError
         .map_err(|source| sqlite(index_path, "read current source generation", source))
 }
 
-/// True when the index holds at least one indexed source, no source waits for
-/// its first extraction, and no recheck is in progress. Failed sources do not
-/// count: a smaller recheck does not help them. A pass that ran out of time
-/// leaves its recheck in progress, so the next call falls back to the
-/// smaller recheck and commits progress. Any read problem answers false.
 pub(crate) fn indexed_with_nothing_pending(index_path: &Path) -> bool {
     let Ok(connection) = open_index(index_path) else {
         return false;

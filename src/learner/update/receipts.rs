@@ -2,7 +2,6 @@ use super::*;
 use sha2::{Digest, Sha256};
 
 impl LearnerStore {
-    /// Read-only successful receipt lookup, before transient proof expiry checks.
     pub fn replay(&self, host: &HostContext, payload: &Value) -> Result<Option<UpdateResult>> {
         limits::text(
             "request",
@@ -21,9 +20,6 @@ impl LearnerStore {
         }
         Ok(None)
     }
-    /// After a failed COMMIT releases its writer lock, another host can commit
-    /// the same request key and payload before recovery, so a matching hash
-    /// alone does not establish that the receipt belongs to this caller.
     pub(crate) fn recover_commit_receipt(
         &self,
         host: &HostContext,
@@ -98,7 +94,6 @@ pub(super) fn cas(
 }
 
 pub(crate) fn payload_hash(payload: &Value) -> Result<String> {
-    // serde_json's default map is a recursively sorted BTreeMap; arrays keep order.
     Ok(Sha256::digest(serde_json::to_vec(payload)?)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -114,8 +109,6 @@ pub(super) fn validate_receipt_host(result: &UpdateResult, host: &HostContext) -
     Ok(())
 }
 
-/// Conflict recovery must include terminal reviews too: the suggested-review
-/// queue is useful context, but cannot represent a dismissed or completed row.
 #[derive(serde::Serialize)]
 struct CurrentReview {
     review_id: String,
@@ -144,8 +137,6 @@ impl CurrentReview {
     }
 }
 
-/// One row decoder for ordinary replay, lock-time replay and uncertain COMMIT
-/// recovery. None of these reads establishes success without matching host/hash.
 pub(super) struct ReceiptRow {
     pub(super) request_sha256: String,
     pub(super) result_json: String,

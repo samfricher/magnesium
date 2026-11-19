@@ -420,7 +420,6 @@ fn assert_valid_empty_source_cache(path: &Path) {
     );
     assert_eq!(integrity, "ok");
     assert_eq!((generation, manifests, candidates), (0, 0, 0));
-    // ASCII "MGSI" (Magnesium source index) and the cache schema version.
     assert_eq!(identity, (0x4d47_5349, 10));
 }
 
@@ -471,7 +470,6 @@ fn init_rewrites_tampered_instructions() {
         .join("INSTRUCTIONS.md");
     assert!(instructions_path.is_file());
 
-    // Tamper with instructions to simulate an outdated version
     fs::write(&instructions_path, b"outdated instructions\n").unwrap();
 
     let init2 = environment
@@ -544,8 +542,6 @@ fn init_creates_new_folder_settings_with_the_default_file_mode() {
         .expect("run init");
     assert_success(&output);
 
-    // The test and the init child share one umask, so an ordinary new file
-    // shows the mode a new user-owned settings file should get.
     let reference = environment.workspace.join("reference.txt");
     fs::write(&reference, "").expect("write reference file");
     let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;

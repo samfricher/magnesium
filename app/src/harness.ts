@@ -1,68 +1,3 @@
-// The evidence harness: a dev-only hook that lets the real window be driven,
-// photographed and timed. It does nothing unless the window was started with
-// MAGNESIUM_APP_DRIVE or MAGNESIUM_APP_PERF set (see src-tauri/src/harness.rs),
-// and nothing at all in the browser demo.
-//
-// Every concept calls `ready()` once its first screen has its real content
-// painted (not a skeleton). Startup is measured from process start to the
-// paint after that call.
-//
-// Drive ops (scripts/drive.mjs sends them; each is answered {ok, error?, ...}):
-//   type {text}             into the focused field (input, textarea, contenteditable)
-//   key {key, meta?, shift?, alt?, ctrl?}   on the focused element; an Enter
-//                           nobody handled submits as a real one would
-//   click {target, by?}     a data-drive name, else exact visible text, else
-//                           a substring of visible text, among visible
-//                           elements; with by: "drive", the name only
-//   focus {target, by?}     the same lookup, then focus
-//   wait_idle {timeout_ms, quiet_ms?}  no reply running and nothing pending
-//                           (no marked or plan_changed to come) for 1.5 s
-//   wait_reply {timeout_ms} the tutor's reply has begun to show (or ended)
-//   wait {ms}
-//   text                    the page's visible text
-//   perf                    measure input latency in the composer now
-//   scheme {scheme}         "dark" or "light": sets <html data-scheme>;
-//                           "system" takes it off again
-//   plan                    the open folder's plan, as core.plan() reads it
-//   transcript              every message sent (with its intent), every
-//                           reply, and every marked and plan_changed, so far
-//   ready                   whether ready() was called, and the startup time
-//   errors                  what went wrong on the page so far
-//   session                 the session in front: its phase, where the line
-//                           is (task or talk), whether it is in the open task,
-//                           the open task's words, the files on the line,
-//                           where the keyboard is, and the PDF in view
-//   smooth {ms, scroll_by?, type_every?}  scroll the lesson and type on the
-//                           line for ms, as a learner would, and say how even
-//                           the frames were (longest gap, gaps over 50/100 ms)
-//   document                the PDF in view: the page at its top, how many,
-//                           its zoom, how many pages hold a picture, and
-//                           where the keyboard is
-//   attach {path|paths}     put files on the line of the session in front, as
-//                           a drop does (photos and PDFs), for a harness that
-//                           cannot drive the Mac's Open panel
-//   menu                    the macOS menu bar as data: each menu's title, and
-//                           each item's title, id, enabled state and key; how
-//                           many times the whole menu bar was put in place; and
-//                           the bar as macOS holds it, with what macOS adds
-//   switch {target, ms?}    click a tab, then every frame for ms say what the
-//                           view in front shows, and each frame that changed
-//   frame {width?, height?, x?, y?, on_top?}  size and place the window, as
-//                           dragging its corner or title bar would, let it
-//                           fall behind other windows (on_top false: the
-//                           harness keeps a driven window on top), and say
-//                           its frame
-//   menu_click {path}       choose a menu item, ["File", "Attach…"], exactly as
-//                           a click does: the same handler, the same event
-//   scroll {target?, to?, by?}  bring a target (as click names it) to the top
-//                           of its view; or move the view in front (a page,
-//                           or the session's surface) to "top" or "bottom",
-//                           or by some pixels, as a wheel would, and say how
-//                           far it then is from its foot ({by: 0} only reads)
-//   quit
-//
-// Every op and the data-drive names a harness clicks by: scripts/harness.md.
-
 import { core, isDemo } from "./bridge";
 import type { AgentEvent, Intent } from "./types";
 
@@ -78,21 +13,17 @@ let readyCalled = false;
 let config: Config | null = null;
 let invokeFn: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
 const perfResult: { startup_ms?: number; ready_ms?: number; input?: Latency; input_error?: string; marks?: Record<string, number> } = {};
-// Moments on the way to the first screen, by name, as wall-clock ms: written with the startup, from process start.
 const marks: Record<string, number> = {};
 
-/** Note a moment on the way to the first screen, for the perf file. Does nothing without perf on. */
 export function mark(name: string): void {
   if (!(name in marks)) marks[name] = Date.now();
 }
-/** What the window lets the harness ask of the session in front. Set by the page; used only by the drive loop. */
 type Probe = { session: () => unknown; attach: (paths: string[]) => boolean };
 let probe: Probe | null = null;
 export function setProbe(given: Probe): void {
   probe = given;
 }
 
-// A measurement running holds the drive loop, so nothing types into the composer meanwhile.
 let measuring: Promise<unknown> | null = null;
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -103,7 +34,6 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return invokeFn(cmd, args) as Promise<T>;
 }
 
-/** The paint after now: the next frame, then a task after it. */
 function nextPaint(): Promise<number> {
   return new Promise((done) => {
     requestAnimationFrame(() => {
@@ -116,7 +46,6 @@ function nextPaint(): Promise<number> {
 
 const sleep = (ms: number) => new Promise((done) => window.setTimeout(done, ms));
 
-/** Call once, when the first screen's real content is painted. Later calls do nothing. */
 export function ready(): void {
   if (readyCalled) return;
   readyCalled = true;
@@ -128,7 +57,6 @@ export function ready(): void {
     perfResult.ready_ms = calledAt - found.started_ms;
     perfResult.marks = Object.fromEntries(Object.entries(marks).map(([name, at]) => [name, at - found.started_ms]));
     await writePerf();
-    // Input latency, once a composer can be typed into.
     for (;;) {
       if (composer()) break;
       await sleep(250);
@@ -140,9 +68,6 @@ export function ready(): void {
 async function writePerf(): Promise<void> {
   await invoke("harness_write", { name: "perf", value: { ...perfResult, measured_at: new Date().toISOString() } }).catch(() => {});
 }
-
-// ---------------------------------------------------------------------------
-// Elements
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -156,7 +81,6 @@ function visible(element: Element): boolean {
   return Array.from(rects).some((rect) => rect.width > 0 && rect.height > 0);
 }
 
-/** The field typing is timed in: the composer, or else the field for talk, or else the one for an answer. */
 function composer(): HTMLElement | null {
   const found = ["composer", "talk", "answer"]
     .map((name) => Array.from(document.querySelectorAll<HTMLElement>(`[data-drive="${name}"]`)).find(visible) ?? null)
@@ -169,7 +93,6 @@ function composer(): HTMLElement | null {
   return field;
 }
 
-/** The text field an element is, or holds. */
 function editable(element: Element | null): HTMLElement | null {
   if (!element) return null;
   if (element instanceof HTMLTextAreaElement) return element;
@@ -181,10 +104,6 @@ function editable(element: Element | null): HTMLElement | null {
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 const CLICKABLE = "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem], [role=option], label, summary, input, select, textarea, [tabindex], [data-drive]";
 
-/**
- * The element a target names: a data-drive name, else exact visible text,
- * else part of it. With `driveOnly`, a data-drive name and nothing else.
- */
 function find(target: string, driveOnly = false): HTMLElement | null {
   const named = Array.from(document.querySelectorAll<HTMLElement>(`[data-drive="${CSS.escape(target)}"]`)).filter(visible);
   if (named.length > 0 || driveOnly) return named[0] ?? null;
@@ -194,7 +113,6 @@ function find(target: string, driveOnly = false): HTMLElement | null {
   );
   const label = (element: HTMLElement) =>
     collapse(element.innerText || element.getAttribute("aria-label") || element.getAttribute("title") || (element as HTMLInputElement).value || "").toLowerCase();
-  // The innermost elements that match: no child of theirs matches too.
   const innermost = (match: (element: HTMLElement) => boolean) => {
     const hits = all.filter(match);
     return hits.filter((hit) => !hits.some((other) => other !== hit && hit.contains(other)));
@@ -202,20 +120,17 @@ function find(target: string, driveOnly = false): HTMLElement | null {
   for (const match of [(element: HTMLElement) => label(element) === wanted, (element: HTMLElement) => label(element).includes(wanted)]) {
     const hits = innermost(match);
     if (hits.length === 0) continue;
-    // Prefer something that can be clicked.
     const clickable = hits.map((hit) => hit.closest<HTMLElement>(CLICKABLE) ?? hit);
     return clickable.find((element) => element.matches(CLICKABLE)) ?? clickable[0];
   }
   return null;
 }
 
-/** Where the keyboard is: the element's drive name, role or class. */
 function focusName(): string | null {
   const held = document.activeElement as HTMLElement | null;
   return held && held !== document.body ? (held.dataset.drive ?? held.dataset.role ?? held.className) : null;
 }
 
-/** The PDF in view, as a reader sees it: the page at its top, how many, how large it is drawn, how many pages hold a picture now, and how far the fit's reading of the pages has got ("read of began now", in ms of the page's clock). */
 function pdfInView(): { page: number; of: number; zoom: string | null; drawn: number; inkRead: string | null } | null {
   const pdf = Array.from(document.querySelectorAll<HTMLElement>(".doc-pdf")).find(visible);
   if (!pdf) return null;
@@ -236,10 +151,6 @@ function tabbables(): HTMLElement[] {
   ).filter((element) => element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled && visible(element));
 }
 
-// ---------------------------------------------------------------------------
-// Typing
-
-/** Set a React-controlled field's value as the browser would, so React sees it. */
 function setValue(field: Field, value: string): void {
   const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
@@ -247,10 +158,8 @@ function setValue(field: Field, value: string): void {
   field.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-/** Insert text at the caret of the focused field. */
 function insert(target: HTMLElement, text: string): void {
   target.focus();
-  // A real edit when the engine allows it: React and contenteditable both see it.
   if (document.execCommand("insertText", false, text)) return;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
     const start = target.selectionStart ?? target.value.length;
@@ -278,7 +187,6 @@ function keyEvent(type: string, key: string, mods: { meta?: boolean; shift?: boo
   });
 }
 
-/** A key on the focused element, and what the browser would do with it if nobody did. */
 function press(key: string, mods: { meta?: boolean; shift?: boolean; alt?: boolean; ctrl?: boolean }): void {
   const target = (document.activeElement as HTMLElement | null) ?? document.body;
   const down = keyEvent("keydown", key, mods);
@@ -316,15 +224,11 @@ function click(element: HTMLElement): void {
   element.click();
 }
 
-// ---------------------------------------------------------------------------
-// Input latency
-
 function percentile(sorted: number[], p: number): number {
   const at = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
   return sorted[at];
 }
 
-/** Type 60 keystrokes into the composer, each timed to the next paint, then put its text back. */
 async function measureInput(): Promise<Latency | { error: string }> {
   if (measuring) await measuring;
   const run = (async () => {
@@ -382,9 +286,6 @@ async function measureInput(): Promise<Latency | { error: string }> {
     measuring = null;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Waiting for the tutor
 
 let running = false;
 let lastEventAt = 0;
@@ -446,8 +347,6 @@ function note(event: AgentEvent): void {
 
 async function listen(): Promise<void> {
   const c = await core();
-  // Every message the screens send is noted with its intent, for the
-  // scenario runner's transcript. The screens call these on the same object.
   const send = c.send.bind(c);
   const sendNewLesson = c.sendNewLesson.bind(c);
   const sendShown = c.sendShown.bind(c);
@@ -477,7 +376,6 @@ async function listen(): Promise<void> {
   });
 }
 
-/** Resolves once the tutor's reply shows a few pieces, or a turn ends. */
 async function waitReply(timeoutMs: number): Promise<Result> {
   const start = Date.now();
   const from = deltas;
@@ -507,18 +405,12 @@ async function waitIdle(timeoutMs: number, quietMs = QUIET_MS): Promise<Result> 
   return { ok: false, error: `still busy after ${timeoutMs} ms`, waited_ms: Date.now() - start };
 }
 
-// ---------------------------------------------------------------------------
-// The drive loop
-
 async function run(op: Op): Promise<Result> {
   switch (op.op) {
     case "type": {
       const target = document.activeElement as HTMLElement | null;
-      // With nothing focused the page itself is the active element: the line in view takes the words, never the
-      // first field in the page, which may be another tab's.
       const field = target && target !== document.body ? (editable(target) ?? composer()) : composer();
       if (!target || !field) return { ok: false, error: "no text field has focus" };
-      // "replace": the words take the place of all that is in the field, as after ⌘A.
       if (op.replace && (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) field.select();
       insert(field, String(op.text ?? ""));
       return { ok: true };
@@ -528,9 +420,6 @@ async function run(op: Op): Promise<Result> {
       return { ok: true, focused: describe(document.activeElement) };
     }
     case "switch": {
-      // Click a tab (as click names it), then for `ms`, every frame, read what the view in front shows: its words'
-      // length and where its first lines stand. Says what the first frame drew and every later frame that differed,
-      // so a page that draws half and then moves is caught frame by frame.
       const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
       const ms = Number(op.ms ?? 800);
@@ -545,7 +434,6 @@ async function run(op: Op): Promise<Result> {
         return { words: text.length, text, lines };
       };
       const standsAt = (line: string) => line.slice(line.lastIndexOf(" @"));
-      // Where two readings of the page's words part, with a little of each.
       const parted = (a: string, b: string) => {
         let at = 0;
         while (at < a.length && at < b.length && a[at] === b[at]) at++;
@@ -571,14 +459,9 @@ async function run(op: Op): Promise<Result> {
         words: frame.words,
         lines: frame.lines,
         focus: frame.focus,
-        // Whether a line the frame before drew stands somewhere else now: what a learner sees as the page moving. A
-        // line whose words change where it stands (a row taking its ↩) is not a move; the words are in `text`.
         moved: previous ? frame.lines.some((line, n) => previous.lines[n] !== undefined && standsAt(line) !== standsAt(previous.lines[n])) || frame.lines.length !== previous.lines.length : false,
         ...(previous && previous.text !== frame.text ? { text: parted(previous.text, frame.text) } : {}),
       });
-      // Frames whose lines stand as they did before the click: the window has not answered it yet, as when it keeps
-      // the page in front until the page asked for is read. They are timed, not counted as the first drawing. Their
-      // words may differ: the row clicked takes the keyboard, and draws its ↩.
       const unchanged = (frame: (typeof frames)[number]) => frame.lines.join("|") === before.lines.join("|");
       const answered = frames.findIndex((frame) => !unchanged(frame));
       const shown = answered === -1 ? frames : frames.slice(answered);
@@ -607,7 +490,6 @@ async function run(op: Op): Promise<Result> {
     case "slide": {
       const element = find(String(op.target ?? ""), op.by === "drive");
       if (!(element instanceof HTMLInputElement) || element.type !== "range") return { ok: false, error: `no slider is named ${JSON.stringify(op.target)}` };
-      // The value a drag would leave, said to React the way a drag says it.
       setValue(element, String(op.value ?? ""));
       return { ok: true, value: Number(element.value) };
     }
@@ -629,7 +511,6 @@ async function run(op: Op): Promise<Result> {
       await sleep(Number(op.ms ?? 0));
       return { ok: true };
     case "text": {
-      // Every reply, as a selection would have it: skipped ones are not in innerText (prose.css).
       const root = document.documentElement;
       const was = root.hasAttribute("data-whole");
       root.setAttribute("data-whole", "");
@@ -657,22 +538,15 @@ async function run(op: Op): Promise<Result> {
       const found = probe?.session() ?? null;
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
-      // The lesson's step heads drawn now, as a screen reader hears each ("Step 2 of 3: A 95% interval"), and what
-      // the top edge counts ("2 of 3"), or null while it shows none.
       const heads = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head"))
         .filter((head) => head.getClientRects().length > 0)
         .map((head) => collapse(head.textContent ?? "").replace(/^\d+\s*/, ""));
       const count = document.querySelector<HTMLElement>(".session.in-front .top-edge .top-count");
-      // key_window: in a window that is not key, WebKit did not reliably draw where the keyboard is, so a photograph of it waits for this.
-      // What a screen reader is told of the newest mark, and the rings beside each mark with whether its day is filling.
       const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
       const passDays = Array.from(document.querySelectorAll<HTMLElement>('.session.in-front [data-role="pass-days"]')).map((days) => ({ day: Number(days.dataset.day), arriving: days.querySelector(".arriving") !== null, hung: !days.classList.contains("inline"), left: Math.round(days.getBoundingClientRect().left) }));
       return { ok: true, ...(found as object), files, heads, top_count: count ? collapse(count.textContent ?? "") : null, focus: focusName(), key_window: document.hasFocus(), document: pdfInView(), mark_said: markSaid, pass_days: passDays };
     }
     case "smooth": {
-      // For `ms`, scroll the lesson by `scroll_by` pixels a frame and type a letter on the line every `type_every`
-      // ms, as a learner reading and writing would, and say how even the frames were: the longest gap between
-      // two, and how many gaps passed 50 and 100 ms (a frame is about 16). Also the PDF's reading, as `document`.
       const ms = Number(op.ms ?? 5000);
       const by = Number(op.scroll_by ?? 0);
       const every = Number(op.type_every ?? 0);
@@ -717,8 +591,6 @@ async function run(op: Op): Promise<Result> {
       };
     }
     case "watch": {
-      // For `ms`, look every frame at the copy of the open task pinned over the line, and say each text it showed,
-      // in order, with how long each showed: a copy that comes for a moment and goes is a flash.
       const ms = Number(op.ms ?? 5000);
       const shown: { text: string; ms: number }[] = [];
       const started = performance.now();
@@ -744,9 +616,6 @@ async function run(op: Op): Promise<Result> {
       return { ok: true, parked: shown };
     }
     case "still": {
-      // With `send`, press Return on the line first. Then for `ms`, every frame, read where the last turn's reply
-      // stands on screen and how many step heads are drawn, and say when the turn ended, when the window heard of
-      // a step it began, when a head was drawn, and every frame after the turn ended in which the reply moved.
       if (op.send) press("Enter", { alt: Boolean(op.alt) });
       const ms = Number(op.ms ?? 5000);
       const started = performance.now();
@@ -773,8 +642,6 @@ async function run(op: Op): Promise<Result> {
       await new Promise<void>((done) => {
         const tick = (now: number) => {
           if (endedAt === null && turnsEnded > ended) endedAt = at(now);
-          // With `past`, once the page has settled after the reply (a frame with the reply where it was), the learner scrolls back up to just
-          // past the reply's first lines: its top is 40 px above the view, and the lesson is no longer held at its end.
           if (op.past && scrolledPast === null && endedAt !== null && at(now) > endedAt && replyTop() === lastTop) {
             const surface = document.querySelector<HTMLElement>(".session.in-front .surface");
             const reply = replyTop();
@@ -819,18 +686,12 @@ async function run(op: Op): Promise<Result> {
       };
     }
     case "caret": {
-      // Where the caret is on the line in front, and with `at`, put it there first.
       const line = composer();
       if (!(line instanceof HTMLTextAreaElement)) return { ok: false, error: "no lesson line in front" };
       if (op.at !== undefined) line.setSelectionRange(Number(op.at), Number(op.at));
       return { ok: true, at: line.selectionStart, length: line.value.length, text: line.value, focused: document.activeElement === line };
     }
     case "steady": {
-      // Write `text` on the line a key every `every` ms, then take `back` characters off with ⌫, as a learner
-      // writing and correcting would, and say how still the line stood on screen: for every frame, where its
-      // bottom was against the bottom of the lesson's view. Its words wrapping onto a new row grow it upward
-      // while the lesson keeps its end in view, so that place should not change. Also how often the task's copy
-      // over the line came or went, and how far the lesson ended from its foot.
       const text = Array.from(String(op.text ?? ""));
       const back = Number(op.back ?? 0);
       const every = Number(op.every ?? 40);
@@ -869,10 +730,8 @@ async function run(op: Op): Promise<Result> {
       return {
         ok: true,
         frames: places.length,
-        // How many frames the line moved on, and the largest move between two frames, in pixels.
         moved: moves.filter((move) => move > 1).length,
         largestMove: Math.max(0, ...moves),
-        // The line's lowest and highest place against the view's bottom: positive is under the view's edge.
         lowest: Math.max(...places),
         highest: Math.min(...places),
         parkedFlips,
@@ -889,7 +748,6 @@ async function run(op: Op): Promise<Result> {
       const paths = Array.isArray(op.paths) ? op.paths.map(String) : op.path ? [String(op.path)] : [];
       if (paths.length === 0) return { ok: false, error: "name a path or paths" };
       if (!probe?.attach(paths)) return { ok: false, error: "no session is in front" };
-      // The files are handed in to the study folder before they show on the line.
       for (let i = 0; i < 50 && document.querySelectorAll(".session.in-front .attached .file").length === 0; i++) await sleep(100);
       await nextPaint();
       return { ok: true };
@@ -906,7 +764,6 @@ async function run(op: Op): Promise<Result> {
         else if (op.to === "bottom") view.scrollTop = view.scrollHeight;
         else view.scrollTop += Number(op.by ?? 0);
         await nextPaint();
-        // Where the view is now, from its foot: { by: 0 } reads it without moving it.
         return { ok: true, from_foot: Math.round(view.scrollHeight - view.clientHeight - view.scrollTop) };
       }
       await nextPaint();
@@ -924,7 +781,6 @@ async function run(op: Op): Promise<Result> {
         return { ok: false, error: String(error) };
       }
     case "frame": {
-      // The window's size and place, set or read; the page then has a frame to refit to.
       const num = (value: unknown) => (typeof value === "number" ? value : undefined);
       try {
         const onTop = typeof op.on_top === "boolean" ? op.on_top : undefined;
@@ -939,7 +795,6 @@ async function run(op: Op): Promise<Result> {
       const path = Array.isArray(op.path) ? op.path.map(String) : [];
       try {
         const id = await invoke<string>("harness_menu_click", { path });
-        // The page has the menu's event before the answer goes back.
         await nextPaint();
         return { ok: true, id };
       } catch (error) {
@@ -955,7 +810,6 @@ function describe(element: Element | null): string | null {
   if (!element) return null;
   const drive = element.getAttribute("data-drive");
   const text = collapse((element as HTMLElement).innerText ?? "").slice(0, 60);
-  // A field's words are its value, which innerText does not hold.
   const field = element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement ? ` value=${JSON.stringify(element.value.slice(0, 60))}` : "";
   return `${element.tagName.toLowerCase()}${drive ? `[data-drive=${drive}]` : ""}${text ? ` "${text}"` : ""}${field}`;
 }
@@ -994,7 +848,6 @@ const configured: Promise<Config | null> = isDemo
       })
       .catch(() => null);
 
-/** Whether the harness is on: for a screen that wants to skip an animation under test. */
 export function harnessOn(): boolean {
   return !!config && (config.drive || config.perf);
 }

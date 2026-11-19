@@ -1,11 +1,5 @@
-// Checks for waiting on the first screen before the window is seen
-// (src/reveal.ts). Run by scripts/check.sh.
-//
-//   node scripts/test-reveal.mjs
-
 import assert from "node:assert/strict";
 
-// The little of a page that whenDrawn uses: frames, a timer, a mutation observer, focus.
 let frames = 0;
 let observing = 0;
 const listeners = new Set();
@@ -31,7 +25,6 @@ globalThis.window = { setTimeout, clearTimeout, ...events };
 const { whenDrawn } = await import("../src/reveal.ts");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-// A page that is drawn and still: resolved within a few frames, long before the deadline.
 {
   const started = performance.now();
   await whenDrawn(() => true, started + 5000);
@@ -40,7 +33,6 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   assert.equal(listeners.size, 0, "the focus listeners are let go");
 }
 
-// A page whose content never comes: resolved at the deadline, and nothing keeps running after it.
 {
   const started = performance.now();
   await whenDrawn(() => false, started + 150);
@@ -53,7 +45,6 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   assert.equal(frames, after, "no frame is asked for after giving up");
 }
 
-// A window that draws no frames at all still gives up, by the timer.
 {
   const asked = globalThis.requestAnimationFrame;
   globalThis.requestAnimationFrame = () => 0;

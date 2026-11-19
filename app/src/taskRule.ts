@@ -1,15 +1,8 @@
-// The line beside the open task, drawn over the reply as the page laid it
-// out. Nothing is added to the reply's paragraphs and nothing is moved, so
-// text the learner is reading stays where it is when the record says which
-// task is open, a few seconds after the reply. The line is the reply's own
-// ::before, placed by two custom properties (prose.css).
-
 import { coverage } from "./render";
 import { locate, ruleAction, taskPlain, type Piece } from "./taskLine";
 
 const BLOCK = /^(P|LI|UL|OL|DIV|H[1-6]|BLOCKQUOTE|PRE|TABLE|TR|TD|TH|FIGURE|HR)$/;
 
-/** The reply's text nodes and formulas, in order, with a space where a block begins. */
 function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } {
   const out: Piece[] = [];
   const nodes: (Node | null)[] = [];
@@ -20,7 +13,6 @@ function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } 
       return;
     }
     if (!(node instanceof HTMLElement)) return;
-    // The quiet "From earlier" stands for words that are not the task.
     if (node.classList.contains("earlier")) return;
     if (node.classList.contains("katex")) {
       const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? node.textContent ?? "";
@@ -28,7 +20,6 @@ function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } 
       nodes.push(node);
       return;
     }
-    // A display formula stands on its own, as a block does, though it is drawn in a span.
     if (node.tagName === "BR" || BLOCK.test(node.tagName) || node.classList.contains("katex-display")) {
       out.push({ text: " ", atomic: false });
       nodes.push(null);
@@ -39,7 +30,6 @@ function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } 
   return { pieces: out, nodes };
 }
 
-/** The task's own words in the drawn reply, across formulas, bold and links. */
 export function taskRange(root: HTMLElement, task: string): Range | null {
   const { pieces: list, nodes } = pieces(root);
   const found = locate(list, taskPlain(task));
@@ -55,7 +45,6 @@ export function taskRange(root: HTMLElement, task: string): Range | null {
   return range;
 }
 
-/** When the words cannot be found: the shortest run of blocks at the reply's end that holds nearly all of them. */
 function blockRange(root: HTMLElement, task: string): Range | null {
   const blocks = Array.from(root.children);
   let text = "";
@@ -71,10 +60,6 @@ function blockRange(root: HTMLElement, task: string): Range | null {
   return null;
 }
 
-/**
- * Put the line beside the task in `root`, and keep it there as the reply is
- * laid out again. Returns a function that takes it away.
- */
 export function drawTaskRule(root: HTMLElement, task: string): () => void {
   const clear = () => {
     root.classList.remove("has-task-rule");

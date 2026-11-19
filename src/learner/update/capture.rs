@@ -5,8 +5,6 @@ impl LearnerStore {
     pub(crate) fn update(&self, host: &HostContext, payload: Value) -> Result<UpdateResult> {
         self.update_with_native_capture(host, payload, None)
     }
-    /// The adapter supplies an independently validated transient native event.
-    /// Never deserialize this trusted event from model arguments without proof.
     pub fn update_with_native_capture(
         &self,
         host: &HostContext,
@@ -16,10 +14,6 @@ impl LearnerStore {
         if let Some(result) = self.replay(host, &payload)? {
             return Ok(result);
         }
-        // Complete-captured is semantic work only. Decode it before any raw
-        // boundary so a malformed completion cannot smuggle in new recording.
-        // Invalid optional modes stay in the ordinary path: admitted raw work
-        // survives the subsequent typed semantic diagnostic, like other fields.
         if payload.get("mode").and_then(Value::as_str)
             == Some(UpdateMode::CompleteCaptured.as_str())
         {
@@ -33,8 +27,6 @@ impl LearnerStore {
                     "mode.complete_captured forbids native_capture and reported_events",
                 ));
             }
-            // Error receipts name only actual captured records in this scope,
-            // never an arbitrary or nonexistent model-supplied turn_ref.
             let captured = match &request.turn_ref {
                 Some(turn) => {
                     let scoped: bool = self.conn.query_row(
@@ -84,7 +76,6 @@ impl LearnerStore {
             }
             let proof: NativeCaptureRequest = decode_at(supplied.unwrap(), "native_capture", host)?;
             limits::text("native_capture.ticket", &proof.ticket, 4096)?;
-            // The adapter verified and stored the host's normalized text.
             let echoed = crate::adapter::native_capture::learner_text(host, &proof.text);
             if echoed != native.text.as_str() || native.speaker != Speaker::Learner {
                 return Err(LearnerError::new(
@@ -106,8 +97,6 @@ impl LearnerStore {
                 host,
             )?;
             captured.extend(self.capture(host, &reported, "model_reported", start)?);
-            // Only raw input produced by this capture boundary is eligible for
-            // automatic first association. Existing turn_ref is context only.
             let attachment_ids = captured.clone();
             if let Some(turn) = payload.get("turn_ref").and_then(Value::as_str) {
                 let belongs: bool = self.conn.query_row(
@@ -135,11 +124,6 @@ impl LearnerStore {
     }
 }
 
-/// A rejected start/resume has already committed its raw capture, but no
-/// session association. captured_event_ids is the whole inventory: it can
-/// include an already-bound turn_ref or tutor context, which the explicit
-/// selector rightly refuses. Only stored learner input that is still pending
-/// and unbound may be selected on the retry; everything else is cited context.
 fn start_retry_recovery(
     conn: &rusqlite::Connection,
     operation: Option<&str>,

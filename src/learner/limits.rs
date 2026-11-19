@@ -1,7 +1,5 @@
-/// The question an attempt stores; longer is cut, not refused.
 pub const ATTEMPT_QUESTION_BYTES: usize = 1000;
 pub const ATTEMPTS_PER_OBSERVATION: usize = 40;
-/// The gap-log rows and quick checks one answer counts for.
 pub const COUNTS_FOR_PER_ATTEMPT: usize = 12;
 pub const PRACTICE_EDITS_PER_BATCH: usize = 40;
 pub const ATTEMPT_CORRECTIONS_PER_BATCH: usize = 8;
@@ -15,9 +13,6 @@ pub fn text(field: &str, value: &str, max: usize) -> super::Result<()> {
     }
     Ok(())
 }
-/// Cut `value` to at most `max` bytes at a character boundary, ending it in
-/// "…" so the stored text shows the cut, and say in `notes` what was cut. A
-/// tutor that wrote too much gets its record saved, not a failed save.
 pub fn shorten(path: &str, value: &str, max: usize, notes: &mut Vec<String>) -> String {
     if value.len() <= max {
         return value.to_owned();
@@ -30,8 +25,6 @@ pub fn shorten(path: &str, value: &str, max: usize, notes: &mut Vec<String>) -> 
     ));
     format!("{}{MARK}", &value[..end])
 }
-/// Keep the first `count` labels and cut each to `max` bytes, with one note
-/// per kind of cut.
 pub fn shorten_labels(
     path: &str,
     labels: &[String],
@@ -112,8 +105,6 @@ pub const OBSERVATIONS_PER_BATCH: usize = 16;
 pub const MEMORY_EDITS_PER_BATCH: usize = 8;
 pub const REVIEWS_PER_BATCH: usize = 16;
 pub const DISPOSITIONS_PER_BATCH: usize = 32;
-// Additional envelope bounds keep receipts and immutable support readable within
-// the 64 KiB packet ceiling. Larger raw work remains accessible by event ranges.
 pub const RAW_EVENTS_PER_BATCH: usize = 32;
 pub const REFERENCE_BYTES: usize = 256;
 pub const EVENT_METADATA_BYTES: usize = 16 * 1024;

@@ -1,6 +1,3 @@
-//! Allowlisted, stage-routed instruction assets. The compiled active bundle is
-//! served after packaged manifest and installed content hashes are validated.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -15,11 +12,6 @@ use sha2::{Digest, Sha256};
 
 const BUNDLE_VERSION: u64 = 2;
 const SUPPORTED_SCHEMA: u64 = 2;
-/// Caps the instruction text in one load. Across every stage, the MCP text
-/// block adds at most about 4% of JSON escapes and 477 bytes of fields, so
-/// 36 KiB of text makes an MCP text block of at most about 38,800 bytes. The
-/// binding host limit is higher: Claude Code saves a result over 50,000
-/// characters to a file.
 const RESPONSE_LIMIT: usize = 36 * 1024;
 const MAX_APPROVED_ASSET_BYTES: usize = 1024 * 1024;
 const MAX_BUNDLE_DIRECTORY_DEPTH: usize = 4;
@@ -96,9 +88,10 @@ pub(crate) enum InstructionOperation {
     ToolRecipes,
 }
 
-/// Packaged bundle identity and authoring state. This describes bytes in the
-/// runtime package only; it does not claim that a host loaded or followed them.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(
+    description = "Packaged bundle identity and authoring state. This describes bytes in the\nruntime package only; it does not claim that a host loaded or followed them."
+)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum InstructionBundleStatus {
     Placeholder,
@@ -113,8 +106,6 @@ pub(crate) struct InstructionBundleIdentity {
     pub(crate) status: InstructionBundleStatus,
 }
 
-/// Return the packaged bundle identity without reading workspace files or
-/// claiming that a model loaded this bundle.
 pub(crate) fn current_identity() -> Result<InstructionBundleIdentity, String> {
     let bundle = compiled_bundle().map_err(|error| error.to_string())?;
     let status = match bundle.status.as_str() {
@@ -129,7 +120,6 @@ pub(crate) fn current_identity() -> Result<InstructionBundleIdentity, String> {
     })
 }
 
-/// Report the packaged identity only when this workspace has matching bytes.
 pub(crate) fn installed_identity(control: &Path) -> Result<InstructionBundleIdentity, String> {
     if fs::read(control.join(crate::adapter::INSTRUCTIONS_FILENAME))
         .ok()
@@ -181,8 +171,6 @@ struct Bundle {
     version: u64,
     hash: String,
     status: String,
-    // Workspace loads reuse this immutable asset map without copying every
-    // compiled file into a per-workspace bundle.
     files: Arc<BTreeMap<String, Vec<u8>>>,
 }
 
@@ -271,14 +259,9 @@ pub(crate) enum InstallDisposition {
     CreatedAndActivated,
     AlreadyActive,
     UpdatedActive,
-    /// The pointer moved from a verified, unedited earlier bundle.
-    Upgraded {
-        previous: String,
-    },
+    Upgraded { previous: String },
 }
 
-/// Resolve the initialized workspace locally. Instruction loading does not
-/// open SQLite, consult global routing, migrate storage, or install files.
 pub(crate) fn resolve_authorized_control(start: &Path) -> Result<Option<PathBuf>, String> {
     let workspace = Workspace::discover(start).map_err(|error| error.to_string())?;
     let Some(workspace) = workspace else {
@@ -447,9 +430,6 @@ fn safe_relative_path(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-/// Install the reviewed assets beneath `<control>/instructions/v2/<hash>`.
-/// Placeholder assets are copied for inspection but never receive an active
-/// pointer. A complete staged directory is validated before its atomic rename.
 pub(crate) fn install(control: &Path) -> Result<InstallDisposition, String> {
     install_bundle(control).map_err(|error| error.to_string())
 }
@@ -486,8 +466,6 @@ fn install_known_bundle(
     }
 }
 
-/// Validate an existing `v2/<hash>` directory, or stage, validate and rename a
-/// new one. Returns whether the directory already existed.
 fn materialize_bundle_dir(v2: &Path, bundle: &Bundle) -> Result<bool, BundleError> {
     let target = v2.join(&bundle.hash);
     let target_exists = match fs::symlink_metadata(&target) {
@@ -514,10 +492,6 @@ fn materialize_bundle_dir(v2: &Path, bundle: &Bundle) -> Result<bool, BundleErro
     Ok(false)
 }
 
-/// Explicitly switch a workspace from an earlier reviewed bundle to the
-/// compiled one. Implicit installs never replace an active pointer; this runs
-/// only on request, only when the earlier bundle is byte-for-byte unedited
-/// against its own manifest, and it keeps the earlier directory in place.
 pub(crate) fn upgrade(control: &Path) -> Result<InstallDisposition, String> {
     upgrade_bundle(control).map_err(|error| match error {
         BundleError::UserEdits => format!(
@@ -580,10 +554,6 @@ fn upgrade_known_bundle(
     Ok(InstallDisposition::Upgraded { previous })
 }
 
-/// Whether this workspace's active teaching instructions are an earlier
-/// Magnesium version's, which `magnesium init --upgrade-instructions`
-/// switches. It reads the active pointer only and changes nothing, so a
-/// caller can ask before the switch.
 pub(crate) fn earlier_bundle_active(control: &Path) -> bool {
     compiled_bundle().is_ok_and(|bundle| earlier_known_bundle_active(control, &bundle))
 }
@@ -598,8 +568,6 @@ fn earlier_known_bundle_active(control: &Path, bundle: &Bundle) -> bool {
     ) else {
         return false;
     };
-    // The same test `activate_current_bundle` makes before it refuses with
-    // `PreviousBundleActive`.
     serde_json::from_slice::<ActivePointer>(&bytes).is_ok_and(|pointer| {
         pointer.bundle_version == bundle.version
             && pointer.bundle_hash != bundle.hash
@@ -615,10 +583,6 @@ fn is_bundle_hash(value: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// An earlier bundle is unedited when its directory holds exactly the files
-/// its manifest declares, each with the declared hash, and the manifest
-/// hashes to the directory's name. The current inventory rules do not apply:
-/// earlier versions may have had other files.
 fn verify_unedited_bundle_dir(directory: &Path, hash: &str) -> Result<(), BundleError> {
     validate_path_components(directory)?;
     let manifest_bytes =
@@ -762,10 +726,6 @@ fn same_file_identity(opened: &fs::Metadata, path: &fs::Metadata) -> bool {
     opened.len() == path.len() && opened.modified().ok() == path.modified().ok()
 }
 
-/// Validate an installed tree against the finite compiled allowlist. Only the
-/// directories named by allowed file prefixes are traversed, and the first
-/// unknown file or directory fails: an arbitrary empty or nested tree cannot
-/// create unbounded work.
 fn enumerate_files(
     root: &Path,
     allowed: &BTreeSet<String>,
@@ -929,9 +889,6 @@ fn load_installed(instructions: &Path, expected: &Bundle) -> Result<ValidationWo
     if pointer_bytes != serde_json::to_vec(&pointer)? {
         return Err(BundleError::UserEdits);
     }
-    // Validate on every load so local edits and symlinks remain visible. The
-    // rendered bytes come from the immutable compile-time Arc, so no cloned
-    // per-workspace copy or filesystem read is counted as avoided work.
     let directory = instructions.join("v2").join(&expected.hash);
     let pointer_validation = ValidationWork {
         file_count: 1,

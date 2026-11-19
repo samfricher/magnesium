@@ -48,25 +48,19 @@ impl GlobalPaths {
         }
     }
 
-    /// Whether `magnesium init` has written plugin copies on this machine.
     pub(crate) fn installed(&self) -> bool {
         self.root.exists()
     }
 
-    /// Present once any study folder on this machine has pointed a learner at
-    /// `/magnesium:help`, or has a recorded lesson.
     pub(crate) fn greeted_marker(&self) -> PathBuf {
         self.root.join("greeted")
     }
 
-    /// Claude Code loads this directory in place as a one-plugin marketplace.
     pub(crate) fn claude_plugin(&self) -> PathBuf {
         self.root.join("claude-plugin")
     }
 }
 
-/// Reject symlinks only in the managed portion of a path. Platform aliases
-/// above `boundary` (such as `/tmp`) are outside the control boundary.
 pub(crate) fn reject_symlink_components(path: &Path, boundary: &Path) -> io::Result<()> {
     if path
         .components()

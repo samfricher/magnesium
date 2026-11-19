@@ -1,12 +1,3 @@
-//! LEARN-206: original-source inspection with trustworthy anchors.
-//!
-//! A learner opens the exact cited physical anchor and compares it with the
-//! extracted excerpt using the original file version. Changed, deleted,
-//! ignored, nested, linked-but-unpermitted and symlink-escape sources leak
-//! no bytes and never serve stale bytes as current authority. Viewing
-//! creates no learner evidence and imports no book into model context.
-//! Text-only hosts receive a usable status/anchor fallback.
-
 use std::fs;
 
 use serde_json::{Value, json};
@@ -62,7 +53,6 @@ fn search_hit_for_path(
         path,
         bytes,
     );
-    // Preserve the semantic query itself as one final, un-retried oracle.
     let search = client.call_value(id, "search_sources", json!({"query": query, "limit": 20}));
     let hits = search["hits"].as_array().expect("hits").clone();
     let hit = hits
@@ -119,7 +109,6 @@ fn inspect_text_anchor_returns_bounded_original_without_learner_state() {
     let before = DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES)
         .expect("canonical snapshot");
 
-    // Inspect via the returned path/hash/anchor: exact anchor, excerpt, original.
     let inspected = client.call_value(
         101,
         "sources",
@@ -156,17 +145,14 @@ fn inspect_text_anchor_returns_bounded_original_without_learner_state() {
             .is_some_and(|text| text.contains("end mark")),
         "original bytes must match the cited version: {inspected}"
     );
-    // Bounded: no book is imported into model context.
     assert!(
         inspected["excerpt"].as_str().unwrap().chars().count() <= 65_536,
         "{inspected}"
     );
     assert!(inspected["original"]["text"].as_str().unwrap().len() <= 64 * 1024);
-    // Never a visual-analysis claim from text.
     assert_eq!(inspected["basis"]["visual_analysis"], false);
     assert_eq!(inspected["extraction"]["text_layer_only"], true);
 
-    // The same anchor opens via an explicit path reference.
     let opened = client.call_value(
         102,
         "sources",
@@ -182,7 +168,6 @@ fn inspect_text_anchor_returns_bounded_original_without_learner_state() {
     assert_eq!(opened["coverage"]["status"], "complete", "{opened}");
     assert_eq!(opened["original"]["content_sha256"], hash);
 
-    // Text-only fallback: status carries identity/anchor/coverage, no bytes.
     let status = client.call_value(
         103,
         "sources",
@@ -194,7 +179,6 @@ fn inspect_text_anchor_returns_bounded_original_without_learner_state() {
     assert!(status.get("excerpt").is_none(), "{status}");
     assert!(status.get("original").is_none(), "{status}");
 
-    // Viewing created no learner evidence.
     let after = DatabaseSnapshot::capture(&store_path(&environment), CURRENT_CANONICAL_TABLES)
         .expect("canonical snapshot");
     assert_eq!(
@@ -246,7 +230,6 @@ fn stale_changed_source_reports_stale_without_bytes() {
         .expect("current hash");
     assert_ne!(current, hash_v1);
 
-    // The fresh anchor inspects the new version.
     let reference_v2 = search_hit_for_path(
         &environment,
         &mut client,
@@ -290,7 +273,6 @@ fn deleted_ignored_and_symlink_sources_leak_no_bytes() {
         LESSON,
     );
 
-    // Deleted sources authorize nothing.
     fs::remove_file(environment.workspace.join("lesson.md")).expect("delete source");
     let deleted = client.call_value(
         101,
@@ -301,7 +283,6 @@ fn deleted_ignored_and_symlink_sources_leak_no_bytes() {
     assert!(deleted.get("excerpt").is_none(), "{deleted}");
     assert!(deleted.get("original").is_none(), "{deleted}");
 
-    // Ignored sources authorize nothing.
     fs::write(environment.workspace.join("lesson.md"), LESSON).expect("restore");
     fs::write(
         environment
@@ -328,7 +309,6 @@ fn deleted_ignored_and_symlink_sources_leak_no_bytes() {
     )
     .expect("unexclude");
 
-    // Symlink escapes never serve the link target's bytes.
     let outside = environment.root.join("outside-secret.md");
     fs::write(&outside, "outside secret bytes\n").expect("outside file");
     #[cfg(unix)]
@@ -347,7 +327,6 @@ fn deleted_ignored_and_symlink_sources_leak_no_bytes() {
     assert!(!serialized.contains("outside secret bytes"), "{escaped}");
     assert!(escaped.get("original").is_none(), "{escaped}");
 
-    // Traversal never reaches outside the workspace.
     let traversal = sources_error(
         &mut client,
         104,
@@ -679,8 +658,6 @@ fn overlapping_text_chunks_report_their_actual_ranges_and_cover_the_request() {
     client.close_cleanly();
 }
 
-/// search_sources and the search layer share one limit bound, so a limit the
-/// tool accepts never fails deeper down.
 #[test]
 fn search_accepts_every_limit_the_tool_accepts() {
     let _one_source_test = crate::support::sources::source_test_guard();

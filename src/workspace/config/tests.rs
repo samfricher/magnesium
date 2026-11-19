@@ -20,8 +20,6 @@ fn fresh_config_holds_only_its_schema_and_local_identity() {
     fs::remove_dir_all(root).unwrap();
 }
 
-/// The papers skill records optional-tool answers in a `[tools]` table.
-/// `magnesium init` only loads the config; a load and save must still keep it.
 #[test]
 fn a_tools_table_survives_load_and_save() {
     let root = std::env::temp_dir().join(format!(

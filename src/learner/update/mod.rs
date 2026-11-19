@@ -1,4 +1,3 @@
-//! One semantic transaction orchestrates the state-specific writer helpers.
 use super::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -40,9 +39,6 @@ impl LearnerStore {
         if r.request_id.is_empty() {
             return Err(LearnerError::new("field_too_large", "semantic batch"));
         }
-        // The outer boundary has already replayed successful receipts before
-        // raw capture/typed decode. New batches get one pure key preflight;
-        // lock-time receipt lookup below still closes the concurrent retry race.
         validate_batch_keys(r, host)?;
         let hash = payload_hash(payload)?;
         let tx = rusqlite::Transaction::new_unchecked(
@@ -60,8 +56,6 @@ impl LearnerStore {
         #[cfg(test)]
         crate::request::test_checkpoint("before_semantic");
         check_semantic_cancellation()?;
-        // A verified ticket admits one semantic transition. A successful
-        // same-key retry returned above; another transition needs new native input.
         if r.native_capture.is_some() {
             let native_id = captured.first().ok_or_else(|| {
                 LearnerError::new("invalid_variant", "verified native capture missing")
@@ -157,7 +151,6 @@ impl LearnerStore {
             &mut used_events,
             (now, &mut shortened),
         )?;
-        // Allocate all new IDs before edits so retirement can refer to same-batch creations.
         for edit in &r.memory_edits {
             if let MemoryEdit::Create(CreateMemoryEdit { client_ref, .. }) = edit {
                 insert_ref(&mut refs, client_ref, &store::new_id("m")?)?;
@@ -290,9 +283,6 @@ impl LearnerStore {
             revisions,
             shortened,
         };
-        // Independently committed capture survives cancellation. This semantic
-        // transaction is still safely rollbackable until the receipt/commit
-        // boundary; after commit its durable receipt is authoritative.
         #[cfg(test)]
         crate::request::test_checkpoint("before_commit");
         check_semantic_cancellation()?;
@@ -301,8 +291,6 @@ impl LearnerStore {
             params![r.request_id, hash, serde_json::to_string(&result)?, now],
         )?;
         if let Err(error) = tx.commit() {
-            // COMMIT may have an uncertain I/O outcome. Only a fresh usable
-            // connection's durable receipt can establish success.
             if let Some(result) = self.recover_commit_receipt(host, &r.request_id, &hash)? {
                 return Ok(result);
             }
@@ -325,10 +313,6 @@ fn check_semantic_cancellation() -> Result<()> {
 fn unknown(id: &str) -> LearnerError {
     LearnerError::new("unknown_reference", id)
 }
-/// A live tutor that had to work the fix out from this refusal sent the
-/// request again with no disposition at all. That is accepted, and it leaves
-/// the learner's message pending for good, so the refusal names the outcome
-/// to send instead.
 fn unsupported_processed(index: usize, event_id: &str) -> LearnerError {
     let path = format!("event_dispositions[{index}].outcome");
     let mut error = LearnerError::new(
@@ -344,8 +328,6 @@ fn unsupported_processed(index: usize, event_id: &str) -> LearnerError {
     }));
     error
 }
-/// A message is closed by one request. The tutor that names it again, such as
-/// in a later call for the same turn, needs to know the first close stands.
 fn already_closed(index: usize, event_id: &str, request: &str) -> LearnerError {
     let path = format!("event_dispositions[{index}]");
     let mut error = LearnerError::new(
@@ -363,8 +345,6 @@ fn already_closed(index: usize, event_id: &str, request: &str) -> LearnerError {
     error
 }
 fn insert_ref(refs: &mut BTreeMap<String, String>, name: &str, id: &str) -> Result<()> {
-    // The typed preflight owns request admission and field diagnostics. This
-    // allocation guard is an internal invariant and never overwrites an ID.
     if refs.contains_key(name) {
         return Err(LearnerError::new(
             "storage_error",

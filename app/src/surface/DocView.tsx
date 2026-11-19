@@ -1,9 +1,3 @@
-// One document, read beside the lesson: a PDF as a column of pages whose
-// words can be selected, a note drawn as prose, text, or a picture. It opens
-// where it was left (its page and zoom, or how far down a note was read) and
-// says where it is as it moves, so the session keeps it. Nothing here reads a
-// file: the core does, inside the study folder, and refuses an answer key.
-
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 
 import { core } from "../bridge";
@@ -12,7 +6,6 @@ import { openPdf, pdfLib, type Pdf } from "../pdf";
 import { renderMarkdown } from "../render";
 import type { Source } from "../types";
 
-/** What the panel can ask of the document in front. */
 export type DocHandle = {
   zoom: (by: 1 | -1 | 0) => void;
   focus: () => void;
@@ -21,34 +14,24 @@ export type DocHandle = {
 type Props = {
   doc: OpenDoc;
   folder: string;
-  /** Bumped when a link asks for the document's page again, so it goes there even if it is the page in view. */
   goTo: number;
   onPlace: (change: Partial<OpenDoc>) => void;
   onNote: (note: string) => void;
-  /** What the document is, once read: whether it has pages and how many, for the panel's head. */
   onKind: (kind: { pages: number | null; zoom: number | null; refused: boolean }) => void;
 };
 
-// 100% is a page at its printed size: a PDF point is 1/72 inch, a CSS pixel 1/96.
 const CSS_PER_POINT = 96 / 72;
 const PAD = 16;
-// Room kept either side of what is drawn when a page is fitted to it, in points.
 const INK_MARGIN = 10;
-// Pages read for where they are drawn: every page of a paper or a deck; a long book's first pages, then the
-// words of the rest.
 const INK_PAGES = 60;
-// The small scale a page is drawn at to find its ink, and what counts as ink: anything not near white.
 const INK_SCALE = 0.5;
 const INK_BELOW = 235;
-// A drag of the panel's edge or a zoom redraws once it has settled, not at every pixel.
 const SETTLE_MS = 180;
 
 type Size = { width: number; height: number };
-/** Where anything is drawn across the pages, in points from a page's left edge: what "fit" fits. */
 type Across = { left: number; right: number };
 type PdfPage = Awaited<ReturnType<Pdf["getPage"]>>;
 
-/** Where a page draws anything across its width: the page drawn small, and read for ink. Null for a blank page. */
 async function inkAcross(page: PdfPage): Promise<Across | null> {
   const view = page.getViewport({ scale: INK_SCALE });
   const canvas = document.createElement("canvas");
@@ -78,7 +61,6 @@ async function inkAcross(page: PdfPage): Promise<Across | null> {
   }
 }
 
-/** Where a page's words sit across it, for a page not drawn small to be read. */
 async function wordsAcross(page: PdfPage): Promise<Across | null> {
   const content = await page.getTextContent().catch(() => null);
   const x0 = page.view[0] ?? 0;
@@ -102,14 +84,9 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   const [room, setRoom] = useState(0);
   const pages = useRef<(HTMLDivElement | null)[]>([]);
   const drawn = useRef(new Map<number, Drawn>());
-  // Where the reader is: the page whose top is at or above the view's top, and how far down that page, 0 to 1.
   const place = useRef({ page: Math.max(1, doc.page), within: doc.scroll ?? 0 });
   const placed = useRef(false);
 
-  // Each page's own size, in points, so the column has its height before any page is drawn; and where anything
-  // is drawn across the pages, so "fit" fits that, not the sheet with its margins, and cuts nothing drawn: a
-  // line that runs into the margin counts. The first pages are read before the column shows; the rest after,
-  // and the fit only ever widens.
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -131,7 +108,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
       };
       const drawnAcross = (): Across | null =>
         Number.isFinite(left) && right - left > 40 ? { left: Math.max(0, left - INK_MARGIN), right: Math.min(widest, right + INK_MARGIN) } : null;
-      // How far the reading has got, on the pages' element, for a check that times it.
       const began = Math.round(performance.now());
       const mark = (n: number) => box.current?.setAttribute("data-ink-read", `${n} ${pdf.numPages} ${began} ${Math.round(performance.now())}`);
       const first = Math.min(3, pdf.numPages);
@@ -165,13 +141,11 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
 
   const widest = sizes ? Math.max(...sizes.map((size) => size.width)) : 0;
   const fitted = across ? across.right - across.left : widest;
-  // Hidden (flipped away or the panel off), the panel has no room: the last scale stands.
   const lastFit = useRef(1);
   if (fitted > 0 && room > 0) lastFit.current = Math.min(4, Math.max(0.2, (room - 2 * PAD) / (fitted * CSS_PER_POINT)));
   const fit = lastFit.current;
   const zoom = doc.zoom === "fit" ? fit : doc.zoom;
   const scale = zoom * CSS_PER_POINT;
-  // The scale pages are drawn at follows the scale they are laid out at once it has stopped changing.
   const [drawScale, setDrawScale] = useState(scale);
   useEffect(() => {
     if (drawScale === scale) return;
@@ -194,7 +168,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     pages.current[n - 1]?.replaceChildren();
   }, []);
 
-  /** Draw a page, with its words as a text layer over it, at the settled scale; one that is superseded is cancelled. */
   const draw = useCallback(
     async (n: number) => {
       const holder = pages.current[n - 1];
@@ -230,7 +203,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
         if (!current()) return;
         mine.task = null;
         mine.done = true;
-        // The canvas and the words fill the page's box: while a new scale settles they stretch with it.
         holder.replaceChildren(canvas, words);
       } catch (error) {
         if (current()) drawn.current.delete(n);
@@ -240,7 +212,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     [pdf, drawScale, onNote],
   );
 
-  // Pages near the view are drawn; pages far from it give their pictures back.
   const near = useRef(new Set<number>());
   useEffect(() => {
     const root = box.current;
@@ -274,13 +245,10 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     };
   }, [sizes, draw, release]);
 
-  // At a new settled scale, the pages near the view are drawn again.
   useEffect(() => {
     near.current.forEach((n) => void draw(n));
   }, [draw]);
 
-  // A window behind another may not have drawn: when it is in front again, any page near the view without its
-  // picture is drawn.
   useEffect(() => {
     const again = () => near.current.forEach((n) => (drawn.current.get(n)?.done ? undefined : void draw(n)));
     document.addEventListener("visibilitychange", again);
@@ -291,8 +259,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     };
   }, [draw]);
 
-  // Fitted, every page is set so what is drawn fills the panel with a margin, and there is nothing to scroll
-  // across; at a zoom of its own the page is centred and scrolls across, starting where its drawing does.
   const fitting = doc.zoom === "fit" && across !== null;
   const alignAcross = useCallback(() => {
     const root = box.current;
@@ -306,8 +272,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
       const holder = pages.current[page - 1];
       const root = box.current;
       if (!holder || !root) return;
-      // Fitted, the pages start at the head's rule with no room above them (side.css): a page is gone to at its top,
-      // so no strip of the page before it shows over it.
       root.scrollTop = holder.offsetTop + within * holder.offsetHeight - (fitting ? 0 : PAD);
       place.current = { page, within };
       alignAcross();
@@ -315,14 +279,12 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     [alignAcross, fitting],
   );
 
-  // Opened where it was left, once the column has its height.
   useLayoutEffect(() => {
     if (!sizes || room === 0 || placed.current) return;
     placed.current = true;
     goToPlace(Math.min(Math.max(1, place.current.page), sizes.length), place.current.within);
   }, [sizes, room, goToPlace]);
 
-  // A link that names a page goes to its top.
   const lastGo = useRef(goTo);
   useEffect(() => {
     if (goTo === lastGo.current || !sizes) return;
@@ -330,7 +292,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     goToPlace(Math.min(Math.max(1, doc.page), sizes.length), 0);
   }, [goTo, doc.page, sizes, goToPlace]);
 
-  // At a new zoom or width, or back from hidden, the reader stays at the same place within the same page.
   const lastLayout = useRef({ scale, room });
   useLayoutEffect(() => {
     const was = lastLayout.current;
@@ -349,8 +310,6 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   const onScroll = () => {
     const root = box.current;
     if (!root || root.clientWidth === 0) return;
-    // The page at the view's top, measured from its top: a short page (a slide) is not counted before it is reached.
-    // Measured as goToPlace goes back to it, so a fitted page, gone to with no pad, does not move down a pad each time.
     const top = root.scrollTop + (fitting ? 0 : PAD);
     let n = 1;
     pages.current.forEach((page, at) => {
@@ -364,14 +323,12 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
     saveTimer.current = window.setTimeout(() => onPlace({ page: place.current.page, scroll: place.current.within }), moved ? 0 : 300);
   };
 
-  // ← and → turn the page while the document has the keyboard (never with ⇧, ⌘, ⌥ or ⌃, and never while the line has it).
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey || !sizes) return;
     const by = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (by === 0) return;
     event.preventDefault();
     const { page, within } = place.current;
-    // ← from inside a page goes to its top first.
     const next = by < 0 && within > 0.02 ? page : Math.min(sizes.length, Math.max(1, page + by));
     goToPlace(next, 0);
   };
@@ -398,15 +355,12 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
   );
 });
 
-/** A note, drawn as prose; text as it is; a picture. Where it was read to is kept. */
 function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace: (change: Partial<OpenDoc>) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const markdown = /\.(md|markdown)$/i.test(doc.path);
   useLayoutEffect(() => {
     const el = box.current;
     if (el) el.scrollTop = doc.scroll * Math.max(0, el.scrollHeight - el.clientHeight);
-    // Only when it opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const timer = useRef<number | null>(null);
   useEffect(() => () => {
@@ -421,7 +375,6 @@ function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace
       onPlace({ scroll: range > 0 ? Math.min(1, Math.max(0, el.scrollTop / range)) : 0 });
     }, 200);
   };
-  // A link inside a note stays in the window: a web link goes to the browser, nothing else is followed.
   const onLink = (event: React.MouseEvent<HTMLElement>) => {
     const link = (event.target as HTMLElement).closest("a");
     if (!link) return;
@@ -434,7 +387,6 @@ function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace
       {shown.kind === "image" && shown.image ? (
         <img className="doc-image" src={shown.image} alt="" />
       ) : markdown ? (
-        // Notes are drawn as prose, as the tutor's words are: their Markdown is never shown.
         <div className="prose doc-prose" onClick={onLink} dangerouslySetInnerHTML={{ __html: renderMarkdown(shown.text ?? "") }} />
       ) : (
         <pre className="doc-text">{shown.text}</pre>

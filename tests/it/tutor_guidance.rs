@@ -1,4 +1,3 @@
-//! Guidance the runtime gives a live tutor, found missing by dogfooding Claude Code.
 use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
 use serde_json::{Value, json};
 
@@ -165,8 +164,6 @@ fn claude_session_start_points_a_new_learner_at_help_once_per_machine() {
     assert!(again.contains("context.prepare"), "{again}");
     assert!(!again.contains("/magnesium:help"), "{again}");
 
-    // A new study folder on the same machine has no lessons, but the learner
-    // has already been greeted.
     let other = e.root.join("second-study-folder");
     std::fs::create_dir_all(&other).unwrap();
     let init = e.command_in(&other).arg("init").output().unwrap();
@@ -186,7 +183,6 @@ fn reused_request_ids_name_the_fix_for_updates_and_controls() {
         let output = v2::tool_output(&e, "claude", "conv", "learning_step", request);
         serde_json::from_slice::<Value>(&output.stdout).unwrap()
     };
-    // The start recipe's own request_id, reused for a different update.
     let update = reuse(
         json!({"schema":"learner-model/v2","action":"update","request_id":"start-claude-conv","session":{"operation":"use","session_id":session,"expected_revision":1}}),
     );
@@ -227,7 +223,6 @@ fn reused_request_ids_name_the_fix_for_updates_and_controls() {
     }
 }
 
-/// The current event a prompt notice names.
 fn current_event(notice: &str) -> String {
     notice
         .split_once("current event ")
@@ -248,7 +243,6 @@ fn refused_dispositions_say_what_to_send_instead() {
         let output = v2::tool_output(&e, "claude", "conv", "learning_step", request);
         serde_json::from_slice::<Value>(&output.stdout).unwrap()
     };
-    // The learner only asks for the next task: the turn has nothing to record.
     let event = current_event(&claude_prompt(&e, "conv", "p-1", "ok, next one please"));
     let close = |request_id: &str, outcome: &str| json!({"schema":"learner-model/v2","action":"update","request_id":request_id,"event_dispositions":[{"event_id":event,"outcome":outcome}]});
 
@@ -273,7 +267,6 @@ fn refused_dispositions_say_what_to_send_instead() {
     assert!(instruction.contains("as no_change"), "{instruction}");
     assert!(instruction.contains("stays pending"), "{instruction}");
 
-    // What the refusal says to send is accepted, under the refused request's ID.
     let closed = call(close("pose-task", "no_change"));
     assert_eq!(closed["update_status"], "committed", "{closed}");
 
@@ -299,7 +292,6 @@ fn refused_dispositions_say_what_to_send_instead() {
         "{again}"
     );
 
-    // The message is closed: the next turn counts only itself as waiting.
     let next = claude_prompt(&e, "conv", "p-2", "is it 950?");
     assert!(next.contains("; pending 1;"), "{next}");
 }
@@ -330,7 +322,6 @@ fn served_instructions_say_how_to_close_a_turn_that_records_nothing() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let host = "claude";
-    // No operation: the rule is in what every stage load serves, not only in a recipe.
     let served = v2::tool(
         &e,
         host,
@@ -411,7 +402,6 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         for rule in rules {
             assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
-        // No stage asks for the step as a phrase in a memory any more.
         assert!(!text.contains("example step ("), "{host}/{stage}");
         assert!(!text.contains("record \"example step"), "{host}/{stage}");
     }
@@ -1253,7 +1243,6 @@ fn served_core(e: &TestEnvironment) -> String {
     section[..end].trim_end().to_owned()
 }
 
-/// Claude Code fires its SessionStart hook again after a compaction.
 fn compaction(e: &TestEnvironment, thread: &str) -> std::process::Output {
     let input = json!({"session_id":thread,"cwd":e.workspace,"hook_event_name":"SessionStart","source":"compact"});
     let output = run_hook_with_host_flag(e, &e.workspace, "session-start", input, "claude");
@@ -1313,11 +1302,9 @@ fn the_runtime_restates_the_core_rules_after_a_compaction() {
     v2::init(&e);
     let core = served_core(&e);
 
-    // No lesson in the conversation: nothing is restated.
     let idle = v2::context(&compaction(&e, "claude-idle"));
     assert!(!idle.contains(CORE_HEADING), "{idle}");
 
-    // Claude Code: its SessionStart hook fires again after a compaction.
     v2::start(&e, "claude", "claude-lesson");
     let claude = v2::context(&compaction(&e, "claude-lesson"));
     assert!(claude.contains(&core), "{claude}");
@@ -1352,7 +1339,6 @@ fn one_command_turns_the_core_rules_off_for_a_study_folder() {
         claude.contains("After a new conversation or compaction, load the learn skill"),
         "{claude}"
     );
-    // The stage instructions keep the rewritten rules either way.
     assert!(served_core(&e).contains("**Start from one concrete case.**"));
 
     assert!(switch("on").starts_with("Core rules on"));

@@ -1,32 +1,3 @@
-// Photograph every page of the real window, in both schemes, through the
-// harness (src/harness.ts). Builds nothing and starts no model.
-//
-//   node scripts/pages.mjs <app-binary> <out-dir>
-//
-// <app-binary> is the window's program, such as target/release/magnesium-window.
-// It works in a scratch course made by scripts/scratch-course.sh, with a
-// scratch window home, so none of your study folders, settings or agent
-// sessions are touched. Lessons run on Magnesium with the stand-in model
-// (crates/core/tests/stand_in_model.py).
-//
-// It writes <stem>-dark.png and <stem>-light.png for each page and state it
-// visits (the session's line in each of its looks: soft, bare and ruled), menu.json
-// (the menu bar, which a photograph of the window does not show) and run.json
-// (each step, and any problem). It exits 1 when a step failed, after doing
-// every step it can.
-//
-// PAGES_ONLY=work photographs only the workspace page over a record of
-// several skills (scripts/scratch-record.py), and over one whose skills a
-// paper left waiting for their repair, in a few minutes.
-// PAGES_ONLY=answer photographs only the page while a task is open (answer-*).
-// PAGES_ONLY=note photographs only Home with the note about which copy of the
-// program lessons use, under each kind of first row.
-// PAGES_ONLY=model photographs only the model list across a pick of Fable 5.2
-// and the session after it.
-// PAGES_ONLY=steps photographs only a lesson that crosses from its first step
-// to its second (steps-*): the heads where each began, the top edge, and the
-// session opened again.
-
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -50,11 +21,8 @@ const CHANGE = "I skipped three days and the midterm moved, change the plan";
 
 const { run, problem, save, scratch, runtime, agent, pluginAgent, photo, launch, step, shoot, quit, settle, lineLook } = openRun({ binary, out });
 
-/** A timed paper running, in each of its states, with the page as the paper alone until it is handed in or ended.
- * PAGES_ONLY=paper photographs only these. */
 async function paperStates() {
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
-  // While a paper runs the page is that paper: none of what the folder holds is drawn, and all of it is back after.
   const rest = ["Your work", "Material", "Take this space off the list"];
   const pageShows = async (window, label, running) => {
     const read = await window.op({ op: "text" });
@@ -64,8 +32,6 @@ async function paperStates() {
     if (running && drawn.length > 0) problem(`${label}: the page draws ${drawn.join(", ")} while the paper runs`);
     if (!running && drawn.length !== rest.length) problem(`${label}: the page lacks ${rest.filter((w) => !drawn.includes(w)).join(", ")} after the paper`);
   };
-  // A timed paper running, as a window opened again finds it: its clock is the start time kept on disk.
-  // Sitting one from the page would open the paper in the Mac's own viewer, so the sitting is written here.
   const course = realpathSync(join(scratch, "Intro-Statistics"));
   const sitting = (minutesAgo, name) => ({ target: "midterm-2", name, path: "Study/midterm-2/papers/Midterm 2023.pdf", minutes: 75, started_ms: Date.now() - minutesAgo * 60_000 });
   const paperWindow = (name, paper) => {
@@ -88,7 +54,6 @@ async function paperStates() {
   await shoot(q, "workspace-paper-end", "Workspace: ending a paper without handing it in asks first, in place");
   await step(q, "keep going, with Esc", { op: "key", key: "Escape" });
   await settle(q, 200);
-  // A key that does nothing, to read where the keyboard is once the block is back.
   const back = await step(q, "where the keyboard is", { op: "key", key: "Shift" });
   if (!/data-drive=sitting-end\b/.test(String(back.focused ?? ""))) problem(`Esc did not put the keyboard back on End without handing in: ${JSON.stringify(back.focused)}`);
   await step(q, "end without handing in again", { op: "click", target: "sitting-end", by: "drive" });
@@ -109,11 +74,8 @@ async function paperStates() {
   for (let n = 0; n < 11; n++) await r.op({ op: "menu_click", path: ["View", "Bigger Text"] });
   await settle(r, 400);
   await shoot(r, "workspace-paper-big", "Workspace: the running paper at 720 by 560, the largest text");
-  // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(r, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(r);
-  // The paper's other clocks: a third through, its last minute, and past its end by hours, and by days from a start
-  // on an earlier day.
   for (const [stem, minutesAgo, what] of [
     ["paper-third", 25, "Workspace: a paper a third through"],
     ["paper-last", 74.3, "Workspace: a paper in its last minute"],
@@ -135,7 +97,6 @@ async function paperStates() {
 }
 
 
-/** Close a document: from the panel beside the page or lesson where there is one, else the sheet over it, with Esc. */
 async function closeDocument(window, title) {
   const closed = await window.op({ op: "click", target: `close-doc-${title}`, by: "drive" });
   if (!closed.ok) await step(window, `close ${title}`, { op: "key", key: "Escape" });
@@ -143,12 +104,6 @@ async function closeDocument(window, title) {
   await settle(window, 300);
 }
 
-/**
- * Next's line saying what the session starts with, from the record (PAGES_ONLY=due): on a course with nothing due; over
- * a record with a quick check due, while its sitting carries on and once three hours have passed; with a paper redo
- * due too; with a long item; with every item done; at 720 by 560 and the largest text; and back on Home after a lesson
- * has begun the sitting.
- */
 async function dueStates() {
   const shotsOf = async (window, stem, what) => {
     await step(window, `${stem}: Home`, { op: "click", target: "home", by: "drive" });
@@ -168,13 +123,11 @@ async function dueStates() {
     if (!line && text.includes("Starts with")) problem(`${label}: the page says what the session starts with, and should not`);
   };
 
-  // Nothing due: the scratch course, never studied in.
   const plain = await launch("due-none", join(scratch, "window"));
   await says(plain, "nothing due, Home", null);
   await shotsOf(plain, "nothing-due", "nothing due, so the row says nothing more");
   await quit(plain);
 
-  // A record with a quick check due (scripts/scratch-record.py), its last answer a moment ago.
   const dir = join(scratch, "due-record");
   mkdirSync(dir, { recursive: true });
   execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), dir], { encoding: "utf8" });
@@ -187,7 +140,6 @@ async function dueStates() {
     writeFileSync(join(home, "state.json"), JSON.stringify({ ...listed, folders: {} }, null, 2));
     return launch(name, home, agent, { MAGNESIUM_APP_RUNTIME: join(dir, "magnesium") });
   };
-  // The runtime's note of the learner's last message, moved back: past three hours, the next message begins a sitting.
   const hoursAgo = (hours) =>
     execFileSync("python3", ["-I", "-c", "import sqlite3,sys,time; c=sqlite3.connect(sys.argv[1]); c.execute('UPDATE meta SET last_learner_ms=?', (int((time.time()-float(sys.argv[2])*3600)*1000),)); c.commit()", join(course, ".magnesium", "sittings.sqlite"), String(hours)]);
   const same = await recordWindow("due-same-sitting");
@@ -197,7 +149,6 @@ async function dueStates() {
 
   hoursAgo(4);
   const k = await recordWindow("due-check");
-  // The record stores the check's next question (scripts/scratch-record.py): Home sets it first, with a line to answer it.
   await says(k, "a check due, a new sitting", "A quick check, about a minute.");
   const shown = await k.op({ op: "text" });
   if (shown.ok && !String(shown.text).includes("pooled variance")) problem("a check due, a new sitting: Home does not show the check's question");
@@ -215,7 +166,6 @@ async function dueStates() {
   await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(k);
 
-  // A long item and note, and a paper redo due as well.
   const planFile = join(course, "Study", "midterm-2", "plan.md");
   const planText = readFileSync(planFile, "utf8");
   writeFileSync(
@@ -244,7 +194,6 @@ async function dueStates() {
   await quit(d);
   writeFileSync(planFile, planText);
 
-  // A lesson begun from Next: its first message begins the sitting, so back on Home the row says nothing more.
   const s = await recordWindow("due-begun");
   await step(s, "start from Next", { op: "click", target: "start", by: "drive" });
   await step(s, "the first reply", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
@@ -264,8 +213,6 @@ if (process.env.PAGES_ONLY === "due") {
   process.exit(run.problems.length === 0 ? 0 : 1);
 }
 
-/** The workspace page over a record of several skills, each with its own next day: at the window's size, at 720 by
- * 560, and at 720 by 560 with the largest text. */
 async function workRecord() {
   const dir = join(scratch, "record");
   mkdirSync(dir, { recursive: true });
@@ -298,16 +245,10 @@ async function workRecord() {
   await step(k, "to Your work, larger and wide", { op: "scroll", target: "Your work" });
   await settle(k, 300);
   await shoot(k, "workspace-work-big-wide", "Workspace over six skills at 1040 by 720, the largest text");
-  // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(k, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await quit(k);
 }
 
-/**
- * The workspace page over a record with skills a marked paper left waiting for their repair (scratch-record.py
- * --repair): their names as one run that ends "and N more", opened and closed from the keyboard, which stays on the
- * one control that does both; at 1040 by 720 and at 720 by 560.
- */
 async function repairRecord() {
   const dir = join(scratch, "repair");
   mkdirSync(dir, { recursive: true });
@@ -322,7 +263,6 @@ async function repairRecord() {
     const read = await k.op({ op: "text" });
     if (read.ok && !pattern.test(String(read.text))) problem(`${label}: ${pattern} is not on the page`);
   };
-  // Where the keyboard is once the page has drawn what the key did: a key no control takes.
   const keyboardOn = async (label, drive) => {
     await settle(k, 300);
     const now = await k.op({ op: "key", key: "Shift" });
@@ -353,20 +293,16 @@ async function repairRecord() {
   await quit(k);
 }
 
-/** A window of its own on the course, with its own window home: the course's folders listed, no session yet. */
 async function ownWindow(name, withAgent = agent, engine = "direct") {
   const home = join(scratch, `window-${name}`);
   mkdirSync(home, { recursive: true });
   const listed = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
-  // Not the tabs the main window left: the session here is always the second tab.
   const { window: _tabs, ...kept } = listed;
   writeFileSync(join(home, "state.json"), JSON.stringify({ ...kept, folders: {}, engine }, null, 2));
   return { home, window: await launch(name, home, withAgent) };
 }
 
-/** The page while a task is open (the blank page): the bare line first, then the soft field and the ruled line; each in light and dark. */
 async function answerPages() {
-  // A note of the course's own, so a document that is not a past paper can be open beside the task.
   const notes = join(scratch, "Intro-Statistics", "Study", "materials", "week6-notes.md");
   writeFileSync(notes, "# Week 6: intervals for a mean\n\nA 95% interval for a mean is x̄ ± t* · s/√n, with t* from the t table at n − 1 degrees of freedom.\n\nThe standard error s/√n shrinks as the sample grows.\n");
   const looked = async (w, want, label) => {
@@ -393,7 +329,6 @@ async function answerPages() {
   await turn(a, "⌘↑: Hide the lesson");
   await looked(a, "folded", "⌘↑ after the first reply");
   await shoot(a, "answer-bare-rest", "Answer: a task open at rest, the page is the task (bare line)");
-  // The menu bar while the page is the task: Session > Hide the Lesson / Show the Lesson, with its key.
   const menu = await step(a, "the menu bar, folded", { op: "menu" });
   writeFileSync(join(out, "answer-menu.json"), JSON.stringify(menu.menu ?? menu, null, 2));
   await step(a, "write an answer", { op: "type", text: ANSWER });
@@ -432,7 +367,6 @@ async function answerPages() {
   await looked(a, "folded", "the line under the heading");
   await shoot(a, "answer-bare-folded-again", "Answer: folded again from “Hide the lesson”");
 
-  // Talk while the task is open: not an answer, and the task stays.
   await step(a, "focus for talk", { op: "focus", target: "composer", by: "drive" });
   await step(a, "a question off the task", { op: "type", text: "by the way, why does s divide by n − 1?" });
   await step(a, "send it as talk", { op: "key", key: "Enter", alt: true });
@@ -443,7 +377,6 @@ async function answerPages() {
   await turn(a, "⌘↑ after the talk");
   await shoot(a, "answer-bare-talk-folded", "Answer: after the talk, the same task is the page again");
 
-  // The plan and documents beside it.
   await step(a, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(a, 600);
   await shoot(a, "answer-bare-plan", "Answer: the plan beside the task; the plan stays open");
@@ -480,7 +413,6 @@ async function answerPages() {
   await closeDocument(a, "Midterm 2023");
   await step(a, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
-  // A small window with the largest text: folded, written on, and opened.
   const wide = await step(a, "the window's size", { op: "frame" });
   await step(a, "720 by 560", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await a.op({ op: "menu_click", path: ["View", "Bigger Text"] });
@@ -499,7 +431,6 @@ async function answerPages() {
   if (wide.ok) await step(a, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
   await settle(a, 400);
 
-  // The soft field.
   await lineLook(a, "Soft field");
   await step(a, "back to the session", { op: "click", target: "tab-2", by: "drive" });
   await settle(a, 500);
@@ -513,7 +444,6 @@ async function answerPages() {
   await shoot(a, "answer-soft-stuck", "Answer: Stuck's row open on the soft field");
   await step(a, "close Stuck on the soft line", { op: "key", key: "Escape" });
   await step(a, "clear the soft line", { op: "type", text: "", replace: true });
-  // The ruled line: the bare line on one hairline, in the soft field's states, with a file on it, and at the largest text.
   await lineLook(a, "Ruled line");
   await step(a, "the session, ruled", { op: "click", target: "tab-2", by: "drive" });
   await settle(a, 500);
@@ -545,7 +475,6 @@ async function answerPages() {
   await step(a, "the session, bare", { op: "click", target: "tab-2", by: "drive" });
   await settle(a, 400);
 
-  // A reply arriving: the whole lesson, as before, until it is read.
   await step(a, "focus for a slow reply", { op: "focus", target: "composer", by: "drive" });
   await step(a, "ask for a slow reply", { op: "type", text: "VERYSLOW: and what does the 95% mean?" });
   await step(a, "send it as talk", { op: "key", key: "Enter", alt: true });
@@ -553,7 +482,6 @@ async function answerPages() {
   await settle(a, 700);
   await shoot(a, "answer-bare-reply-arriving", "Answer: the tutor writing; the whole lesson is on the page");
   await step(a, "the slow reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
-  // A session closed and opened again with its task open: the page is the task at once.
   await step(a, "pose the task again", { op: "focus", target: "composer", by: "drive" });
   await step(a, "back to it", { op: "type", text: "back to the task" });
   await step(a, "send", { op: "key", key: "Enter", alt: true });
@@ -567,7 +495,6 @@ async function answerPages() {
   await lineLook(again, "Soft field");
   await quit(again);
 
-  // Claude Code's engine: a task the tutor set but did not save (#98), and a permission card waiting.
   const { window: p } = await ownWindow("answer-plugin", pluginAgent, "plugin");
   await lineLook(p, "Bare line");
   await step(p, "the workspace", { op: "click", target: "tab-1", by: "drive" });
@@ -595,8 +522,6 @@ async function answerPages() {
   await quit(p);
 }
 
-/** Home with the note about which copy of the program lessons use, in each place Home's first block can be: Next, a
- * session to carry on, New session, a step this Mac needs, and an empty library; small and with the largest text. */
 async function noteStates() {
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
   const never = { MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") };
@@ -644,8 +569,6 @@ async function noteStates() {
     await shoot(h, stem, what);
     await quit(h);
   }
-  // One workspace with no plan, never studied in: its first row is New session. Then a lesson in it, so the first row
-  // carries it on.
   const one = await open("note-one", { recent: [kept.recent[1]] });
   await shoot(one, "home-newer-new-session", "Home with the note: the first row is New session");
   await step(one, "start a session", { op: "key", key: "Enter" });
@@ -663,11 +586,6 @@ async function noteStates() {
   await quit(none);
 }
 
-/**
- * The model list across sessions on Fable 5.2 (PAGES_ONLY=model). A scratch window starts on Fable 5.2 and has no list
- * until a lesson sends one. Claude Code sends a session started on Fable 5.2 its full id in place of the `fable` row,
- * and the list must still show it with the current models, in that session and in the next.
- */
 async function modelPick() {
   const m = await launch("model", join(scratch, "window"));
   await lineLook(m, "Bare line");
@@ -704,11 +622,6 @@ async function modelPick() {
 }
 
 
-/**
- * A lesson that moves from its first step to its second, with the step's name set in where each began
- * (PAGES_ONLY=steps): from the top, scrolled to where the top edge counts the steps, opened again, on the bare line
- * and the soft field, and at 720 by 560 with the largest text.
- */
 async function stepHeads() {
   const heads = async (w, want, label) => {
     const at = await w.op({ op: "session" });
@@ -723,7 +636,6 @@ async function stepHeads() {
     await settle(w, 400);
   };
   const { home, window: s } = await ownWindow("steps");
-  // The text size is kept with the window's settings, by program name, and an earlier run can leave it larger.
   await step(s, "the text at its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   await lineLook(s, "Bare line");
   await step(s, "the workspace", { op: "click", target: "tab-1", by: "drive" });
@@ -731,13 +643,9 @@ async function stepHeads() {
   await settle(s, 800);
   await step(s, "a new session", { op: "key", key: "n", meta: true });
   await settle(s, 800);
-  // A step's head never moves anything in view: the reply that began a step stands still on screen from its end
-  // through the window hearing of the step (`still` reads it every frame). A head for a reply in view waits for
-  // the page folding to the task or the next message.
   const still = async (w, label, more) => {
     const read = await w.op({ op: "still", ms: 4000, send: true, ...more });
     if (!read.ok) {
-      // A build from before the `still` op (the base of a before-and-after): send as a learner does, measure nothing.
       problem(`${label}: no still op (${read.error ?? "not ok"}); sent without measuring`);
       await step(w, `${label}: send`, { op: "key", key: "Enter", ...(more?.alt ? { alt: true } : {}) });
       await step(w, `${label}: the reply`, { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
@@ -745,11 +653,7 @@ async function stepHeads() {
     }
     run.steps.push({ label: `${label}: still`, still: read });
     if (read.step_at === null || read.step_at === undefined) problem(`${label}: the window heard of no step`);
-    // From the frame before the window heard of the step on, the reply stands still. (A mark the record shows
-    // above it, on Magnesium's engine, moves it in the frame the mark comes: that is the mark's, not the head's.)
     const marked = read.marked_at ?? -1;
-    // Under half a CSS pixel is under one device pixel here: WebKit keeps a scroll place a learner left between
-    // device pixels (0.2 px measured), and puts it on one when the page scrolls on by the head's height.
     const moved = (read.moves_after_end ?? []).filter((move) => move.at >= read.step_at && Math.abs(move.to - move.from) >= 0.5 && !(move.at >= marked && move.at <= marked + 50));
     const atStep = read.reply_top_at_step ?? {};
     if (atStep.before === null || atStep.after === null || Math.abs(atStep.after - atStep.before) >= 0.5 || moved.length > 0) problem(`${label}: the reply moved when the step was heard: ${JSON.stringify(read)}`);
@@ -769,7 +673,6 @@ async function stepHeads() {
   const second = await still(s, "the answer that moves the lesson on");
   if (second.heads_after !== second.heads_before) problem("the second step's head was drawn over the reply in view");
   await heads(s, one, "the second head, held while its reply is read");
-  // Talk, so the lesson runs past the window and the heading scrolls away; sending draws the held head.
   for (const words of ["CITE: where is that in the slides?", "VERYSLOW: say a little more about the standard error"]) {
     await step(s, "focus for talk", { op: "focus", target: "composer", by: "drive" });
     await step(s, "write talk", { op: "type", text: words });
@@ -792,7 +695,6 @@ async function stepHeads() {
   await settle(s, 400);
   await shoot(s, "steps-bare-second", "Steps: the second step's head, set in above the reply that moved on to it");
 
-  // Closed and opened again: the heads are where they were.
   await quit(s);
   const again = await launch("steps-again", home);
   await step(again, "the session again", { op: "click", target: "tab-2", by: "drive" });
@@ -816,7 +718,6 @@ async function stepHeads() {
   await step(again, "the session, bare again", { op: "click", target: "tab-2", by: "drive" });
   await lessonSoFar(again, "the lesson so far, bare again");
 
-  // A small window with the largest text.
   const wide = await step(again, "the window's size", { op: "frame" });
   await step(again, "720 by 560", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await again.op({ op: "menu_click", path: ["View", "Bigger Text"] });
@@ -831,15 +732,12 @@ async function stepHeads() {
   await step(again, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
   if (wide.ok) await step(again, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
 
-  // A long lesson, read at its end, where the tutor begins a new route: its reply stands still too.
   await lessonSoFar(again, "the lesson so far, long");
   await step(again, "to the end, long", { op: "scroll", to: "bottom" });
   await step(again, "focus, long", { op: "focus", target: "composer", by: "drive" });
   await step(again, "ask for a new route", { op: "type", text: "TEACH me the quadratic formula" });
   const long = await still(again, "a long lesson at its end", { alt: true });
   if (long.heads_after !== long.heads_before) problem("a head was drawn over the reply in view, in a long lesson");
-  // Small and large, read on past the reply's first lines: the head goes in above the view at once, and the page
-  // scrolls by its height so the reply stays where it is.
   await step(again, "720 by 560 for the last step", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await again.op({ op: "menu_click", path: ["View", "Bigger Text"] });
   await settle(again, 400);
@@ -883,7 +781,6 @@ try {
     await noteStates();
     throw "only";
   }
-  // Home on a Mac with no study folder yet.
   const emptyHome = join(scratch, "window-empty");
   mkdirSync(emptyHome, { recursive: true });
   const empty = await launch("empty", emptyHome);
@@ -893,11 +790,9 @@ try {
   const w = await launch("main", join(scratch, "window"));
   await shoot(w, "home", "Home, three workspaces, no session yet");
 
-  // A workspace's page, its material and the paste sheet.
   await step(w, "open the workspace", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(w, 800);
   await shoot(w, "workspace", "Workspace: Intro Statistics, its past papers and no other material");
-  // A note of the material: Linear Algebra has one.
   await step(w, "back home for a note", { op: "click", target: "‹ Home" });
   await step(w, "open Linear Algebra", { op: "click", target: "workspace-Linear Algebra", by: "drive" });
   await settle(w, 800);
@@ -916,7 +811,6 @@ try {
   await shoot(w, "paste", "Paste text as material");
   await step(w, "close the paste sheet", { op: "key", key: "Escape" });
 
-  // A new session: at rest, then the tutor's first task, then a marked answer.
   await step(w, "new session", { op: "key", key: "n", meta: true });
   await settle(w, 800);
   await shoot(w, "session-rest", "Session: a new session before it starts");
@@ -928,15 +822,12 @@ try {
   await settle(w, 300);
   await shoot(w, "session-stuck", "Session: Stuck's row open in the line, under the open task");
   await step(w, "close Stuck", { op: "key", key: "Escape" });
-  // The open task's line is the composer itself.
   await step(w, "focus the answer", { op: "focus", target: "composer", by: "drive" });
   await step(w, "type the answer", { op: "type", text: ANSWER });
   await step(w, "send", { op: "key", key: "Enter" });
   await step(w, "marked", { op: "wait_idle", timeout_ms: TURN_MS });
   {
-    // The answer moved the lesson on.
     const at = await w.op({ op: "session" });
-    // The second waits while its reply is read (it would push the reply down); the first went in as the page folded.
     const want = "Step 1 of 3: The standard error";
     if ((at.heads ?? []).join(" | ") !== want) problem(`the lesson's step heads are ${JSON.stringify(at.heads)}, not ${want}`);
   }
@@ -948,7 +839,6 @@ try {
   await step(w, "more again", { op: "click", target: "more", by: "drive" });
   await step(w, "close the symbols", { op: "click", target: "symbols", by: "drive" });
 
-  // The plan beside the lesson, then changed by the tutor.
   await step(w, "show the plan", { op: "click", target: "plan-toggle", by: "drive" });
   await settle(w, 600);
   await shoot(w, "session-plan", "Session with the plan panel shown");
@@ -957,7 +847,6 @@ try {
   await step(w, "send the change", { op: "key", key: "Enter" });
   await step(w, "the plan changes", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(w, "session-plan-changed", "Session after the tutor changed the plan, panel shown");
-  // A page the tutor cites, opened from its link: beside the lesson, or over it in an older window.
   await step(w, "focus the line to ask for a citation", { op: "focus", target: "composer", by: "drive" });
   await step(w, "ask for a citation", { op: "type", text: "CITE: where is that in the slides?" });
   await step(w, "send the citation request", { op: "key", key: "Enter" });
@@ -979,8 +868,6 @@ try {
   await step(w, "scroll down", { op: "scroll", to: "bottom" });
   await step(w, "hide the plan", { op: "click", target: "plan-toggle", by: "drive" });
 
-  // A reply arriving: the stand-in writes slowly when asked to.
-  // After talk, the line is talk's already.
   await step(w, "focus the line again", { op: "focus", target: "composer", by: "drive" });
   await step(w, "ask for a slow reply", { op: "type", text: "VERYSLOW: say a little more about the standard error" });
   await step(w, "send it", { op: "key", key: "Enter" });
@@ -989,13 +876,11 @@ try {
   await shoot(w, "session-reply", "Session: the tutor's reply arriving");
   await step(w, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
 
-  // A file on the line, before it is sent.
   await step(w, "attach a photo", { op: "attach", path: photo });
   await settle(w, 400);
   await shoot(w, "session-attached", "Session: a photo on the line, before sending");
   await step(w, "take it off", { op: "click", target: "×" });
 
-  // ⌘K and its workspace switcher.
   await step(w, "⌘K", { op: "key", key: "k", meta: true });
   await settle(w, 300);
   await shoot(w, "commands", "⌘K over a session");
@@ -1004,7 +889,6 @@ try {
   await shoot(w, "switch", "⌘K: switch workspace");
   await step(w, "close ⌘K", { op: "key", key: "Escape" });
 
-  // Settings, section by section.
   await step(w, "settings", { op: "click", target: "settings", by: "drive" });
   await settle(w, 500);
   await shoot(w, "settings", "Settings, from the top: Reading");
@@ -1021,7 +905,6 @@ try {
   await step(w, "settings: the end", { op: "scroll", to: "bottom" });
   await settle(w, 300);
   await shoot(w, "settings-about", "Settings: Lessons and About, at the end");
-  // A colour well's grid open, under the ground and text rows with their light and dark columns.
   await step(w, "settings: Appearance again", { op: "scroll", target: "Appearance" });
   await w.op({ op: "scroll", by: -40 });
   await step(w, "open the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
@@ -1029,8 +912,6 @@ try {
   await shoot(w, "settings-colour", "Settings: the ground's colours open");
   await step(w, "close the ground's colours", { op: "click", target: "colour-ground-light", by: "drive" });
 
-  // The line drawn bare. A new window draws it as a soft field, so every photograph above has that look;
-  // these are the same session with the other one, chosen in Settings as a learner chooses it.
   await step(w, "your line: bare", { op: "click", target: "Bare line" });
   await step(w, "the session", { op: "click", target: "tab-2", by: "drive" });
   await settle(w, 500);
@@ -1062,7 +943,6 @@ try {
   await settle(w, 700);
   await shoot(w, "session-bare-reply", "Session: the tutor's reply arriving, the bare line under it saying how to stop it");
   await step(w, "the reply ends over the bare line", { op: "wait_idle", timeout_ms: TURN_MS });
-  // The bare foot in a small window with the largest text: the open question, Stuck's row and the words.
   const wide = await step(w, "the window's size", { op: "frame" });
   await step(w, "720 by 560, bare", { op: "frame", width: 720, height: 560 });
   for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
@@ -1073,17 +953,14 @@ try {
   await shoot(w, "session-bare-narrow-stuck", "Session: Stuck open on the bare line at 720 by 560, the largest text");
   await step(w, "close Stuck on the small bare line", { op: "key", key: "Escape" });
   await step(w, "clear the small bare line", { op: "type", text: "", replace: true });
-  // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(w, "the text back to its own size, bare", { op: "menu_click", path: ["View", "Actual Size"] });
   if (wide.ok) await step(w, "the window's size again", { op: "frame", width: wide.frame.width, height: wide.frame.height });
-  // Before a lesson the line ends in More alone.
   await step(w, "a new session on the bare line", { op: "key", key: "n", meta: true });
   await settle(w, 800);
   await shoot(w, "session-rest-bare", "Session: a new session before it starts, the line bare");
   await step(w, "close the new session", { op: "key", key: "w", meta: true });
   await settle(w, 300);
 
-  // The line ruled: the bare line on one hairline, in the bare line's states. Settings keeps its tab, the third.
   await step(w, "settings for the ruled line", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: ruled", { op: "click", target: "Ruled line" });
   await step(w, "settings: Your line", { op: "scroll", target: "Your line" });
@@ -1123,13 +1000,10 @@ try {
   await shoot(w, "session-rest-ruled", "Session: a new session before it starts, the line ruled");
   await step(w, "close the ruled new session", { op: "key", key: "w", meta: true });
   await settle(w, 300);
-  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
   await step(w, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(w, "your line: soft", { op: "click", target: "Soft field" });
   await settle(w, 300);
 
-  // Home again, with a session to carry on, and three tabs open.
-  // The Home tab still shows the workspace's page: ‹ Home goes back to Home itself.
   await step(w, "home", { op: "click", target: "tab-1", by: "drive" });
   await settle(w, 300);
   await step(w, "‹ Home", { op: "click", target: "‹ Home" });
@@ -1147,7 +1021,6 @@ try {
   await shoot(w, "workspace-document", "Workspace: a past paper opened from its name");
   await closeDocument(w, "Midterm 2023");
 
-  // Every item on the plan done: Home and the workspace page fall back to the session carried on, else New session.
   const planFile = join(scratch, "Intro-Statistics", "Study", "midterm-2", "plan.md");
   const planText = readFileSync(planFile, "utf8");
   writeFileSync(planFile, planText.replace(/\| todo \|/g, "| done |"));
@@ -1165,7 +1038,6 @@ try {
   for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
   await settle(w, 400);
   await shoot(w, "home-big", "Home at 720 by 560, the largest text");
-  // The text size is kept with the window's settings, which outlast this run: put it back.
   await step(w, "the text back to its own size", { op: "menu_click", path: ["View", "Actual Size"] });
 
   const menu = await step(w, "the menu bar", { op: "menu" });
@@ -1174,11 +1046,9 @@ try {
   if (errors.ok && errors.errors.length > 0) problem(`errors on the page: ${errors.errors.join(" | ")}`);
   await quit(w);
 
-  // Lessons on the Claude Code engine, whose stand-in asks permission and can hit a usage limit.
   const pluginHome = join(scratch, "window-plugin");
   mkdirSync(pluginHome, { recursive: true });
   const kept = JSON.parse(readFileSync(join(scratch, "window", "state.json"), "utf8"));
-  // A folder of notes that Magnesium was never set up in.
   const unset = join(scratch, "Reading-Group");
   mkdirSync(unset, { recursive: true });
   writeFileSync(join(unset, "chapter-1-notes.md"), "# Chapter 1\n\nMade-up notes.\n");
@@ -1192,9 +1062,6 @@ try {
   await step(p, "ask for something that needs permission", { op: "type", text: "PERMISSION: make the paper into a PDF" });
   await step(p, "send", { op: "key", key: "Enter" });
   await settle(p, 3000);
-  // Each card in each of the line's looks, chosen in Settings as a learner chooses them, bare first. The stand-in
-  // asks within a moment of the Return that sent the words, so the card leaves the keyboard on the line; ⇧⇥ takes
-  // it to the card. Settings keeps its tab, the third, once it has one.
   let settingsTab = null;
   const lineLook = async (which) => {
     await step(p, `settings for the ${which}`, { op: "click", target: settingsTab ?? "settings", by: "drive" });
@@ -1221,7 +1088,6 @@ try {
   await cardShots("session-permission", "Session: the tutor asks permission (Claude Code engine)");
   await step(p, "allow once", { op: "click", target: "allow", by: "drive" });
   await step(p, "the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
-  // The tutor asks to change the plan, which its rules did not cover.
   await step(p, "focus the line for the plan", { op: "focus", target: "composer", by: "drive" });
   await step(p, "ask to change the plan", { op: "type", text: "PLANEDIT: move the lab report to Friday" });
   await step(p, "send the plan change", { op: "key", key: "Enter" });
@@ -1229,7 +1095,6 @@ try {
   await cardShots("session-permission-plan", "Session: the tutor asks to change the plan");
   await step(p, "refuse the plan change", { op: "click", target: "Refuse" });
   await step(p, "the plan reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
-  // The tutor asks to read a file outside the course.
   await step(p, "focus the line for outside", { op: "focus", target: "composer", by: "drive" });
   await step(p, "ask to read outside", { op: "type", text: "OUTSIDE: read my reading list" });
   await step(p, "send the outside read", { op: "key", key: "Enter" });
@@ -1238,7 +1103,6 @@ try {
   await step(p, "refuse the outside read", { op: "click", target: "Refuse" });
   await step(p, "the outside reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
   await lineLook("Bare line");
-  // A model the account cannot use: Claude Code's own line for it is a notice, with the list of models one press away.
   await step(p, "focus the line for the model", { op: "focus", target: "composer", by: "drive" });
   await step(p, "a model the account cannot use", { op: "type", text: "NOMODEL: and the intercept?" });
   await step(p, "send it", { op: "key", key: "Enter" });
@@ -1249,7 +1113,6 @@ try {
   await settle(p, 500);
   await shoot(p, "session-model-unavailable-list-bare", "Session: Pick a model opens the list of models");
   await step(p, "close the list", { op: "key", key: "Escape" });
-  // Settings still has its tab, the third, so the bar's Settings button is not there: the tab goes back to it.
   await step(p, "settings again", { op: "click", target: "tab-3", by: "drive" });
   await step(p, "your line: soft", { op: "click", target: "Soft field" });
   await step(p, "the session again", { op: "click", target: "tab-2", by: "drive" });
@@ -1262,10 +1125,8 @@ try {
   await step(p, "the error", { op: "wait_idle", timeout_ms: TURN_MS });
   await settle(p, 500);
   await shoot(p, "session-error", "Session: the reply stopped by an error (a usage limit)");
-  // A folder Magnesium was never set up in: its page says what setting it up does.
   await step(p, "home for the unset folder", { op: "click", target: "tab-1", by: "drive" });
   await settle(p, 300);
-  // The Home tab still shows the workspace's page: ‹ Home goes back to Home itself.
   await step(p, "‹ Home for the unset folder", { op: "click", target: "‹ Home" });
   await settle(p, 500);
   await step(p, "open the folder", { op: "click", target: "Reading" });
@@ -1279,8 +1140,6 @@ try {
   await workRecord();
   await repairRecord();
 
-  // An app whose own magnesium program is newer than the one on this Mac: Home asks which to use. The app's copy
-  // here only answers --version; it is never chosen.
   const newer = join(scratch, "bundled-magnesium");
   writeFileSync(newer, `#!/bin/sh\n[ "$1" = "--version" ] && { echo "magnesium 99.0.0"; exit 0; }\nexec '${runtime}' "$@"\n`, { mode: 0o755 });
   const replaceHome = join(scratch, "window-replace");
@@ -1289,7 +1148,6 @@ try {
   const n = await launch("replace", replaceHome, agent, { MAGNESIUM_APP_BUNDLED: newer, MAGNESIUM_APP_INSTALL_TO: join(scratch, "never-installed") });
   await settle(n, 800);
   await shoot(n, "home-newer-program", "Home: this app carries a newer magnesium program");
-  // Before the learner chooses, a lesson runs on the copy already on this Mac, as Home says.
   await step(n, "open the workspace before choosing", { op: "click", target: "workspace-Intro Statistics", by: "drive" });
   await settle(n, 800);
   await step(n, "a new session before choosing", { op: "key", key: "n", meta: true });
@@ -1304,7 +1162,6 @@ try {
   await shoot(n, "session-different-program", "Session: a lesson on the copy already on this Mac, before choosing");
   await quit(n);
 
-  // Home as each state of this Mac draws it, on the course with its plan and no session yet.
   const homeWith = async (name, stem, what, { withAgent = agent, more = {}, recent = kept.recent } = {}) => {
     const home = join(scratch, `window-${name}`);
     mkdirSync(home, { recursive: true });
@@ -1330,7 +1187,6 @@ try {
   await homeWith("signed-out", "home-signed-out", "Home: Claude Code is not signed in", { withAgent: signedOut });
   await homeWith("signed-out-newer", "home-signed-out-newer", "Home: not signed in, and this app carries a newer program", { withAgent: signedOut, more: { ...never, MAGNESIUM_APP_BUNDLED: newer } });
   await homeWith("no-claude", "home-no-claude", "Home: Claude Code is not on this Mac", { withAgent: join(scratch, "no-claude-here") });
-  // The first open with one workspace: with its plan, and without one.
   await homeWith("one", "home-one", "Home: one workspace, with a plan, never studied in", { recent: [kept.recent[0]] });
   await homeWith("one-no-plan", "home-one-no-plan", "Home: one workspace, no plan, never studied in", { recent: [kept.recent[1]] });
 } catch (error) {

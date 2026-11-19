@@ -12,13 +12,8 @@ use super::manifest::{AnchorKind, ManifestError, SourceCandidate, json_column, s
 
 const MAX_QUERY_CHARS: usize = 1_024;
 const MAX_QUERY_TERMS: usize = 32;
-/// The one bound on source search results, shared with the search_sources tool.
 pub(crate) const MAX_RESULTS: usize = 64;
 
-// Kept as one statement so selection can stream a single ranked cursor.
-// FTS fields are path, structural_path, body, symbols. Preserve the effective
-// weights of the former six-column projections (their extra trailing weight
-// was ignored by FTS5): 0, 8, 4, 1.
 const SOURCE_QUERY_SQL: &str = r#"WITH ranked_matches AS MATERIALIZED (
                  SELECT rowid AS candidate_no,
                         bm25(source_search_ranked, 0.0, 8.0, 4.0, 1.0) AS score
@@ -113,9 +108,6 @@ pub(crate) struct SourceSearchHit {
 pub(crate) struct SourceSearchReport {
     pub(crate) generation: i64,
     pub(crate) coverage: IndexCoverage,
-    /// Set when a concurrent reconciliation owner could not be outrun within
-    /// the shared run budget. Hits then come from the already-indexed,
-    /// currently authorized snapshot only.
     pub(crate) reconciliation: ReconciliationOutcome,
     pub(crate) hits: Vec<SourceSearchHit>,
 }
@@ -351,13 +343,9 @@ fn query_index_with_budget(
                 }
             },
         )?;
-    // One snapshot and one ranked cursor cover the entire selection, including
-    // rows skipped because a source boundary changed since reconciliation.
     let _snapshot = connection
         .unchecked_transaction()
         .map_err(|source| sqlite(index_path, "begin lexical source search snapshot", source))?;
-    // The SQL handler records the cause, not just SQLITE_INTERRUPT. One
-    // deadline covers every ranking tier and the complete row collection.
     cancellation.check()?;
     let reason = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
     {
@@ -383,8 +371,6 @@ fn query_index_with_budget(
     let mut statement = connection.prepare(SOURCE_QUERY_SQL).map_err(|source| {
         sqlite_or_interrupted(index_path, "prepare lexical source search", source, &reason)
     })?;
-    // Rank once. Cached rows can outlive a source boundary; stream past them
-    // under the same deadline and keep only the requested authorized hits.
     #[cfg(test)]
     crate::request::test_checkpoint("source_query_ranking");
     let rows = statement
@@ -453,7 +439,6 @@ fn query_index_with_budget(
         if super::source_relative_path_is_excluded(workspace_root, Path::new(&candidate.path))? {
             continue;
         }
-        // Filesystem policy checks consume the same budget as SQL execution.
         cancellation.check()?;
         if std::time::Instant::now() >= deadline {
             return Err(ManifestError::BudgetExhausted);
@@ -491,7 +476,7 @@ fn sqlite_or_interrupted(
         match reason.load(std::sync::atomic::Ordering::Relaxed) {
             1 => return ManifestError::Cancelled,
             2 => return ManifestError::BudgetExhausted,
-            _ => {} // An unrelated SQLite interruption has no inferred cause.
+            _ => {}
         }
     }
     sqlite(index_path, action, source)
@@ -503,8 +488,6 @@ struct QueryPlan {
     full_tokens: String,
 }
 
-// One SQL statement ranks all tiers before streaming allowed hits. Its progress handler and
-// request deadline cover every FTS branch together, with no per-tier reset.
 fn compile_query_plan(query: &str) -> Result<QueryPlan, ManifestError> {
     #[cfg(test)]
     crate::request::test_checkpoint("source_query_compilation");
@@ -549,7 +532,6 @@ fn compile_query_plan(query: &str) -> Result<QueryPlan, ManifestError> {
         )
     };
     Ok(QueryPlan {
-        // An explicit phrase is mandatory, never silently relaxed to its words.
         candidates: if explicit_phrase {
             full_tokens.clone()
         } else {

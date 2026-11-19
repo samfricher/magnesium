@@ -210,7 +210,6 @@ fn managed_index_symlink_is_rejected_without_touching_external_sentinel() {
     fs::create_dir_all(index.parent().unwrap()).unwrap();
     symlink(&external, &index).expect("install managed index symlink");
 
-    // Search is what opens the managed index; it must refuse the symlink.
     let search = crate::support::v2::tool_output(
         &environment,
         "claude",

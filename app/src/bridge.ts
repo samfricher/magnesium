@@ -1,7 +1,3 @@
-// The page's one way to the core. Inside the window it calls the Rust shell.
-// In a plain browser it uses the demo, which holds made-up data, so the
-// screens can be worked on and photographed without starting an agent.
-
 import type { Core } from "./types";
 
 const inWindow = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

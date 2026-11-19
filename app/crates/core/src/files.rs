@@ -1,5 +1,3 @@
-//! The learner's own files: handing in work, and opening a paper.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -15,10 +13,6 @@ const IMAGES: [&str; 9] = [
     "heic", "heif", "jpg", "jpeg", "png", "tif", "tiff", "webp", "bmp",
 ];
 const MAX_BYTES: u64 = 200 * 1024 * 1024;
-/// What a link in a reply may open. A link must never start a program, so
-/// anything else, such as an app, a script or a web shortcut, stays closed.
-/// An HTML page, such as a paper or a figure the tutor wrote, opens in the
-/// browser. The same list as the file names the page marks as paths.
 const DOCUMENTS: [&str; 11] = [
     "pdf", "png", "jpg", "jpeg", "gif", "webp", "md", "tex", "txt", "csv", "html",
 ];
@@ -48,7 +42,6 @@ fn safe_name(text: &str) -> String {
     }
 }
 
-/// A path that does not exist yet: `name.ext`, then `name-2.ext`, and so on.
 fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     let first = dir.join(format!("{stem}.{ext}"));
     if !first.exists() {
@@ -60,10 +53,6 @@ fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
         .unwrap_or(first)
 }
 
-/// Put a copy of the learner's photo or PDF in the study folder and return its
-/// path inside the folder. A phone photo is often HEIC and several megabytes,
-/// which the tutor reads slowly or not at all, so an image is saved as a JPEG
-/// no larger than 2200 pixels a side.
 pub fn hand_in(root: &Path, group: &str, source: &Path) -> Result<String, String> {
     let ext = extension(source);
     let is_image = IMAGES.contains(&ext.as_str());
@@ -92,8 +81,6 @@ pub fn hand_in(root: &Path, group: &str, source: &Path) -> Result<String, String
     let target = if is_image {
         let target = free_path(&dir, &stem, "jpg");
         if !shrink(source, &target) {
-            // No converter on this system. Keep the original, which the tutor
-            // can still try to read.
             let target = free_path(&dir, &stem, &ext);
             fs::copy(source, &target).map_err(|e| format!("The file could not be copied: {e}."))?;
             target
@@ -112,8 +99,6 @@ pub fn hand_in(root: &Path, group: &str, source: &Path) -> Result<String, String
     Ok(relative.join(name).to_string_lossy().into_owned())
 }
 
-/// Hand in an image the learner pasted, which has no file of its own: it is
-/// written to a scratch file first, then handed in as any photo is.
 pub fn hand_in_bytes(root: &Path, group: &str, name: &str, bytes: &[u8]) -> Result<String, String> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err("That image is larger than 200 MB.".into());
@@ -147,7 +132,6 @@ pub fn hand_in_bytes(root: &Path, group: &str, name: &str, bytes: &[u8]) -> Resu
     result
 }
 
-/// Convert with `sips`, which every Mac has.
 fn shrink(source: &Path, target: &Path) -> bool {
     let Some(sips) = paths::find_program("sips").or_else(|| {
         let system = PathBuf::from("/usr/bin/sips");
@@ -173,8 +157,6 @@ fn shrink(source: &Path, target: &Path) -> bool {
     paths::run(command, Duration::from_secs(60)).is_ok() && target.is_file()
 }
 
-/// Resolve a path the tutor or the window named, and keep it inside the study
-/// folder.
 pub fn inside(root: &Path, path: &str) -> Result<PathBuf, String> {
     let given = Path::new(path.trim());
     let joined = if given.is_absolute() {
@@ -192,7 +174,6 @@ pub fn inside(root: &Path, path: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-/// The file `open` would hand to the system's viewer, or why it will not.
 pub fn openable(root: &Path, path: &str) -> Result<PathBuf, String> {
     let resolved = inside(root, path)?;
     if looks_like_a_key(&resolved) {
@@ -207,13 +188,10 @@ pub fn openable(root: &Path, path: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-/// Open a paper or a source in the system's own viewer. An answer key is
-/// refused: the key stays closed until the tutor has marked the work.
 pub fn open(root: &Path, path: &str) -> Result<(), String> {
     launch(&openable(root, path)?)
 }
 
-/// Hand a file `openable` allowed to the system's viewer.
 pub fn launch(resolved: &Path) -> Result<(), String> {
     let opener = if cfg!(target_os = "macos") {
         "open"
@@ -224,8 +202,6 @@ pub fn launch(resolved: &Path) -> Result<(), String> {
         .arg(resolved)
         .spawn()
         .map_err(|e| format!("The file could not be opened: {e}."))?;
-    // Waited for, so no finished process is left behind. `open` returns at
-    // once; `xdg-open` can wait for the viewer, so it is waited for apart.
     if cfg!(target_os = "macos") {
         let _ = child.wait();
     } else {
@@ -234,35 +210,21 @@ pub fn launch(resolved: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The kinds of text file the source panel shows as text. An HTML page is
-/// shown as its text, never drawn, so nothing in it runs.
 const TEXT_SOURCES: [&str; 8] = ["txt", "md", "tex", "csv", "html", "htm", "json", "rst"];
 const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 const MAX_PDF_BYTES: u64 = 64 * 1024 * 1024;
 
-/// What the page shows of a source a reply cited.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Source {
-    /// The file's name.
     pub name: String,
-    /// "pdf", "text" or "image".
     pub kind: &'static str,
-    /// The text of a text file, cut at one megabyte.
     pub text: Option<String>,
     pub truncated: bool,
-    /// An image as a data address.
     pub image: Option<String>,
 }
 
-/// The file a cited source names, if the window may show it. The path is
-/// from the study root and stays inside it. A file that looks like an answer
-/// key is refused by its name, by the name of what a link in the folder
-/// leads to, and by the folders it sits in, whatever the link says.
 fn source_file(root: &Path, path: &str) -> Result<(PathBuf, String), String> {
     let given = path.trim();
-    // An absolute path carries the folders above the study folder, which are
-    // not the study folder's business, so only a path from the root is read
-    // by its folders here. The resolved path is read below either way.
     if !Path::new(given).is_absolute() && looks_like_a_key(Path::new(given)) {
         return Err("That looks like an answer key, so the window leaves it closed.".into());
     }
@@ -278,15 +240,10 @@ fn source_file(root: &Path, path: &str) -> Result<(PathBuf, String), String> {
     Ok((resolved.clone(), extension(&resolved)))
 }
 
-/// The file at `path`, to hand to the Mac's share sheet: the same file the
-/// panel would open, by the same rule, so an answer key or a file outside the
-/// study folder is refused here too.
 pub fn shareable(root: &Path, path: &str) -> Result<PathBuf, String> {
     source_file(root, path).map(|(file, _)| file)
 }
 
-/// Open a cited source for the panel beside the lesson. A PDF's bytes come
-/// from [`source_pdf`], so they are not sent twice.
 pub fn source(root: &Path, path: &str) -> Result<Source, String> {
     let (file, ext) = source_file(root, path)?;
     let name = file
@@ -336,8 +293,6 @@ pub fn source(root: &Path, path: &str) -> Result<Source, String> {
     Err("The window shows PDFs, text and images beside a lesson. Other files stay closed.".into())
 }
 
-/// The bytes of a cited PDF. The same checks as [`source`], and the file
-/// must be a PDF.
 pub fn source_pdf(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     let (file, ext) = source_file(root, path)?;
     if ext != "pdf" {
@@ -353,7 +308,6 @@ pub fn source_pdf(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-/// An image inside the study folder as a data address the page can show.
 pub fn image(root: &Path, path: &str) -> Result<String, String> {
     let resolved = inside(root, path)?;
     if looks_like_a_key(&resolved) {
@@ -466,7 +420,6 @@ mod tests {
             .unwrap()
             .set_len(21 * 1024 * 1024)
             .unwrap();
-        // Unreadable, so only its size can refuse it.
         fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
         let refused = image(root.path(), "big.png").unwrap_err();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -594,8 +547,6 @@ mod tests {
         assert!(source_pdf(root.path(), "Study/stats/notes.md").is_err());
         assert!(source_pdf(root.path(), "Study/stats/not-really.pdf").is_err());
 
-        // An answer key stays closed, whatever the link says: by its name, by
-        // its folder, and by what a link inside the folder leads to.
         for key in [
             "Study/stats/Midterm solutions.pdf",
             "Study/stats/answer-key.txt",
@@ -621,8 +572,6 @@ mod tests {
             .unwrap_err()
             .contains("answer key"));
 
-        // Nothing outside the study folder opens: not by climbing out, not by
-        // an absolute path, and not through a link.
         assert!(source(root.path(), "../secret.pdf").is_err());
         assert!(source(
             root.path(),

@@ -1,22 +1,11 @@
-//! Look for study folders on this computer, when the learner asks.
-//!
-//! A study folder is a folder that holds `.magnesium`, which `magnesium init`
-//! makes. Folders set up in a terminal are unknown to the window until they
-//! are opened in it, so the library offers to look for them. The look reads
-//! folder names only. It opens no file, follows no link, and changes nothing.
-
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// How deep under the start folder the look goes. `~/School/Year 2/Course`
-/// is depth 3.
 const MAX_DEPTH: usize = 4;
-/// The look stops after this many folders, whatever the time.
 const MAX_FOLDERS: usize = 30_000;
 
-/// Folders that never hold a course, or that are large and slow to walk.
 const SKIPPED: [&str; 14] = [
     "Library",
     "Applications",
@@ -39,8 +28,6 @@ fn is_study_folder(folder: &Path) -> bool {
     control.join("state.sqlite").is_file() || control.join("config.toml").is_file()
 }
 
-/// Every study folder under `start`, nearest first. A study folder is not
-/// searched for more study folders inside it.
 pub fn study_folders(start: &Path, limit: Duration) -> Vec<PathBuf> {
     let began = Instant::now();
     let mut found = Vec::new();
@@ -63,7 +50,6 @@ pub fn study_folders(start: &Path, limit: Duration) -> Vec<PathBuf> {
         };
         let mut children: Vec<PathBuf> = entries
             .filter_map(Result::ok)
-            // The entry's own type: a link to a folder is not followed.
             .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
             .filter(|entry| {
                 let name = entry.file_name();
@@ -113,10 +99,8 @@ mod tests {
         study(root, "Library/Course");
         study(root, "code/node_modules/Course");
         study(root, "a/b/c/d/Course");
-        // A study folder is not searched for more inside it.
         let outer = study(root, "Course");
         study(root, "Course/Inner");
-        // A folder with an empty `.magnesium` was never set up.
         fs::create_dir_all(root.join("Half/.magnesium")).unwrap();
         assert_eq!(study_folders(root, Duration::from_secs(5)), vec![outer]);
     }

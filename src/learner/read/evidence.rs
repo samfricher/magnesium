@@ -1,4 +1,3 @@
-//! Explicit evidence, session and historical reads from the caller's snapshot.
 use super::{pages::*, records::*, requests::*};
 use crate::learner::{model::SchemaVersion, search};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -79,8 +78,6 @@ pub(super) fn session_context(
             checkpoint,
             revision,
         };
-        // The saved diagnosis and its bounded current dependency status are one
-        // required envelope, before pending previews or optional result bodies.
         builder.required(|p| {
             p.session = Some(session);
             p.checkpoint_basis = Some(basis);
@@ -128,8 +125,6 @@ pub(super) fn read(
         let remaining = &r.refs[index + 1..];
         let next_call = (!remaining.is_empty()).then(|| NextCall::selected_read(r, remaining));
         let next = selected_packet(builder, &records, next_call);
-        // Try the complete requested range first: consuming its last byte drops
-        // the same-event continuation, so terminal and partial envelopes differ.
         if size(&next) <= builder.max {
             last_fitting = Some(next);
             continue;
@@ -142,8 +137,6 @@ pub(super) fn read(
         }
         let mut without_continuation = next;
         without_continuation.next_call = None;
-        // The no-continuation packet grows monotonically. Once it fails, no
-        // longer prefix can fit, even when its remaining refs get shorter.
         if size(&without_continuation) > builder.max {
             break;
         }
@@ -161,9 +154,6 @@ pub(super) fn read(
             }
         ));
     }
-    // A single-record read retains exactly the accepted write-time envelope.
-    // A multi-record request may need narrowing if its remaining refs consume
-    // the space beside that record. Never silently drop a mandatory reference.
     let mut narrower = r.clone();
     narrower.max_bytes = Some(crate::learner::limits::PACKET_BYTES);
     if r.refs.len() == 1 && builder.max == crate::learner::limits::PACKET_BYTES {
@@ -196,8 +186,6 @@ fn event_page_packet(
     if event.current_memory_refs.is_empty() {
         return Ok(None);
     }
-    // Relationship previews can be deferred, but their existence and executable
-    // support path remain explicit beside the original provenance and metadata.
     let mut deferred = event.clone();
     deferred.current_memory_refs.clear();
     deferred.current_memory_refs_more = true;
@@ -219,8 +207,6 @@ fn event_page_packet(
     event_prefix_packet(builder, request, earlier, &deferred, remaining)
 }
 
-/// Raw events alone have byte-range semantics. Keep every provenance/support
-/// field and size the real packet plus its executable continuation at each probe.
 fn event_prefix_packet(
     builder: &Builder,
     request: &ReadRequest,
@@ -237,8 +223,6 @@ fn event_prefix_packet(
     let mut low = 0;
     let mut high = ends.len();
     let mut fitting = None;
-    // Among nonterminal prefixes, encoded text and endpoint widths only grow.
-    // The complete/terminal candidate was checked separately by read().
     while low < high {
         super::check_read_cancellation()?;
         #[cfg(test)]

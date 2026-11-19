@@ -1,4 +1,3 @@
-//! A lesson moving between conversations, as in a forked Claude Code session.
 use crate::support::{TestEnvironment, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -20,7 +19,6 @@ fn call(e: &TestEnvironment, thread: &str, request: Value) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|_| panic!("{output:?}"))
 }
 
-/// `learning_active` per conversation, keyed by the native thread name.
 fn active(e: &TestEnvironment) -> Vec<(String, bool)> {
     db(e)
         .prepare(
@@ -78,7 +76,6 @@ fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original(
     let text = "wider, because 99% needs a bigger multiplier";
     let ticket = ticket(&v2::prompt(&e, "claude", FORK, Some("f-1"), text));
 
-    // The tutor cites the input it is capturing before an ID exists.
     let rejected = call(
         &e,
         FORK,
@@ -95,7 +92,6 @@ fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original(
         json!([captured]),
         "{rejected}"
     );
-    // Fresh native input is pending and unbound, so it is the one to select.
     assert_eq!(
         recovery["retry_attachment_ids"],
         json!([captured]),
@@ -111,18 +107,14 @@ fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original(
         assert!(instruction.contains(required), "{required}: {instruction}");
     }
 
-    // One retry exactly as the recovery describes commits.
     let retried = call(
         &e,
         FORK,
         json!({"schema":"learner-model/v2","action":"update","request_id":"fork-resume-retry","session":{"operation":"resume","session_id":session,"expected_revision":1,"selected_unbound_event_ids":[captured]},"observations":observation(&captured)}),
     );
     assert_eq!(retried["update_status"], "committed", "{retried}");
-    // The fork shares the lesson; the original conversation stays active.
     assert_eq!(active(&e), [(FORK.into(), true), (ORIGINAL.into(), true)]);
 
-    // Pausing from the fork pauses the lesson in both conversations, so
-    // returning to the original records nothing into the paused lesson.
     let paused = call(
         &e,
         FORK,
@@ -130,7 +122,6 @@ fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original(
     );
     assert_eq!(paused["update_status"], "committed", "{paused}");
     assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), false)]);
-    // Pausing again from the original says the lesson is already paused.
     let again = call(
         &e,
         ORIGINAL,
@@ -185,8 +176,6 @@ fn completing_a_shared_lesson_stops_capture_in_every_conversation() {
 fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
     let (e, session) = lesson_started_in_original();
     const LATER: &str = "later";
-    // The learner comes back days later in a new conversation and starts a
-    // different lesson there.
     let other = v2::start(&e, "claude", LATER);
     let other_session = other["references"]["session"].as_str().unwrap();
     let event = v2::context(&v2::prompt(
@@ -204,7 +193,6 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
     .unwrap()
     .to_owned();
 
-    // Closing someone else's lesson records nothing else alongside it.
     let mixed = call(
         &e,
         LATER,
@@ -218,7 +206,6 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
         json!({"schema":"learner-model/v2","action":"update","request_id":"pause-old","session":{"operation":"pause","session_id":session,"expected_revision":1}}),
     );
     assert_eq!(paused["update_status"], "committed", "{paused}");
-    // The old lesson stops in its own conversation; this one keeps its lesson.
     assert_eq!(active(&e), [(LATER.into(), true), (ORIGINAL.into(), false)]);
     let completed = call(
         &e,
@@ -240,7 +227,6 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
             (other_session.to_owned(), "active".to_owned())
         ]
     );
-    // A completed lesson is not reopened by a late pause.
     let reopened = call(
         &e,
         LATER,
@@ -251,7 +237,6 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
         "{reopened}"
     );
 
-    // A fresh conversation with no lesson of its own can close one too.
     let (e, session) = lesson_started_in_original();
     let completed = call(
         &e,
@@ -314,8 +299,6 @@ fn a_control_field_on_an_update_names_the_control_action() {
     assert!(instruction.contains("session.pause"), "{instruction}");
 }
 
-/// Admission errors arrive as text; each must show the whole request shape
-/// so a tutor repairs it in one retry instead of one missing field at a time.
 #[test]
 fn admission_errors_name_the_complete_control_and_session_shapes() {
     let (e, _) = lesson_started_in_original();
@@ -344,9 +327,6 @@ fn admission_errors_name_the_complete_control_and_session_shapes() {
     );
 }
 
-/// Controls stay conversation-scoped, matching the deny marker and admission
-/// lock that protect them when their write fails; the receipt points the tutor
-/// at session.pause, which stops the lesson everywhere atomically.
 #[test]
 fn a_pause_control_in_a_fork_names_the_lesson_wide_pause_for_the_original() {
     let (e, session) = lesson_started_in_original();
@@ -394,8 +374,6 @@ fn a_pause_control_in_a_fork_names_the_lesson_wide_pause_for_the_original() {
     assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), false)]);
 }
 
-/// The recovery a rejected resume returns must itself be a valid next request:
-/// an already-bound learner turn_ref is cited context, not input to select.
 #[test]
 fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
     let (e, session) = lesson_started_in_original();
@@ -419,7 +397,6 @@ fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
     );
     assert_eq!(rejected["error"]["code"], "unknown_reference", "{rejected}");
     let recovery = &rejected["error"]["recovery"];
-    // What a tutor following the instruction would select on the retry.
     let selected = recovery
         .get("retry_attachment_ids")
         .unwrap_or(&recovery["captured_event_ids"])
@@ -433,8 +410,6 @@ fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
     assert_eq!(v2::count(&e, "learning_events"), 1);
 }
 
-/// A lesson paused from another conversation can still hold captured work
-/// here; the recovery must keep the completion route, not declare it saved.
 #[test]
 fn work_captured_before_a_cross_conversation_pause_can_still_be_completed() {
     let (e, session) = lesson_started_in_original();

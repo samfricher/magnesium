@@ -1,15 +1,3 @@
-// A run of the real window on a made-up course: the course, windows opened on
-// it, ops sent to them and photographs taken. Shared by pages.mjs (every page)
-// and look.mjs (one state). Builds nothing and starts no model.
-//
-//   import { openRun } from "./window.mjs";
-//   const { launch, step, shoot, quit } = openRun({ binary, out });
-//
-// It works in a scratch course made by scripts/scratch-course.sh, with a
-// scratch window home, so none of your study folders, settings or agent
-// sessions are touched. Lessons run on Magnesium with the stand-in model
-// (crates/core/tests/stand_in_model.py).
-
 import { spawn, execFileSync } from "node:child_process";
 import { copyFileSync, constants, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -21,40 +9,24 @@ import { drive } from "./drive.mjs";
 export const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/**
- * A copy of the window's program under a name no other run has, removed with what it kept when this process ends.
- *
- * A window that is not inside an app bundle keeps the page's settings (the line's look, the text size) by its
- * program's name, in ~/Library/WebKit/<name>. Every run of target/debug/magnesium-window, from every checkout,
- * shares that one store: two runs at once flip each other's settings, and a run starts on whatever the last left.
- */
 export function ownCopy(binary, { keep = false } = {}) {
   const name = `magnesium-window-run-${process.pid}-${Date.now().toString(36)}`;
   const copy = join(dirname(binary), name);
   try {
-    // A clone where the disk can make one, which takes no room.
     copyFileSync(binary, copy, constants.COPYFILE_FICLONE);
   } catch {
     return binary;
   }
-  // A window left open afterwards still runs from the copy and still reads its settings.
   if (keep) return copy;
   process.on("exit", () => {
     for (const path of [copy, join(homedir(), "Library", "WebKit", name), join(homedir(), "Library", "Caches", name)]) {
       rmSync(path, { recursive: true, force: true });
     }
   });
-  // A run that is stopped still clears up: the default for these signals ends the process without "exit".
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => process.exit(130));
   return copy;
 }
 
-/**
- * Start a run: make the scratch course and say where its photographs go. `binary` is the window's program and `out`
- * the folder for the photographs, run.json and each window's log. `stem` turns a photograph's or a window's name into
- * its file's name; `keep` is for a run that leaves a window open when it ends; `runtimeProgram` is the magnesium
- * program lessons run through, in place of the one scratch-course.sh would pick.
- */
 export function openRun({ binary, out, stem = (name) => name, keep = false, runtimeProgram }) {
   mkdirSync(out, { recursive: true });
   const program = ownCopy(binary, { keep });
@@ -67,12 +39,10 @@ export function openRun({ binary, out, stem = (name) => name, keep = false, runt
 
   const scratch = mkdtempSync(join(tmpdir(), "mg-pages-"));
   run.scratch = scratch;
-  // scratch-course.sh takes the runtime to use as the window's core tests do.
   const courseEnv = runtimeProgram ? { ...process.env, MAGNESIUM_TEST_BINARY: runtimeProgram } : process.env;
   execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch], { encoding: "utf8", env: courseEnv });
   const runtime = join(scratch, "magnesium");
   const agent = join(scratch, "claude");
-  // A photo of working, to put on the line.
   const photo = join(scratch, "working-photo.png");
   execFileSync("cp", [join(APP, "src-tauri/app-icon.png"), photo]);
   writeFileSync(agent, `#!/bin/sh\nexport STAND_IN_LOG='${join(scratch, "model.log")}'\nexec python3 '${join(APP, "crates/core/tests/stand_in_model.py")}' "$@"\n`, { mode: 0o755 });
@@ -117,7 +87,6 @@ export function openRun({ binary, out, stem = (name) => name, keep = false, runt
     return answer;
   }
 
-  /** Photograph the window in each scheme, as <stem>-dark.png and <stem>-light.png; `schemes` names fewer. */
   async function shoot(window, name, what, schemes = ["dark", "light"]) {
     const files = [];
     for (const scheme of schemes) {
@@ -145,12 +114,10 @@ export function openRun({ binary, out, stem = (name) => name, keep = false, runt
 
   const settle = (window, ms = 500) => window.op({ op: "wait", ms });
 
-  /** The line's look, chosen in Settings as a learner chooses it: from the bar's Settings, or Settings' own tab once it has one. */
   async function lineLook(w, look) {
     const bar = await w.op({ op: "click", target: "settings", by: "drive" });
     if (!bar.ok) await step(w, `settings for the ${look}`, { op: "click", target: "Settings" });
     await step(w, `your line: ${look}`, { op: "click", target: look });
-    // Settings closed again, so a session is always the second tab.
     await step(w, `close Settings after the ${look}`, { op: "key", key: "w", meta: true });
     await settle(w, 300);
   }

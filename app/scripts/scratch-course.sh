@@ -1,34 +1,4 @@
 #!/bin/sh
-# Make a scratch study course for the window, with made-up material, that
-# never touches your own home, study folders or window settings.
-#
-#   scripts/scratch-course.sh <dir>                 make it under <dir>
-#   scripts/scratch-course.sh <dir> --days-ago <N>  then, or later, move every
-#                                                   time it recorded back N
-#                                                   local days ("a week away")
-#
-# Under <dir>:
-#   magnesium            the runtime, with HOME=<dir>/home, for MAGNESIUM_APP_RUNTIME
-#   home/                the runtime's scratch home (magnesium init writes there)
-#   window/              a scratch window home, for MAGNESIUM_APP_HOME: the
-#                        three folders below in its library, and lessons on
-#                        Magnesium (the direct engine)
-#   Intro-Statistics/    the course, as a learner's folder often is: two past
-#                        papers (PDFs, one with a "#" in its name) and an answer
-#                        key in Study/midterm-2/papers, no other material, and
-#                        a plan for "Midterm 2", ten days from today, in
-#                        Study/midterm-2/plan.md with five items
-#   Linear-Algebra/      set up, one lecture note, no plan
-#   Organic-Chemistry/   set up, nothing in it yet
-#
-# The plan is a file the tutor writes in any lesson; nothing is written to
-# the runtime's record here except by `magnesium init`. Every name, number and
-# note is made up.
-#
-# The runtime is the one MAGNESIUM_TEST_BINARY names (as for the window's core
-# tests), else the one built at the root of this checkout when there is one,
-# which may be older than the checkout, else the installed `magnesium`.
-# Prints the course folder.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIR=${1:?usage: scratch-course.sh <dir> [--days-ago N]}
@@ -44,10 +14,6 @@ mkdir -p "$DIR"
 DIR=$(cd "$DIR" && pwd)
 COURSE="$DIR/Intro-Statistics"
 
-# Move every recorded time back N local days: the runtime's two stores, and
-# the window's own notes of when the learner last wrote. Days are local
-# calendar days at the same wall-clock time, as the runtime counts them
-# (see tests/it/support/clock.rs at the root of the repository).
 shift_days() {
   python3 -I - "$DIR" "$1" <<'PY'
 import json, os, sqlite3, sys, time
@@ -83,8 +49,6 @@ for course in sorted(os.listdir(root)):
         conn.commit()
         conn.close()
 
-# The window's notes: when each folder's lesson stopped, when the direct
-# engine last heard the learner, and each kept turn.
 window = os.path.join(root, "window")
 state_file = os.path.join(window, "state.json")
 if os.path.isfile(state_file):
@@ -99,13 +63,11 @@ if os.path.isfile(state_file):
         paper = folder.get("paper")
         if isinstance(paper, dict) and isinstance(paper.get("started_ms"), int):
             paper["started_ms"] = earlier(paper["started_ms"]); moved += 1
-        # When the folder and each of its sessions was last opened.
         if isinstance(folder.get("opened_ms"), int):
             folder["opened_ms"] = earlier(folder["opened_ms"]); moved += 1
         for note in (folder.get("sessions") or {}).values():
             if isinstance(note, dict) and isinstance(note.get("opened_ms"), int):
                 note["opened_ms"] = earlier(note["opened_ms"]); moved += 1
-    # When the window last saw its tabs.
     layout = state.get("window")
     if isinstance(layout, dict) and isinstance(layout.get("seen_ms"), int):
         layout["seen_ms"] = earlier(layout["seen_ms"]); moved += 1
@@ -169,11 +131,6 @@ weekday() { python3 -I -c "import datetime,sys; print((datetime.date.today()+dat
 TODAY=$(day 0)
 EXAM=$(day 10)
 
-# --- The course ------------------------------------------------------------
-# As a learner's folder often is: its past papers under the target's papers
-# folder, and no other material. The papers are PDFs with real text (so a
-# page's words can be selected), and one has its answer key beside it, which
-# the window never opens or names.
 mkdir -p "$COURSE/Study/materials" "$COURSE/Study/midterm-2/papers"
 python3 -I - "$COURSE/Study/midterm-2/papers" <<'PY'
 import os, sys
@@ -262,7 +219,6 @@ Drop order if time runs short: tests and intervals together.
 - $TODAY: plan built from the past papers.
 EOF
 
-# --- Two more folders for the library ----------------------------------------
 mkdir -p "$DIR/Linear-Algebra/Study/materials" "$DIR/Organic-Chemistry"
 cat > "$DIR/Linear-Algebra/Study/materials/week3-eigenvalues.md" <<'EOF'
 # Week 3: Eigenvalues
@@ -280,7 +236,6 @@ for folder in "$COURSE" "$DIR/Linear-Algebra" "$DIR/Organic-Chemistry"; do
   }
 done
 
-# --- The window's scratch home ----------------------------------------------
 python3 -I - "$DIR" <<'PY'
 import json, os, sys
 root = sys.argv[1]

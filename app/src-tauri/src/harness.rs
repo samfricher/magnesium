@@ -1,15 +1,3 @@
-//! The evidence harness's half in the shell: a dev-only hook that lets the
-//! real window be driven, photographed and timed. Every command here is
-//! inert unless the window was started with one of two variables:
-//!
-//! - `MAGNESIUM_APP_DRIVE=<dir>`: the page reads instructions from
-//!   `<dir>/in/<n>.json`, in order from 1, and answers each in
-//!   `<dir>/out/<n>.json` (see `scripts/drive.mjs`).
-//! - `MAGNESIUM_APP_PERF=<file>`: the page writes what it measured to that
-//!   file (see `src/harness.ts`).
-//!
-//! It reads and writes nothing outside those paths and makes no request.
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
@@ -23,9 +11,7 @@ use crate::Shell;
 pub const DRIVE_ENV: &str = "MAGNESIUM_APP_DRIVE";
 pub const PERF_ENV: &str = "MAGNESIUM_APP_PERF";
 
-/// When the process started, in ms since the epoch: the top of `main`.
 static STARTED_MS: OnceLock<i64> = OnceLock::new();
-/// The number of the next instruction to read.
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> i64 {
@@ -35,14 +21,10 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Note the start time. Called first thing in `main`.
 pub fn mark_start() {
     let _ = STARTED_MS.set(now_ms());
 }
 
-/// With perf on, say on standard error how long after the start `what`
-/// happened: the shell's own moments before the page runs (setup done, the
-/// page starting and finishing to load), beside the page's own marks.
 pub fn note(what: &str) {
     if perf_file().is_some() {
         let started = STARTED_MS.get().copied().unwrap_or_else(now_ms);
@@ -56,7 +38,6 @@ fn named(var: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Whether the harness drives this window (it keeps it drawing throughout).
 pub fn driven() -> bool {
     drive_dir().is_some()
 }
@@ -69,25 +50,17 @@ fn perf_file() -> Option<PathBuf> {
     named(PERF_ENV)
 }
 
-/// While the harness drives the window, keep it above other windows. macOS
-/// stops drawing a window that others cover, so a driven window behind the
-/// learner's own work would never paint, and the drive waits for paints.
-/// Without MAGNESIUM_APP_DRIVE this does nothing.
 pub fn keep_in_view(app: &tauri::App) {
     if drive_dir().is_none() {
         return;
     }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_always_on_top(true);
-        // On every desktop, so a switch of Space does not hide it either.
         let _ = window.set_visible_on_all_workspaces(true);
-        // And still drawing when a check lowers it under another window on purpose (frame on_top false).
         crate::occlusion::keep_drawing(&window);
     }
 }
 
-/// Write a file whole: to a sibling first, then renamed into place, so a
-/// reader never sees half of it.
 fn write_whole(path: &Path, value: &Value) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     let partial = path.with_extension("json.partial");
@@ -95,8 +68,6 @@ fn write_whole(path: &Path, value: &Value) -> Result<(), String> {
     std::fs::rename(&partial, path).map_err(|e| e.to_string())
 }
 
-/// The highest instruction number answered in an earlier window, so a
-/// window started again on the same folder goes on from there.
 fn last_answered(dir: &Path) -> u64 {
     std::fs::read_dir(dir.join("out"))
         .into_iter()
@@ -126,7 +97,6 @@ pub fn harness_config() -> Config {
     }
 }
 
-/// The next instruction, with its number as `id`, or none yet.
 #[tauri::command(async)]
 pub fn harness_next() -> Option<Value> {
     let dir = drive_dir()?;
@@ -151,7 +121,6 @@ pub fn harness_next() -> Option<Value> {
     Some(value)
 }
 
-/// Answer instruction `id`.
 #[tauri::command(async)]
 pub fn harness_done(id: u64, result: Value) -> Result<(), String> {
     let Some(dir) = drive_dir() else {
@@ -161,8 +130,6 @@ pub fn harness_done(id: u64, result: Value) -> Result<(), String> {
     write_whole(&dir.join("out").join(format!("{id}.json")), &result)
 }
 
-/// Keep something the page measured. "perf" is the perf file; any other
-/// plain name is `<name>.json` in the drive folder.
 #[tauri::command(async)]
 pub fn harness_write(name: String, value: Value) -> Result<(), String> {
     if name == "perf" {
@@ -183,15 +150,11 @@ pub fn harness_write(name: String, value: Value) -> Result<(), String> {
     }
 }
 
-/// Whether a reply is running or the record is still being read after one.
 #[tauri::command(async)]
 pub fn harness_idle(shell: State<'_, Shell>) -> bool {
     drive_dir().is_none() || !shell.manager.busy()
 }
 
-/// The whole menu bar as data: each menu's title, and each item's title, id,
-/// whether it is enabled, and its key. The page's harness cannot reach the
-/// native menu, so it asks here.
 #[tauri::command(async)]
 pub fn harness_menu(app: tauri::AppHandle) -> Result<Value, String> {
     if drive_dir().is_none() {
@@ -200,7 +163,6 @@ pub fn harness_menu(app: tauri::AppHandle) -> Result<Value, String> {
     Ok(crate::menu::read(&app))
 }
 
-/// How many times the whole menu bar was put in place since the window opened.
 #[tauri::command(async)]
 pub fn harness_menu_replaced(app: tauri::AppHandle) -> Result<usize, String> {
     if drive_dir().is_none() {
@@ -209,10 +171,6 @@ pub fn harness_menu_replaced(app: tauri::AppHandle) -> Result<usize, String> {
     Ok(app.state::<crate::menu::MenuBar>().replaced())
 }
 
-/// The menu bar as macOS holds it: each menu's title and its items' titles, in
-/// order, with a key where one is set. `harness_menu` reads Tauri's record of
-/// the items; this reads AppKit's own, which also holds what macOS adds (the
-/// window list in Window), so a check can see where changed items landed.
 #[tauri::command(async)]
 pub fn harness_menu_native(app: tauri::AppHandle) -> Result<Value, String> {
     if drive_dir().is_none() {
@@ -272,8 +230,6 @@ fn native_menu() -> Value {
     Value::Null
 }
 
-/// Choose a menu item by its path, ["File", "Attach…"], exactly as a click on
-/// it would: the same handler sends the page the same event.
 #[tauri::command(async)]
 pub fn harness_menu_click(app: tauri::AppHandle, path: Vec<String>) -> Result<String, String> {
     if drive_dir().is_none() {
@@ -282,10 +238,6 @@ pub fn harness_menu_click(app: tauri::AppHandle, path: Vec<String>) -> Result<St
     crate::menu::click(&app, &path)
 }
 
-/// Size and place the window, as a learner dragging its corner or its title
-/// bar would, so a check can see the page refit, and let it fall behind
-/// others or not; with nothing asked, only say where it is. Logical points,
-/// from the top left of the screen.
 #[tauri::command(async)]
 pub fn harness_frame(
     app: tauri::AppHandle,
@@ -299,7 +251,6 @@ pub fn harness_frame(
         return Err("the harness is off".into());
     }
     let window = app.get_webview_window("main").ok_or("no window")?;
-    // A check that covers this window with another lets it fall behind (see keep_in_view).
     if let Some(on_top) = on_top {
         window
             .set_always_on_top(on_top)
@@ -327,7 +278,6 @@ pub fn harness_frame(
     Ok(serde_json::json!({"width": size.width, "height": size.height, "x": place.x, "y": place.y}))
 }
 
-/// Close the window as the learner would, after the last answer is written.
 #[tauri::command(async)]
 pub fn harness_quit(app: tauri::AppHandle) {
     if drive_dir().is_none() {

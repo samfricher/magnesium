@@ -1,12 +1,3 @@
-//! Practice items: what the learner got wrong, to be reproduced cold on later
-//! days (#30). A quick check from chat and a gap-log row from a paper are the
-//! same kind of thing.
-//!
-//! The tutor reports marks, repairs and next questions. The runtime works out
-//! every pass, status and next date from the item's events and the attempts
-//! they name, with [`derive`]. Nothing here stores a derived date, so a
-//! correction to an attempt, or a new test date in the plan, changes what is
-//! due at once.
 use super::*;
 use crate::learner::update::field_error;
 use chrono::{Days, Local, NaiveDate, TimeZone};
@@ -14,11 +5,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Days from a pass to the next redo: after the first pass, after the second.
 const SPACING_DAYS: [u64; 2] = [3, 7];
 pub(crate) const PASSES_TO_CLOSE: i64 = 3;
 const MAX_MISSES_KEPT: usize = 3;
-/// Longer text is cut, not refused.
 pub(crate) const TEXT_BYTES: usize = 1000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +16,6 @@ pub(crate) enum Origin {
     Paper,
 }
 
-/// One attempt as an item's events see it.
 #[derive(Clone, Debug)]
 pub(crate) struct AttemptFacts {
     pub(crate) attempt_id: String,
@@ -38,7 +26,6 @@ pub(crate) struct AttemptFacts {
     pub(crate) confidence: Option<Confidence>,
     pub(crate) paper: Option<String>,
     pub(crate) paper_question: Option<String>,
-    /// The observation's description: for a miss, what went wrong.
     pub(crate) description: String,
 }
 
@@ -57,7 +44,6 @@ pub(crate) struct ItemEvent {
     pub(crate) attempt: Option<AttemptFacts>,
 }
 
-/// An item as stored, with its events in order.
 #[derive(Clone, Debug)]
 pub(crate) struct ItemFacts {
     pub(crate) item_id: String,
@@ -85,8 +71,6 @@ pub(crate) struct ItemFacts {
 }
 
 impl ItemFacts {
-    /// How the tutor names it: "midterm-1#3" for a gap-log row, the label
-    /// for a quick check.
     pub(crate) fn name(&self) -> String {
         match (&self.plan, self.row_no) {
             (Some(plan), Some(row)) => format!("{plan}#{row}"),
@@ -95,25 +79,17 @@ impl ItemFacts {
     }
 }
 
-/// What one event did to its item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Effect {
     Made,
-    /// A repair dated the first redo.
     Scheduled,
     Passed,
     Closed,
-    /// A due redo that was not a pass.
     Failed,
-    /// A chat miss before the check was due starts it over.
     Restarted,
-    /// Right with help on a due item: no pass, and for a quick check no fail.
     Helped,
     Declined,
-    /// Not due yet, or not cold, or a second pass the same day: counts
-    /// neither way.
     NoCount,
-    /// A repair while redos are under way, or anything on a closed row.
     Ignored,
 }
 
@@ -134,18 +110,14 @@ impl Effect {
     }
 }
 
-/// An item as the runtime works it out.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ItemState {
     pub(crate) passes: i64,
     pub(crate) next_on: Option<NaiveDate>,
-    /// The Passes cell: what was brought in, then each result since.
     pub(crate) history: Vec<String>,
     pub(crate) confidence: Option<Confidence>,
     pub(crate) misses: Vec<String>,
-    /// Each event's effect, by event_no.
     pub(crate) effects: Vec<(i64, Effect)>,
-    /// The passes the item held after each event, by event_no.
     pub(crate) passes_after: Vec<(i64, i64)>,
 }
 
@@ -154,7 +126,6 @@ impl ItemState {
         self.passes >= PASSES_TO_CLOSE
     }
 
-    /// Exactly one of open, 1 of 3, 2 of 3 or closed.
     pub(crate) fn status(&self) -> &'static str {
         match self.passes {
             0 => "open",
@@ -187,11 +158,6 @@ fn days_after(day: NaiveDate, days: u64) -> NaiveDate {
     day.checked_add_days(Days::new(days)).unwrap_or(day)
 }
 
-/// The next redo after a pass on `day` that leaves `passes` passes. Three
-/// cold passes on three different days, at least 3 and then 7 days apart.
-/// When the test comes first, the gap shortens so each redo left gets its
-/// own day before it; never below one day, so a row that runs out of days
-/// stays short of closed. A test date already past shortens nothing.
 fn after_pass(day: NaiveDate, passes: i64, test_on: Option<NaiveDate>) -> NaiveDate {
     let gap = SPACING_DAYS[usize::try_from(passes - 1).unwrap_or(0).min(1)];
     let natural = days_after(day, gap);
@@ -206,9 +172,6 @@ fn after_pass(day: NaiveDate, passes: i64, test_on: Option<NaiveDate>) -> NaiveD
     }
 }
 
-/// Work out an item's passes, status and next date from what is stored.
-/// `test_on` is the plan's test date, for a paper row in a plan that states
-/// one.
 pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState {
     let mut state = ItemState {
         passes: item.base_passes.clamp(0, PASSES_TO_CLOSE),
@@ -242,9 +205,6 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                 {
                     note_miss(&mut state.misses, &attempt.description);
                 }
-                // A quick check's miss was put right in the chat, so it is
-                // asked for cold the next day. A paper row waits for its
-                // repair.
                 restart(&mut state, (!paper).then(|| days_after(day, 1)));
                 Effect::Made
             }
@@ -278,8 +238,6 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                     {
                         Effect::NoCount
                     } else {
-                        // A due redo that is not a pass fails the row. It
-                        // waits for a new repair, and its Passes start again.
                         restart(&mut state, None);
                         state.history.push(format!("{day} fail"));
                         if attempt.confidence.is_some() {
@@ -298,17 +256,10 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                                 Effect::Restarted
                             }
                         }
-                        // The solution's answer, not the learner's: asked
-                        // for cold the next day, with no miss stored.
                         (FirstTry::Right, AttemptHelp::Solution) => {
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Helped
                         }
-                        // Right only with a hint or a step, before the check
-                        // is due: it is asked for cold the next day, and the
-                        // passes already earned stay. The help field is the
-                        // least sure one a tutor sends, so the smallest help
-                        // costs no pass. A proven skill stays proven.
                         (FirstTry::Right, AttemptHelp::Hint | AttemptHelp::Step) if !due => {
                             if !state.closed() {
                                 state.next_on = Some(days_after(day, 1));
@@ -319,9 +270,6 @@ pub(crate) fn derive(item: &ItemFacts, test_on: Option<NaiveDate>) -> ItemState 
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Declined
                         }
-                        // "I don't know" on a task the tutor set brings the
-                        // check to the next day, as a miss does, with no miss
-                        // kept. A declined check that is due stays free.
                         (FirstTry::Declined, _) if !due && !state.closed() => {
                             restart(&mut state, Some(days_after(day, 1)));
                             Effect::Declined
@@ -349,7 +297,6 @@ fn pass(
     day: NaiveDate,
     test_on: Option<NaiveDate>,
 ) -> Effect {
-    // Three passes on three different days.
     if *last_pass == Some(day) {
         return Effect::NoCount;
     }
@@ -429,9 +376,6 @@ const ITEM_COLUMNS: &str =
     what_went_wrong,repair,confidence,next_question,answer_key,dropped,base_passes,base_next_on,
     base_last_pass_on,base_history,base_misses_json,created_at_ms";
 
-/// Every item, with its events, in the order the gap log numbers them:
-/// paper rows by plan and #, then quick checks oldest first. Dropped items
-/// are included; callers leave them out.
 pub(crate) fn load_items(conn: &Connection) -> Result<Vec<ItemFacts>> {
     let mut statement = conn.prepare(&format!(
         "SELECT {ITEM_COLUMNS} FROM practice_items
@@ -523,14 +467,11 @@ pub(crate) fn load_items(conn: &Connection) -> Result<Vec<ItemFacts>> {
     Ok(items)
 }
 
-/// The study folder a store belongs to: the store is
-/// `<study folder>/.magnesium/state.sqlite`.
 pub(crate) fn study_root(conn: &Connection) -> Option<PathBuf> {
     let path = Path::new(conn.path()?);
     Some(path.parent()?.parent()?.to_path_buf())
 }
 
-/// The plans in a study folder: each folder under `Study/` with a `plan.md`.
 pub(crate) fn plans(root: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(root.join("Study")) else {
         return Vec::new();
@@ -549,8 +490,6 @@ pub(crate) fn plans(root: &Path) -> Vec<String> {
     plans
 }
 
-/// The item a name refers to: an item ID, "<plan>#<n>" for a gap-log row,
-/// or a quick check's label. Dropped items are not found.
 pub(crate) fn resolve(conn: &Connection, name: &str) -> Result<Option<String>> {
     let name = name.trim();
     let found = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<Option<String>> {
@@ -645,7 +584,6 @@ fn set_next(
     Ok(())
 }
 
-/// A stored attempt and where it came from, for [`record_attempt`].
 pub(crate) struct NewAttempt<'a> {
     pub(crate) attempt_id: &'a str,
     pub(crate) attempt: &'a Attempt,
@@ -654,9 +592,6 @@ pub(crate) struct NewAttempt<'a> {
     pub(crate) now: i64,
 }
 
-/// What a newly stored attempt does to the items: it makes a gap-log row
-/// from `gap`, counts for the items `counts_for` names, or, in chat, makes or
-/// answers the quick check on its label.
 pub(crate) fn record_attempt(
     tx: &Connection,
     new: &NewAttempt<'_>,
@@ -675,7 +610,6 @@ pub(crate) fn record_attempt(
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    // The same name the attempt was stored under.
     let label = crate::learner::update::observations::plan_tag_named(tx, &label).unwrap_or(label);
     let mut touched = Vec::new();
     for item in resolve_all(tx, &format!("{path}.counts_for"), &attempt.counts_for, host)? {
@@ -731,7 +665,6 @@ pub(crate) fn record_attempt(
         insert_event(tx, &id, "made", Some(attempt_id), (answered_at, "", now))?;
         touched.insert(0, id);
     } else if attempt.paper.is_none() && attempt.counts_for.is_empty() {
-        // A chat answer makes or answers the quick check on its label.
         let existing: Option<String> = tx
             .query_row(
                 "SELECT item_id FROM practice_items WHERE origin='chat' AND label_key=?1",
@@ -739,10 +672,6 @@ pub(crate) fn record_attempt(
                 |r| r.get(0),
             )
             .optional()?;
-        // A right answer reached with a hint or a step, and an "I don't
-        // know", make a check for the next day, as a wrong first try does:
-        // help that is never taken away would never show what the learner
-        // can do alone, and a task never answered would never come back.
         let makes = matches!(
             attempt.first_try,
             FirstTry::Wrong | FirstTry::Partly | FirstTry::Declined
@@ -752,7 +681,6 @@ pub(crate) fn record_attempt(
                 && matches!(attempt.help, AttemptHelp::Hint | AttemptHelp::Step);
         match existing {
             Some(item) => {
-                // Taken out by the tutor: a new miss puts it back.
                 if makes {
                     tx.execute(
                         "UPDATE practice_items SET dropped=NULL, label=?2, updated_at_ms=?3 WHERE item_id=?1",
@@ -798,8 +726,6 @@ pub(crate) fn record_attempt(
     Ok(())
 }
 
-/// The plan a new gap-log row goes in: the one named, or the study folder's
-/// only plan. A study folder with no plan keeps the row in no gap log.
 fn paper_plan(
     tx: &Connection,
     gap: &GapReport,
@@ -837,7 +763,6 @@ fn paper_plan(
     }
 }
 
-/// Repairs, next questions and corrections the tutor reports on items.
 pub(crate) fn apply_edits(
     tx: &Connection,
     edits: &[PracticeEdit],
@@ -949,8 +874,6 @@ pub(crate) fn apply_edits(
     Ok(())
 }
 
-/// Correct stored attempts. The row as it was is kept in
-/// attempt_corrections; what each item makes of it is worked out again.
 pub(crate) fn apply_corrections(
     tx: &Connection,
     corrections: &[AttemptCorrection],
@@ -1121,7 +1044,6 @@ pub(crate) fn apply_corrections(
                 no_start
             ],
         )?;
-        // The ladder of each kind it was or is now on is worked out again.
         for key in [old_kind.as_deref(), kind.as_deref()]
             .into_iter()
             .flatten()
@@ -1139,7 +1061,6 @@ pub(crate) fn apply_corrections(
                 ));
             }
             let items = resolve_all(tx, &format!("{path}.counts_for"), names, host)?;
-            // The link to the quick check on its own label stays.
             tx.execute(
                 "DELETE FROM practice_events WHERE attempt_id=?1 AND kind='attempt'
                    AND item_id NOT IN (SELECT p.item_id FROM practice_items p JOIN attempts a

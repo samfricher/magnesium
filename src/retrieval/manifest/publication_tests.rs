@@ -292,7 +292,6 @@ fn publish_newer(connection: &mut Connection, index: &Path, state: NewerState) {
 
 #[test]
 fn all_four_old_outcomes_are_noops_against_six_newer_states_with_two_real_connections() {
-    // Fixed bounded Cartesian enumeration; no randomized seed or timing oracle.
     for kind in OUTCOMES {
         for newer in [
             NewerState::ContentReady,
@@ -334,7 +333,6 @@ fn all_four_old_outcomes_are_noops_against_six_newer_states_with_two_real_connec
             if matches!(newer, NewerState::MovedReady) {
                 assert_moved_source(&winner);
             }
-            // An unchanged scan heartbeat cannot damage the winning result.
             winner.execute_batch("UPDATE source_manifest SET observed_generation = observed_generation + 1 WHERE manifest_id = 1;").unwrap();
             let status: String = winner
                 .query_row(

@@ -1,10 +1,3 @@
-//! Every integration test, in one test program.
-//!
-//! Each module starts the built `magnesium` program and drives it the way
-//! Claude Code or a learner does. One program links once and runs all of its
-//! tests at the same time, so a new test file is a new `mod` line here, never
-//! a new file directly under `tests/`.
-
 mod support;
 
 mod adapter_call;

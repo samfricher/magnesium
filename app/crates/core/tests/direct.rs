@@ -1,13 +1,3 @@
-//! The direct engine with no window: the manager drives a stand-in model
-//! (`stand_in_model.py`), and the record is kept by the real runtime built
-//! from this checkout, in a scratch study folder with a scratch home.
-//!
-//! They show that code keeps the record from the model's record block: the
-//! mark, the help given across turns, the goal's steps, the reply as shown,
-//! and what a resumed or switched conversation carries on. Only a run
-//! against the real program shows how a real model writes the block; see
-//! `live.rs`.
-
 #![cfg(unix)]
 
 use std::fs;
@@ -35,7 +25,6 @@ fn repo_root() -> PathBuf {
         .expect("the repository root")
 }
 
-/// The runtime from this checkout, built once for all the tests here.
 fn runtime_binary() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
@@ -58,15 +47,10 @@ fn runtime_binary() -> PathBuf {
         .clone()
 }
 
-/// The window's own readers, such as the check that a folder needs no
-/// upgrade, find the runtime by this variable. Every test here sets the same
-/// value.
 fn point_readers_at_the_runtime() {
     static SET: OnceLock<()> = OnceLock::new();
     SET.get_or_init(|| {
         std::env::set_var(mg_core::runtime::PROGRAM_ENV, runtime_binary());
-        // A tool call takes milliseconds; a short limit lets a test of a hung
-        // server finish soon.
         std::env::set_var(mg_core::host_client::CALL_LIMIT_ENV, "2000");
     });
 }
@@ -82,7 +66,6 @@ struct Bench {
     folder: PathBuf,
     window: PathBuf,
     runtime: PathBuf,
-    /// Files whose presence makes the runtime misbehave, for a test.
     flags: PathBuf,
     model: PathBuf,
     plugin: PathBuf,
@@ -90,8 +73,6 @@ struct Bench {
 }
 
 impl Bench {
-    /// A study root set up by the runtime, and the folder lessons open in:
-    /// the root itself, or `nested` below it.
     fn new(nested: Option<&str>, extra_env: &[(&str, &str)]) -> Self {
         point_readers_at_the_runtime();
         let dir = tempfile::tempdir().unwrap();
@@ -222,7 +203,6 @@ impl Bench {
             .unwrap_or_else(|_| panic!("{args:?}: {}", String::from_utf8_lossy(&out.stdout)))
     }
 
-    /// The answers on record, once the last turn's record is kept.
     fn attempts(&self) -> Vec<Value> {
         self.attempts_now()
     }
@@ -242,7 +222,6 @@ impl Bench {
         .unwrap()
     }
 
-    /// The tutor's replies the runtime kept, oldest first.
     fn deliveries(&self) -> Vec<String> {
         let conn = self.store();
         let mut statement = conn
@@ -295,8 +274,6 @@ impl Events {
         self.until("end of turn", |e| matches!(e, AgentEvent::TurnEnded { .. }))
     }
 
-    /// The reply shown in the last turn, and every piece shown while it
-    /// streamed, joined.
     fn take(&mut self) -> (String, String) {
         let done = self
             .seen
@@ -320,9 +297,6 @@ impl Events {
     }
 }
 
-/// Wait for the end of a turn, then for its record: the direct engine
-/// ends a turn when the reply is whole and keeps its record just after,
-/// and says when it has.
 fn done(manager: &Manager, events: &mut Events) -> AgentEvent {
     let end = events.turn_end();
     assert!(
@@ -351,8 +325,6 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     assert_eq!(opened.engine, Engine::Direct);
     manager.send_new_lesson("TEACH me quadratics").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // Ready, and the id remembered, once Claude Code showed it has the
-    // conversation: with the first message.
     assert!(events
         .seen
         .iter()
@@ -364,7 +336,6 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
         "the pieces shown are the reply, and no part of the block"
     );
 
-    // Claude Code was started as the model alone.
     let start = &bench.logged("start")[0];
     let args: Vec<String> = serde_json::from_value(start["args"].clone()).unwrap();
     for flag in [
@@ -378,20 +349,15 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     assert_eq!(start["env"]["CLAUDE_CODE_DISABLE_CLAUDE_MDS"], "1");
     assert_eq!(start["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"], "false");
     assert!(start["env"]["MAGNESIUM_SURFACE"].is_null());
-    // The first message carried the whole state, and the learner's words
-    // without the window's mark.
     let first = &bench.logged("message")[0];
     assert_eq!(first["learner"], "TEACH me quadratics");
     let state = first["state"].as_str().unwrap();
     assert!(state.contains("Goal: TEACH me quadratics"), "{state}");
     assert!(state.contains("Quick checks due: none"), "{state}");
 
-    // A wrong answer is marked, with its question.
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     events.take();
-    // The Hint button, then a right answer: code keeps the hint, though the
-    // block of the answer says none.
     manager.send("Can I have a hint?").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     events.take();
@@ -415,7 +381,6 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     assert_eq!(right["help"], "hint");
     assert_eq!(right["confidence"], "sure");
 
-    // The steps and the next action are where the window reads them.
     let digest = bench.cli(&["digest"]);
     let session = &digest["record"]["sessions"][0];
     assert_eq!(
@@ -426,12 +391,10 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     assert_eq!(steps.len(), 2);
     assert_eq!(steps[0].status, "done");
     assert_eq!(steps[1].status, "doing");
-    // Each reply is kept as it was shown, without the block.
     let kept = bench.deliveries();
     assert_eq!(kept.len(), 4, "{kept:#?}");
     assert_eq!(kept[0], "Let's start. What is b in x² − 5x + 6 = 0?");
     assert!(kept.iter().all(|text| !text.contains("<record>")));
-    // The help a kind needs went to the model with the next message.
     let messages = bench.logged("message");
     assert!(
         messages[2]["state"]
@@ -440,8 +403,6 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
             .contains("\"reading coefficients\""),
         "{messages:#?}"
     );
-    // The misunderstanding the block named was written to the learner's
-    // memory of that skill.
     let memory: String = bench
         .store()
         .query_row("SELECT title FROM learner_memories", [], |r| r.get(0))
@@ -458,7 +419,6 @@ fn a_missing_block_is_asked_for_again_and_a_message_meanwhile_waits() {
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
     manager.send("NOBLOCK b = 5").unwrap();
-    // The reply is shown at once; its record is asked for in the background.
     events.until("the reply", |e| matches!(e, AgentEvent::TextDone { .. }));
     manager.send("b = -5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -479,7 +439,6 @@ fn a_missing_block_is_asked_for_again_and_a_message_meanwhile_waits() {
         })
         .collect();
     assert_eq!(order, ["TEACH me", "NOBLOCK b = 5", "hidden", "b = -5"]);
-    // The hidden request is never shown and never kept as a reply.
     assert!(bench
         .deliveries()
         .iter()
@@ -496,7 +455,6 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
     done(&manager, &mut events);
     manager.send("NEVERBLOCK b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // The notice comes with the record, just after the turn's end.
     let notice = match events.until("a notice", |e| {
         matches!(
             e,
@@ -511,12 +469,10 @@ fn an_answer_whose_block_cannot_be_read_twice_is_left_unmarked_with_a_notice() {
     };
     assert!(notice.contains("not marked"), "{notice}");
     assert!(bench.attempts().is_empty());
-    // The reply was still shown and kept.
     assert_eq!(bench.deliveries()[1], "A reply with no notes.");
     manager.shut_down();
 }
 
-/// Send `words`, and stop the reply once its first words are on screen.
 fn stop_part_way(manager: &Manager, events: &mut Events, words: &str) {
     manager.send(words).unwrap();
     events.until("the first words", |e| {
@@ -569,15 +525,12 @@ fn a_sign_in_that_ran_out_is_a_notice_and_the_answer_is_not_kept() {
         "{:#?}",
         events.seen
     );
-    // Claude Code's line is not the tutor's words, while it is written or
-    // once it is whole; nothing is marked, and the answer is not a turn.
     let shown = format!("{:?}", events.seen);
     assert!(!shown.contains("Failed to authenticate"), "{shown}");
     assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
     let turns = manager.store().turns(&folder, &session);
     assert_eq!(turns.len(), 1, "{turns:#?}");
 
-    // Sent again, signed in, it is the answer to the task still open.
     events.seen.clear();
     manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -618,7 +571,6 @@ fn a_model_the_account_cannot_use_is_a_notice_by_its_name_and_the_answer_is_not_
         "{:#?}",
         events.seen
     );
-    // Claude Code's own line, which names a flag of its own, is not shown.
     let shown = format!("{:?}", events.seen);
     assert!(!shown.contains("--model"), "{shown}");
     assert!(bench.attempts().is_empty(), "{:#?}", bench.attempts());
@@ -632,12 +584,8 @@ fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
-    // The reply to this answer may have marked it and posed another task:
-    // what the learner saw of it is not known.
     stop_part_way(&manager, &mut events, "SLOW b = 5");
     assert!(bench.attempts().is_empty());
-    // The next answer, to whatever was on screen, is never saved against
-    // the first task: it has no mark, and the learner is told.
     events.seen.clear();
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -647,13 +595,11 @@ fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
         notices.iter().any(|text| text.contains("not marked")),
         "{notices:#?}"
     );
-    // The tutor was told with that message.
     let state = last_state(&bench);
     assert!(
         state.contains("Your last reply was stopped part-way") && state.contains("no task is open"),
         "{state}"
     );
-    // Nor does a resumed conversation read the first task back.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
@@ -670,11 +616,8 @@ fn a_reply_stopped_part_way_leaves_no_task_open_for_the_next_answer() {
     manager.shut_down();
 }
 
-/// The question the stand-in model poses as quick check 1.
 const CHECK_1: &str = "What is b in 2x² − 7x − 4 = 0?";
 
-/// A lesson in a new sitting that opened with quick check 1 posed, on
-/// "sign of b", which the learner got wrong the day before.
 fn with_a_check_posed() -> (Bench, Manager, Events) {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();
@@ -700,7 +643,6 @@ fn with_a_check_posed() -> (Bench, Manager, Events) {
     (bench, manager, events)
 }
 
-/// The answer on record to quick check 1.
 fn check_answer(bench: &Bench) -> Value {
     let attempts = bench.attempts();
     let mut on_it = attempts.iter().filter(|a| a["question"] == CHECK_1);
@@ -714,8 +656,6 @@ fn check_answer(bench: &Bench) -> Value {
 
 #[test]
 fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pass_is_told() {
-    // Right, and the tutor's block says the page was not blank: the answer
-    // is not sent cold, so the check earns no pass and stays due.
     let (bench, manager, mut events) = with_a_check_posed();
     manager.send("b = -5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -723,14 +663,12 @@ fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pa
     assert_eq!(answer["label"], "sign of b");
     assert_eq!(answer["mark"], "right");
     assert_eq!(answer["cold"], false, "{answer:#?}");
-    // The reply said "Right": the window says what the record holds.
     let notices = all_notices(&mut events);
     assert_eq!(notices.len(), 1, "{notices:#?}");
     assert!(
         notices[0].contains("did not count as a pass for the quick check"),
         "{notices:#?}"
     );
-    // And the tutor is told with the next message.
     manager.send("ok").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
@@ -740,7 +678,6 @@ fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pa
     );
     manager.shut_down();
 
-    // Cold by the tutor's word: a pass, told to the tutor, and no notice.
     let (bench, manager, mut events) = with_a_check_posed();
     manager.send("b = -5 COLD").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -759,11 +696,9 @@ fn a_due_check_is_cold_only_when_the_tutor_says_so_and_a_right_answer_with_no_pa
 #[test]
 fn a_check_whose_answer_s_reply_was_stopped_stays_due_and_is_posed_again() {
     let (bench, manager, mut events) = with_a_check_posed();
-    // The learner answers the check, and stops the reply that marks it.
     stop_part_way(&manager, &mut events, "SLOW b = -5");
     events.take();
     assert!(bench.attempts().iter().all(|a| a["question"] != CHECK_1));
-    // The tutor is told no task is open, and that the check is still due.
     manager.send("BACK").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
@@ -771,9 +706,6 @@ fn a_check_whose_answer_s_reply_was_stopped_stays_due_and_is_posed_again() {
     assert!(state.contains("Quick check 1 is still due"), "{state}");
     let (reply, _) = events.take();
     assert_eq!(reply, format!("Quick check 1: {CHECK_1}"));
-    // Posed again, it is answered once. The learner already answered it
-    // in this sitting and may have seen the reply's correction, so the
-    // answer is not cold, whatever the tutor's block says.
     manager.send("b = -5 COLD").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let answer = check_answer(&bench);
@@ -789,10 +721,8 @@ fn after_an_unreadable_record_a_resumed_conversation_does_not_read_the_old_task_
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
-    // This reply may have posed a new task; its record cannot be read.
     manager.send("NEVERBLOCK b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // The lesson is closed before another save, and a new process resumes.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
@@ -816,11 +746,8 @@ fn i_m_lost_counts_as_help_on_the_task_in_hand() {
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
-    // The tutor asks what the learner sees, and its block gives no help.
     manager.send("I'm lost").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // The answer that follows says it came from a blank page; code knows
-    // the learner asked for help on this task.
     manager.send("b = -5 COLD").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
@@ -847,7 +774,6 @@ fn the_first_state_names_the_course_graph_when_the_study_folder_has_one() {
             .map(|message| message["state"].as_str().unwrap().to_owned())
             .collect()
     };
-    // A lesson opened below the root still names the graph from the root.
     let bench = Bench::new(Some("stats/week1"), &[]);
     let plan = bench.root.join("Study/midterm-1");
     fs::create_dir_all(&plan).unwrap();
@@ -922,7 +848,6 @@ fn a_closed_lesson_resumes_its_conversation_and_its_open_task() {
             .any(|a| a.as_str() == Some(&format!("--resume={session}"))),
         "{starts:#?}"
     );
-    // The open task came back from the record, so the answer is marked on it.
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0]["question"], "What is b in x² − 5x + 6 = 0?");
@@ -945,8 +870,6 @@ fn a_switch_of_engine_starts_a_new_conversation_on_the_same_lesson() {
         }
     );
 
-    // Switched to the plugin engine: the remembered conversation is the
-    // direct engine's, so a new one starts.
     let choice = manager.set_engine(Engine::Plugin);
     assert_eq!(choice.chosen, Engine::Plugin);
     let opened = manager.open_session(true).unwrap();
@@ -956,12 +879,10 @@ fn a_switch_of_engine_starts_a_new_conversation_on_the_same_lesson() {
     done(&manager, &mut events);
     assert_eq!(manager.engine().conversation, Some(Engine::Plugin));
 
-    // And back: the plugin conversation is not resumed by the direct engine.
     manager.set_engine(Engine::Direct);
     let opened = manager.open_session(true).unwrap();
     assert!(!opened.resumed);
     assert_eq!(opened.engine, Engine::Direct);
-    // The window's opening line resumes the runtime's lesson: no new one.
     manager
         .send_new_lesson("I'm back. Let's continue.")
         .unwrap();
@@ -1005,20 +926,15 @@ fn handing_in_a_paper_opens_a_plugin_conversation_whatever_was_picked() {
     );
     let opened = manager.open_session(true).unwrap();
     assert_eq!(opened.engine, Engine::Plugin);
-    // The next lesson goes back to the engine the learner picked.
     let opened = manager.open_session(true).unwrap();
     assert_eq!(opened.engine, Engine::Direct);
     manager.shut_down();
 }
 
-/// A plan with a gap log from the template before the runtime kept the
-/// table. Each row is (paper question, tag, what went wrong, type), already
-/// repaired, so the runtime brings it in with its redo due at once.
 fn paper_plan(bench: &Bench, rows: &[(&str, &str, &str, &str)]) {
     gap_log_plan(bench, rows, "taught it");
 }
 
-/// The same, with no repair written down: each row waits for its repair.
 fn waiting_plan(bench: &Bench, rows: &[(&str, &str, &str, &str)]) {
     gap_log_plan(bench, rows, "");
 }
@@ -1043,7 +959,6 @@ fn gap_log_plan(bench: &Bench, rows: &[(&str, &str, &str, &str)], repair: &str) 
     fs::write(dir.join("gap-log.md"), log).unwrap();
 }
 
-/// One row of the Gaps table the runtime writes.
 #[derive(Debug)]
 struct GapRow {
     passes: String,
@@ -1088,12 +1003,6 @@ fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// `ms` moved back `days` local calendar days, at the same wall-clock time.
-/// The runtime counts days on the local calendar, and a day is not always
-/// 24 hours: moved back by multiples of 24 hours across a clock change, a
-/// time in the last hour of a day lands on the next local day. A wall time
-/// the clocks skip becomes the first time after the gap; one they repeat,
-/// the first of the two.
 fn days_earlier(ms: i64, days: u64) -> i64 {
     use chrono::{Days, Local, LocalResult, TimeDelta, TimeZone};
     let wall = Local
@@ -1117,7 +1026,6 @@ fn days_earlier(ms: i64, days: u64) -> i64 {
     }
 }
 
-/// Move every `column` of `table` back `days` local calendar days.
 fn move_column(conn: &Connection, table: &str, column: &str, days: u64) {
     let rows: Vec<(i64, i64)> = conn
         .prepare(&format!("SELECT rowid, {column} FROM {table}"))
@@ -1135,14 +1043,10 @@ fn move_column(conn: &Connection, table: &str, column: &str, days: u64) {
     }
 }
 
-/// What `days` later looks like to the runtime: every answer and change
-/// moves that many local days back, and the last message was hours ago, so
-/// the next one begins a sitting.
 fn days_pass(bench: &Bench, days: u64) {
     let store = Connection::open(bench.root.join(".magnesium/state.sqlite")).unwrap();
     move_column(&store, "attempts", "answered_at_ms", days);
     move_column(&store, "practice_events", "at_ms", days);
-    // The day a row brought in from a gap log first fell due moves with them.
     store
         .execute(
             "UPDATE practice_items SET base_next_on=date(base_next_on, ?1) WHERE base_next_on IS NOT NULL",
@@ -1151,7 +1055,6 @@ fn days_pass(bench: &Bench, days: u64) {
         .unwrap();
     let sittings = Connection::open(bench.root.join(".magnesium/sittings.sqlite")).unwrap();
     move_column(&sittings, "meta", "last_learner_ms", days);
-    // The window's own note of when the learner last wrote moves too.
     let store = Store::at(bench.window.clone());
     store.update(&bench.folder, |folder| {
         if let Some(last) = folder
@@ -1166,7 +1069,6 @@ fn days_pass(bench: &Bench, days: u64) {
     });
 }
 
-/// The state the model was sent with its latest message.
 fn last_state(bench: &Bench) -> String {
     bench.logged("message").pop().unwrap()["state"]
         .as_str()
@@ -1194,8 +1096,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
     assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
     assert_eq!(reply, format!("Paper redo 1: {REDO_1}"));
-    // The two rows on one tag are one redo; the row lost for slowness is
-    // timed. The rows' names are the program's, and stay out of the state.
     let state = last_state(&bench);
     for part in [
         "A new sitting has begun. Paper redos due, one at a time, before new material:",
@@ -1206,7 +1106,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
     }
     assert!(!state.contains("midterm-1#"), "{state}");
 
-    // A right answer, cold: one pass for each row of the tag.
     manager.send("Km = 2").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
@@ -1222,7 +1121,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
         assert_eq!(row.passes, format!("{} pass", today()), "{rows:#?}");
     }
     assert_eq!(rows[2].status, "open");
-    // The next question is kept on both rows, and a redo makes no quick check.
     let store = bench.store();
     let stored: Vec<Option<String>> = store
         .prepare("SELECT next_question FROM practice_items WHERE origin='paper' ORDER BY row_no")
@@ -1243,8 +1141,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
     assert_eq!(checks, 0);
     drop(store);
 
-    // The same reply posed the timed redo. Right, but over the time: the
-    // tutor is told how long the answer took, and the row fails.
     let (reply, _) = events.take();
     assert!(reply.contains("Paper redo 2: "), "{reply}");
     manager.send("Km = 2 OVERTIME").unwrap();
@@ -1262,8 +1158,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
     assert_eq!(rows[2].passes, format!("{} fail", today()), "{rows:#?}");
     assert_eq!(rows[2].next_redo, "", "it waits for a repair: {rows:#?}");
 
-    // Four days on, the two rows are due again, and their stored question
-    // comes with them. The failed row is not listed.
     manager.stop(None).unwrap();
     drop(manager);
     days_pass(&bench, 4);
@@ -1276,7 +1170,6 @@ fn a_sitting_opens_with_its_paper_redos_and_each_answer_counts_for_its_rows() {
         state.contains("1. Tag \"km\", from Diagnostic Q3 and Diagnostic Q5. What went wrong: slope read as intercept | sign of the intercept lost. Stored question: A Lineweaver-Burk plot crosses the x axis at −0.25: what is Km? Key, for you alone until they answer: 4"),
         "{state}"
     );
-    // The failed row is no redo: it waits for its repair, and is listed so.
     assert!(
         !state
             .lines()
@@ -1303,7 +1196,6 @@ fn a_redo_posed_before_the_lesson_closed_is_marked_on_its_row_after_a_resume() {
     manager.stop(None).unwrap();
     drop(manager);
 
-    // A new process reads the open redo back from the record.
     let (manager, mut events) = bench.manager();
     assert!(manager.open_session(true).unwrap().resumed);
     manager.send("Km = 0.5").unwrap();
@@ -1312,7 +1204,6 @@ fn a_redo_posed_before_the_lesson_closed_is_marked_on_its_row_after_a_resume() {
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     assert_eq!(attempts[0]["label"], "km");
     assert_eq!(attempts[0]["mark"], "wrong");
-    // A due redo that is not a pass fails the row, which waits for a repair.
     let rows = gap_rows(&bench);
     assert_eq!(rows[0].status, "open", "{rows:#?}");
     assert_eq!(rows[0].passes, format!("{} fail", today()), "{rows:#?}");
@@ -1334,7 +1225,6 @@ fn a_declined_redo_stays_due_and_a_skipped_sitting_poses_none() {
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     assert_eq!(attempts[0]["mark"], "declined");
     assert_eq!(attempts[0]["label"], "km");
-    // A decline is free: no pass, no fail, and the redo is still due.
     let rows = gap_rows(&bench);
     assert_eq!(rows[0].status, "open", "{rows:#?}");
     assert_eq!(rows[0].passes, "", "{rows:#?}");
@@ -1342,8 +1232,6 @@ fn a_declined_redo_stays_due_and_a_skipped_sitting_poses_none() {
     manager.stop(None).unwrap();
     drop(manager);
 
-    // The next day the learner goes on without what is due: nothing is
-    // listed, and nothing is posed.
     days_pass(&bench, 1);
     let (manager, mut events) = bench.manager();
     manager.open_session(true).unwrap();
@@ -1362,8 +1250,6 @@ fn a_declined_redo_stays_due_and_a_skipped_sitting_poses_none() {
     manager.shut_down();
 }
 
-/// The runtime's last learner message was hours ago, so the next one
-/// begins a sitting. The window's own clock is not moved.
 fn hours_pass_for_the_runtime(bench: &Bench) {
     Connection::open(bench.root.join(".magnesium/sittings.sqlite"))
         .unwrap()
@@ -1374,7 +1260,6 @@ fn hours_pass_for_the_runtime(bench: &Bench) {
         .unwrap();
 }
 
-/// A lesson that opened with paper redo 1 posed, for the rows given.
 fn with_a_redo_posed(rows: &[(&str, &str, &str, &str)]) -> (Bench, Manager, Events) {
     let bench = Bench::new(None, &[]);
     paper_plan(&bench, rows);
@@ -1387,7 +1272,6 @@ fn with_a_redo_posed(rows: &[(&str, &str, &str, &str)]) -> (Bench, Manager, Even
     (bench, manager, events)
 }
 
-/// The notices sent so far, those after the last turn's end included.
 fn all_notices(events: &mut Events) -> Vec<String> {
     while let Ok(event) = events.receiver.try_recv() {
         events.seen.push(event);
@@ -1401,8 +1285,6 @@ const TIMED_ROW: (&str, &str, &str, &str) = ("6", "rate law", "right, but twice 
 #[test]
 fn a_timed_redo_is_timed_from_the_reply_that_posed_it_whatever_is_said_in_between() {
     let (bench, manager, mut events) = with_a_redo_posed(&[TIMED_ROW]);
-    // A question on the way, a good second after the redo was shown, and
-    // then the answer at once: the time is the whole of it.
     std::thread::sleep(Duration::from_millis(1300));
     manager.send("Which axis do you mean?").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -1417,7 +1299,6 @@ fn a_timed_redo_is_timed_from_the_reply_that_posed_it_whatever_is_said_in_betwee
         !line.contains("came 0 s"),
         "the clock started again with the reply in between: {line}"
     );
-    // In time, by the tutor's word: the row passes.
     let rows = gap_rows(&bench);
     assert_eq!(rows[0].status, "1 of 3", "{rows:#?}");
     assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
@@ -1429,7 +1310,6 @@ fn a_timed_redo_resumed_with_no_clock_earns_no_pass_and_the_learner_is_told() {
     let (bench, manager, _events) = with_a_redo_posed(&[TIMED_ROW]);
     manager.stop(None).unwrap();
     drop(manager);
-    // A new process reads the redo back, and has no time for it.
     let (manager, mut events) = bench.manager();
     assert!(manager.open_session(true).unwrap().resumed);
     manager.send("Km = 2").unwrap();
@@ -1443,7 +1323,6 @@ fn a_timed_redo_resumed_with_no_clock_earns_no_pass_and_the_learner_is_told() {
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     assert_eq!(attempts[0]["mark"], "right");
     assert_eq!(attempts[0]["cold"], false, "{attempts:#?}");
-    // Right, and not cold: no pass and no fail, and the redo stays due.
     let rows = gap_rows(&bench);
     assert_eq!(rows[0].status, "open", "{rows:#?}");
     assert_eq!(rows[0].passes, "", "{rows:#?}");
@@ -1461,7 +1340,6 @@ fn a_timed_redo_resumed_with_no_clock_earns_no_pass_and_the_learner_is_told() {
 #[test]
 fn a_redo_the_tutor_taught_in_the_sitting_earns_no_pass_and_the_learner_is_told() {
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
-    // The tutor marks it right and says the page was not blank.
     manager.send("Km = 2 TAUGHT").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
@@ -1471,14 +1349,12 @@ fn a_redo_the_tutor_taught_in_the_sitting_earns_no_pass_and_the_learner_is_told(
     assert_eq!(rows[0].status, "open", "{rows:#?}");
     assert_eq!(rows[0].passes, "", "{rows:#?}");
     assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
-    // The reply said "Right": the window says what the record holds.
     let notices = all_notices(&mut events);
     assert_eq!(notices.len(), 1, "{notices:#?}");
     assert!(
         notices[0].contains("did not count for the paper question"),
         "{notices:#?}"
     );
-    // And the tutor is told with the next message.
     manager.send("ok").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
@@ -1486,7 +1362,6 @@ fn a_redo_the_tutor_taught_in_the_sitting_earns_no_pass_and_the_learner_is_told(
         state.contains("The record did not count the last paper redo: no pass and no fail."),
         "{state}"
     );
-    // A pass is told to the tutor too, and raises no notice.
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
     manager.send("Km = 2").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -1504,8 +1379,6 @@ fn a_redo_the_tutor_taught_in_the_sitting_earns_no_pass_and_the_learner_is_told(
 #[test]
 fn a_reply_stopped_part_way_sets_the_open_redo_aside_for_good() {
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
-    // The learner answers, and stops the reply after its first words: what
-    // they saw of it may have marked the redo, or given its answer away.
     manager.send("SLOW Km = 0.5").unwrap();
     events.until("the first words", |e| {
         matches!(e, AgentEvent::TextDelta { .. })
@@ -1529,8 +1402,6 @@ fn a_reply_stopped_part_way_sets_the_open_redo_aside_for_good() {
             .any(|text| text.contains("paper redo was set aside")),
         "{notices:#?}"
     );
-    // The next answer is not saved for the row: it has no mark, and the
-    // learner is told.
     events.seen.clear();
     manager.send("Km = 2").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -1544,15 +1415,12 @@ fn a_reply_stopped_part_way_sets_the_open_redo_aside_for_good() {
     assert_eq!(rows[0].status, "open", "{rows:#?}");
     assert_eq!(rows[0].passes, "", "{rows:#?}");
     assert_eq!(rows[0].next_redo, today(), "{rows:#?}");
-    // Nor after a resume: the record's checkpoint no longer names the redo.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
     assert!(manager.open_session(true).unwrap().resumed);
     manager.send("Km = 2").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // The answer is to the ordinary task the last reply set, and is kept
-    // as one: the row holds no answer at all.
     let on_the_row: i64 = bench
         .store()
         .query_row(
@@ -1571,9 +1439,6 @@ fn a_reply_stopped_part_way_sets_the_open_redo_aside_for_good() {
 
 #[test]
 fn a_redo_whose_tag_or_rows_the_runtime_refuses_keeps_its_mark() {
-    // A tag from a gap log written by hand that names a problem: the
-    // runtime takes no such label, so the answer goes under the skill the
-    // tutor named, and still counts for the row.
     let (bench, manager, mut events) =
         with_a_redo_posed(&[("3", "Q3 slope", "slope read as intercept", "K")]);
     manager.send("Km = 2").unwrap();
@@ -1587,9 +1452,6 @@ fn a_redo_whose_tag_or_rows_the_runtime_refuses_keeps_its_mark() {
     assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
     manager.shut_down();
 
-    // A row taken out of the gap log after its redo was posed: the answer
-    // is kept as an ordinary one, and the learner is told it counted for
-    // no paper question.
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
     Connection::open(bench.root.join(".magnesium/state.sqlite"))
         .unwrap()
@@ -1624,8 +1486,6 @@ fn a_skip_holds_for_its_own_sitting_and_not_for_the_next() {
         .unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert!(!last_state(&bench).contains("Tag \"km\""));
-    // Hours later for the runtime, in the same window: a new sitting, whose
-    // redo is listed with the message after the one that began it.
     hours_pass_for_the_runtime(&bench);
     manager.send("hello").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -1646,18 +1506,14 @@ fn a_tag_already_answered_today_gets_no_redo_today() {
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // An answer in the lesson, on the skill "sign of b".
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // A marked paper's rows come due, one of them on that skill.
     paper_plan(&bench, &[("2", "sign of b", "took b as 5", "K"), KM_ROW]);
     hours_pass_for_the_runtime(&bench);
     manager.send("hello").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     manager.send("BACK").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // No answer on it could be cold today, so its redo could only fail:
-    // it is left for a later day, and the other is listed.
     let state = last_state(&bench);
     assert!(state.contains("1. Tag \"km\""), "{state}");
     assert!(!state.contains("Tag \"sign of b\""), "{state}");
@@ -1666,7 +1522,6 @@ fn a_tag_already_answered_today_gets_no_redo_today() {
     manager.shut_down();
 }
 
-/// Every event the runtime holds, learner and tutor, and every answer.
 fn record_size(bench: &Bench) -> (i64, usize) {
     bench.size()
 }
@@ -1684,8 +1539,6 @@ fn a_cold_answer_is_kept_cold_and_one_the_runtime_refuses_keeps_its_mark() {
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0]["cold"], true, "{attempts:#?}");
 
-    // A new process does not know the skill was answered today, so it asks
-    // for cold again; the runtime refuses, and the mark is kept without it.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
@@ -1712,8 +1565,6 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
     done(&manager, &mut events);
     manager.send("b = 5").unwrap();
     done(&manager, &mut events);
-    // The message that asks is captured, as in a plugin lesson; its reply
-    // and everything after it are not.
     manager.send("RECORDING OFF please").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let off = record_size(&bench);
@@ -1744,7 +1595,6 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
         "{state}"
     );
 
-    // A new conversation, even one the window opens, keeps it off.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
@@ -1761,7 +1611,6 @@ fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conv
         "nothing kept in a new conversation"
     );
 
-    // Until the learner turns it on.
     manager.send("RECORDING ON please").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     manager.send("b = 5").unwrap();
@@ -1790,7 +1639,6 @@ fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
         state.as_str().unwrap().contains("paused the lesson"),
         "{state}"
     );
-    // Continue from the course page resumes the lesson in the record.
     manager.open_session(true).unwrap();
     manager
         .send_new_lesson("I'm back. Let's continue.")
@@ -1827,7 +1675,6 @@ fn an_interrupt_s_watchdog_never_stops_the_next_reply() {
     });
     manager.interrupt().unwrap();
     done(&manager, &mut events);
-    // At once, a reply that takes longer than the watchdog's eight seconds.
     events.seen.clear();
     manager.send("VERYSLOW b = 5").unwrap();
     let end = events.until("the slow reply's end", |e| {
@@ -1854,7 +1701,6 @@ fn an_answer_whose_words_were_not_captured_says_it_was_not_marked() {
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert!(bench.attempts().is_empty());
-    // The notice comes with the record, just after the turn's end.
     let notice = events.until("a notice", |e| matches!(e, AgentEvent::Notice { .. }));
     assert!(format!("{notice:?}").contains("not marked"), "{notice:?}");
     manager.shut_down();
@@ -1867,7 +1713,6 @@ fn an_answer_after_an_unreadable_record_is_never_marked_on_the_old_task() {
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
-    // This reply may have posed a new task; its record cannot be read.
     manager.send("NEVERBLOCK b = 5").unwrap();
     done(&manager, &mut events);
     events.seen.clear();
@@ -1882,8 +1727,6 @@ fn an_answer_after_an_unreadable_record_is_never_marked_on_the_old_task() {
 #[test]
 fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_once() {
     let bench = Bench::new(None, &[]);
-    // The engine's tool server starts behind the proxy, which holds back
-    // the answer to the first save of an answer.
     fs::write(bench.flags.join("hang"), "").unwrap();
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
@@ -1893,20 +1736,16 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
     let sent = Instant::now();
     manager.send("b = 5").unwrap();
     assert!(ended_well(&events.turn_end()));
-    // The reply is not held back by the save.
     assert!(
         sent.elapsed() < Duration::from_secs(2),
         "{:?}",
         sent.elapsed()
     );
     assert!(manager.wait_saved(Duration::from_secs(30)));
-    // The save timed out, its server was replaced, and the same request,
-    // sent again, was answered with its first result: one answer, no notice.
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     assert!(!bench.flags.join("hang").exists(), "the hang happened");
     assert!(notices(&events).is_empty(), "{:#?}", events.seen);
-    // The next turn goes on as usual.
     manager.send("b = -5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(bench.attempts().len(), 2);
@@ -1916,9 +1755,6 @@ fn a_hung_tool_server_is_replaced_and_a_save_whose_outcome_was_unknown_is_kept_o
 #[test]
 fn a_save_whose_outcome_stays_unknown_is_read_back_before_the_learner_is_told() {
     let bench = Bench::new(None, &[]);
-    // The answer to the first save of an answer is held back, and so is
-    // the answer to its replay: the save went through, and the engine
-    // cannot know it from those two calls.
     fs::write(bench.flags.join("hang"), "2").unwrap();
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
@@ -1929,12 +1765,10 @@ fn a_save_whose_outcome_stays_unknown_is_read_back_before_the_learner_is_told() 
     assert!(ended_well(&events.turn_end()));
     assert!(manager.wait_saved(Duration::from_secs(40)));
     assert!(!bench.flags.join("hang").exists(), "both hangs happened");
-    // One answer, and no notice that it was not marked.
     let attempts = bench.attempts();
     assert_eq!(attempts.len(), 1, "{attempts:#?}");
     let notices = all_notices(&mut events);
     assert!(notices.is_empty(), "{notices:#?}");
-    // The next turn goes on as usual.
     manager.send("b = -5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(bench.attempts().len(), 2);
@@ -1949,7 +1783,6 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
     events.take();
-    // The message starts twice in one turn.
     manager.send("RESTART b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
@@ -1957,7 +1790,6 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
         reply,
         "Not quite: b keeps its minus sign, so b = −5. Try this one: What is b in x² + 3x − 4 = 0?"
     );
-    // The stream stops short; the finished message has the rest and the block.
     manager.send("CUTSHORT b = -5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let (reply, _) = events.take();
@@ -1973,9 +1805,6 @@ fn a_restarted_or_cut_short_stream_ends_as_the_finished_message() {
     manager.shut_down();
 }
 
-/// On a machine under load each tool call is slow. A message sent while the
-/// last reply's record is being kept waits for it, and so reads the task
-/// that record left open; ending the lesson waits for it too.
 #[test]
 fn a_slow_record_holds_the_next_message_and_the_end_of_the_lesson() {
     let bench = Bench::new(None, &[]);
@@ -1984,7 +1813,6 @@ fn a_slow_record_holds_the_next_message_and_the_end_of_the_lesson() {
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     done(&manager, &mut events);
-    // A wrong answer, and at once, before its record is kept, the next one.
     manager.send("b = 5").unwrap();
     events.turn_end();
     manager.send("b = -5").unwrap();
@@ -1994,10 +1822,8 @@ fn a_slow_record_holds_the_next_message_and_the_end_of_the_lesson() {
     let wrong = attempts.iter().find(|a| a["mark"] == "wrong").unwrap();
     let right = attempts.iter().find(|a| a["mark"] == "right").unwrap();
     assert_eq!(wrong["question"], "What is b in x² − 5x + 6 = 0?");
-    // The task the first record opened.
     assert_eq!(right["question"], "What is b in x² + 3x − 4 = 0?");
     assert_ne!(wrong["response_event_id"], right["response_event_id"]);
-    // "I don't know", and the learner ends the lesson as the reply ends.
     manager.send("I don't know").unwrap();
     events.turn_end();
     manager.stop(None).unwrap();
@@ -2011,7 +1837,6 @@ fn a_slow_record_holds_the_next_message_and_the_end_of_the_lesson() {
     manager.shut_down();
 }
 
-/// A notice that comes after the turn's end still reaches the page.
 #[test]
 fn a_notice_after_the_turns_end_reaches_the_page() {
     let bench = Bench::new(None, &[]);
@@ -2024,7 +1849,6 @@ fn a_notice_after_the_turns_end_reaches_the_page() {
     let end = events.turn_end();
     assert!(ended_well(&end));
     assert!(manager.wait_saved(Duration::from_secs(30)));
-    // Everything the page was sent, after the end of the turn included.
     while let Ok(event) = events.receiver.try_recv() {
         events.seen.push(event);
     }
@@ -2043,8 +1867,6 @@ fn a_notice_after_the_turns_end_reaches_the_page() {
     manager.shut_down();
 }
 
-/// Write a memory as a plugin lesson's tutor writes one, through the
-/// runtime's own tool call, in a conversation of its own.
 fn plugin_memory(bench: &Bench, state_text: &str) -> String {
     use std::io::Write;
     let call = |request: Value| -> Value {
@@ -2110,7 +1932,6 @@ fn memory_text(bench: &Bench, memory_id: &str) -> (String, i64) {
 #[test]
 fn a_memory_edit_keeps_the_plugins_lines_and_rewrites_its_own_in_place() {
     let bench = Bench::new(None, &[]);
-    // A memory the plugin wrote: an anchor, and a long description.
     let theirs = format!(
         "Reads coefficients in standard form.\nanchor: reads a from a bare x² (check question after the formula)\n{}",
         "Earlier work on signs. ".repeat(500)
@@ -2128,7 +1949,6 @@ fn a_memory_edit_keeps_the_plugins_lines_and_rewrites_its_own_in_place() {
             .contains("- m1: sign of b: Their summary."),
         "{first}"
     );
-    // The tutor revises m1: the plugin's text stays byte for byte.
     manager
         .send("MEMORY found Drops the minus sign of b.")
         .unwrap();
@@ -2143,7 +1963,6 @@ fn a_memory_edit_keeps_the_plugins_lines_and_rewrites_its_own_in_place() {
         &text[theirs.len()..],
         "\nMisunderstanding found in a lesson: Drops the minus sign of b."
     );
-    // A second edit of the same misunderstanding rewrites that line.
     manager.send("MEMORY found Writes b = 5 for −5x.").unwrap();
     done(&manager, &mut events);
     let (text, _) = memory_text(&bench, &memory);
@@ -2154,7 +1973,6 @@ fn a_memory_edit_keeps_the_plugins_lines_and_rewrites_its_own_in_place() {
         "one line, rewritten"
     );
     assert!(text.ends_with("Misunderstanding found in a lesson: Writes b = 5 for −5x."));
-    // Cleared: said in that line, with no date.
     manager
         .send("MEMORY cleared Keeps the sign with its number.")
         .unwrap();
@@ -2194,7 +2012,6 @@ fn a_memory_at_the_runtimes_limit_is_left_as_it_was() {
     manager.shut_down();
 }
 
-/// The repairs on record, as practice events.
 fn repairs_recorded(bench: &Bench) -> i64 {
     bench
         .store()
@@ -2206,9 +2023,6 @@ fn repairs_recorded(bench: &Bench) -> i64 {
         .unwrap()
 }
 
-/// The day after the last repair on record, when its first redo falls due.
-/// Read from the repair, not the clock, so that a test run across midnight
-/// still holds.
 fn tomorrow(bench: &Bench) -> String {
     let at: Option<i64> = bench
         .store()
@@ -2231,13 +2045,11 @@ fn tomorrow(bench: &Bench) -> String {
 #[test]
 fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
-    // A wrong answer fails the row: no pass, and no next redo until a repair.
     manager.send("Km = 0.5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let rows = gap_rows(&bench);
     assert_eq!(rows[0].passes, format!("{} fail", today()), "{rows:#?}");
     assert_eq!(rows[0].next_redo, "", "it waits: {rows:#?}");
-    // The tutor is told, with the next message, that it waits for a repair.
     manager.send("ok, show me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
@@ -2246,8 +2058,6 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
         "{state}"
     );
     assert!(state.contains("Repair 1. Tag \"km\""), "{state}");
-    // The repair ends: it is recorded once, for the row, with its next
-    // question, and the row's first redo falls due the next day.
     events.seen.clear();
     manager.send("REPAIRED").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -2256,7 +2066,6 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
     assert_eq!(rows[0].next_redo, tomorrow(&bench), "{rows:#?}");
     assert_eq!(rows[0].status, "open", "a repair is no pass: {rows:#?}");
     assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
-    // The tutor is told what the record holds with the next message.
     manager.send("thanks").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let state = last_state(&bench);
@@ -2267,11 +2076,9 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
         )),
         "{state}"
     );
-    // The same repair named again records nothing more.
     manager.send("REPAIR 1").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(repairs_recorded(&bench), 1);
-    // A local day later the redo is posed again, with the stored question.
     manager.stop(None).unwrap();
     drop(manager);
     days_pass(&bench, 1);
@@ -2290,8 +2097,6 @@ fn a_failed_redo_waits_for_its_repair_and_is_posed_again_a_day_after_it() {
     manager.shut_down();
 }
 
-/// A lesson in a study folder whose gap log has a row waiting for its
-/// repair, opened from the window.
 fn with_a_row_waiting() -> (Bench, Manager, Events) {
     let bench = Bench::new(None, &[]);
     waiting_plan(&bench, &[KM_ROW]);
@@ -2334,7 +2139,6 @@ fn a_row_that_waited_before_the_lesson_is_listed_and_can_be_repaired() {
 
 #[test]
 fn no_repair_is_recorded_for_a_row_that_is_not_waiting() {
-    // A repair the state never listed.
     let (bench, manager, mut events) = with_a_row_waiting();
     manager.send("REPAIR 7").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -2348,14 +2152,11 @@ fn no_repair_is_recorded_for_a_row_that_is_not_waiting() {
     );
     manager.shut_down();
 
-    // A row repaired in another conversation after the list was made, and
-    // due by now: the engine's repair would move its redo, so none is sent.
     let (bench, manager, mut events) = with_a_row_waiting();
     plugin_repair(&bench, "midterm-1#1");
     days_pass(&bench, 1);
     manager.send("REPAIRED").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // A second repair would have moved the due redo to tomorrow.
     assert_eq!(repairs_recorded(&bench), 1, "the other conversation's only");
     manager.send("ok").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -2367,7 +2168,6 @@ fn no_repair_is_recorded_for_a_row_that_is_not_waiting() {
     manager.shut_down();
 }
 
-/// Requests a lesson on Claude Code makes, in a conversation of its own.
 fn plugin_calls(bench: &Bench, requests: &[Value]) -> Vec<Value> {
     use std::io::Write;
     requests
@@ -2411,7 +2211,6 @@ fn plugin_start() -> Value {
             "kind": "message", "text": "Q3: Km is 0.5"}]})
 }
 
-/// Record a repair as a lesson on Claude Code does.
 fn plugin_repair(bench: &Bench, item: &str) {
     plugin_calls(
         bench,
@@ -2437,7 +2236,6 @@ fn a_repair_whose_record_cannot_be_read_records_nothing_and_the_learner_is_told(
         notices.iter().any(|text| text.contains("it was not saved")),
         "{notices:#?}"
     );
-    // A block whose repair has no number records nothing either.
     events.seen.clear();
     manager.send("BADREPAIR").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
@@ -2464,7 +2262,6 @@ fn with_recording_off_no_repair_is_recorded() {
     manager.shut_down();
 }
 
-/// Ask for help on the open task, and get the tutor's one-line warning.
 fn warned(bench: &Bench, manager: &Manager, events: &mut Events, words: &str) {
     manager.send(words).unwrap();
     assert!(ended_well(&done(manager, events)));
@@ -2477,7 +2274,6 @@ fn warned(bench: &Bench, manager: &Manager, events: &mut Events, words: &str) {
 fn a_hint_asked_for_on_a_redo_and_held_back_costs_nothing() {
     let (bench, manager, mut events) = with_a_redo_posed(&[KM_ROW]);
     warned(&bench, &manager, &mut events, "Can I have a hint?");
-    // No help was given: the right answer is as unaided as before.
     manager.send("Km = 2").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
@@ -2580,8 +2376,6 @@ fn i_m_lost_on_a_due_check_with_only_the_warning_records_no_help() {
 #[test]
 fn a_failed_redo_on_a_row_in_no_plan_can_be_repaired() {
     let bench = Bench::new(None, &[]);
-    // A marked paper answer in a folder with no plan makes a row in no plan,
-    // which a lesson on Claude Code repairs.
     let started = &plugin_calls(&bench, &[plugin_start()])[0];
     let event = started["captured_event_ids"][0]
         .as_str()
@@ -2609,7 +2403,6 @@ fn a_failed_redo_on_a_row_in_no_plan_can_be_repaired() {
         .unwrap();
     plugin_repair(&bench, &id);
     days_pass(&bench, 1);
-    // The redo is posed, answered wrong, and repaired in the lesson.
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson(BACK).unwrap();
@@ -2636,7 +2429,6 @@ fn a_failed_redo_on_a_row_in_no_plan_can_be_repaired() {
 #[test]
 fn a_row_that_failed_here_past_the_first_24_waiting_is_repaired() {
     let bench = Bench::new(None, &[]);
-    // 29 rows wait for a repair; row 30, repaired and due, comes last.
     let dir = bench.root.join("Study/midterm-1");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
@@ -2719,7 +2511,6 @@ fn a_block_with_both_a_control_and_a_repair_tells_the_learner_the_repair_was_not
 fn a_repair_whose_save_times_out_twice_is_read_back_and_kept_once() {
     let (bench, manager, mut events) = with_a_row_waiting();
     fs::write(bench.flags.join("hang-practice"), "2").unwrap();
-    // The flag routes only servers started from now on through the proxy.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events2) = bench.manager();
@@ -2747,7 +2538,6 @@ fn an_answer_after_recording_is_turned_back_on_is_not_saved_against_the_old_task
     done(&manager, &mut events);
     manager.send("RECORDING OFF please").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // This reply poses another task, which the engine never reads.
     manager.send("b = 5").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     manager.send("RECORDING ON please").unwrap();
@@ -2768,12 +2558,10 @@ fn an_answer_after_recording_is_turned_back_on_is_not_saved_against_the_old_task
 #[test]
 fn a_check_another_task_replaced_before_its_answer_can_be_posed_again() {
     let (bench, manager, mut events) = with_a_check_posed();
-    // Another task takes the check's place, then the check is posed again.
     manager.send("MENTION").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     manager.send("CHECK AGAIN").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // A right answer, under another skill name, is the check's answer.
     manager.send("RIGHTCHECK").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let answer = check_answer(&bench);
@@ -2789,8 +2577,6 @@ fn a_new_sitting_has_no_open_task() {
     days_pass(&bench, 1);
     let (manager, mut events) = bench.manager();
     assert!(manager.open_session(true).unwrap().resumed);
-    // An answer typed the next day, before anything is posed, is saved
-    // against no question.
     manager.send("b = -5 COLD").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert!(
@@ -2803,8 +2589,6 @@ fn a_new_sitting_has_no_open_task() {
 
 #[test]
 fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
-    // Repair 1 waited before the sitting; redo 1 fails, and its repair
-    // waits as another number.
     let bench = Bench::new(None, &[]);
     let dir = bench.root.join("Study/midterm-1");
     fs::create_dir_all(&dir).unwrap();
@@ -2838,8 +2622,6 @@ fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
                 .map(str::to_owned)
         })
         .unwrap_or_else(|| panic!("{state}"));
-    // The window restarts into the same conversation, in the same sitting,
-    // and the tutor finishes the repair it was on, by its number.
     manager.stop(None).unwrap();
     drop(manager);
     let (manager, mut events) = bench.manager();
@@ -2851,7 +2633,6 @@ fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
     assert_eq!(rows[0].next_redo, "", "the other still waits: {rows:#?}");
     manager.shut_down();
 
-    // A skill corrected in the sitting is still known after a restart.
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
@@ -2873,12 +2654,8 @@ fn repair_numbers_and_what_the_sitting_taught_survive_a_restart() {
     manager.shut_down();
 }
 
-// --- Talk, and the plan ------------------------------------------------------
-
 const FIRST: &str = "What is b in x² − 5x + 6 = 0?";
 
-/// The scratch course's plan, as `scripts/scratch-course.sh` writes it: an
-/// exam ten days from today and five items.
 fn stats_plan(bench: &Bench) -> String {
     let exam = (chrono::Local::now().date_naive() + chrono::Days::new(10)).to_string();
     let dir = bench.root.join("Study/midterm-2");
@@ -2897,7 +2674,6 @@ fn stats_plan(bench: &Bench) -> String {
     exam
 }
 
-/// Wait for the event `matches` picks among those still to come.
 fn next_event(
     events: &mut Events,
     what: &str,
@@ -2922,8 +2698,6 @@ fn talk_is_never_marked_and_the_open_task_stays_open() {
     manager.send_new_lesson("TEACH me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     events.take();
-    // The block of this reply marks the message right and poses a new
-    // task; sent as talk, code marks nothing and keeps the task.
     manager
         .send_with("b = -5 COLD", Some(Intent::Talk))
         .unwrap();
@@ -2941,14 +2715,12 @@ fn talk_is_never_marked_and_the_open_task_stays_open() {
         "the window's mark never reaches the model"
     );
     assert!(bench.attempts().is_empty(), "talk is never marked");
-    // No mark comes, however long the window looks.
     std::thread::sleep(Duration::from_millis(1500));
     while let Ok(event) = events.receiver.try_recv() {
         events.seen.push(event);
     }
     assert_eq!(marked(&events), 0, "{:#?}", events.seen);
     events.take();
-    // The next answer is marked, against the task that stayed open.
     manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let mark = next_event(&mut events, "marked", |e| {
@@ -2976,7 +2748,6 @@ fn an_off_plan_question_gets_no_task_and_no_mark_and_back_to_poses_the_task_agai
     manager.send_new_lesson("TEACH me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     events.take();
-    // Left to the tutor, an off-plan question is answered with no task.
     manager
         .send("By the way, why do we divide by n − 1?")
         .unwrap();
@@ -2988,7 +2759,6 @@ fn an_off_plan_question_gets_no_task_and_no_mark_and_back_to_poses_the_task_agai
     let (reply, _) = events.take();
     assert_eq!(reply, format!("Back to it. {FIRST}"));
     assert!(bench.attempts().is_empty());
-    // The task that was left is the one an answer is marked against.
     manager.send("b = -5 COLD").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let attempts = bench.attempts();
@@ -3053,7 +2823,6 @@ fn the_tutor_changes_the_plan_file_and_the_window_hears_what_changed() {
     assert!(what.contains(&PlanPart::Text), "{what:?}");
     let (reply, _) = events.take();
     assert!(reply.starts_with("Done: the exam is now on"), "{reply}");
-    // The file is the plan: the runtime's digest reads the new date.
     let after = manager.plan().unwrap();
     let moved = (chrono::NaiveDate::parse_from_str(&exam, "%Y-%m-%d").unwrap()
         + chrono::Days::new(7))
@@ -3075,7 +2844,6 @@ fn the_tutor_changes_the_plan_file_and_the_window_hears_what_changed() {
     assert!(after.changed_ms.unwrap() >= before.changed_ms.unwrap());
     let digest = bench.cli(&["digest"]);
     assert_eq!(digest["plans"][0]["days_left"], 17);
-    // The model edited the file with Edit, which only the plan files allow.
     let start = &bench.logged("start")[0];
     let args: Vec<String> = serde_json::from_value(start["args"].clone()).unwrap();
     let allowed = &args[args.iter().position(|a| a == "--allowedTools").unwrap() + 1];
@@ -3083,7 +2851,6 @@ fn the_tutor_changes_the_plan_file_and_the_window_hears_what_changed() {
         allowed.contains(&format!("Edit(/{}/Study/*/plan.md)", bench.root.display())),
         "{allowed}"
     );
-    // Asking for a change is talk: nothing was marked.
     assert!(bench.attempts().is_empty());
     manager.shut_down();
 }
@@ -3160,7 +2927,6 @@ fn the_plugin_engine_writes_the_plan_files_without_asking_and_nothing_else() {
     );
     assert!(rules("deny").contains(&format!("Edit(/{root}/.magnesium/**)")));
     assert!(rules("deny").contains(&format!("Write(/{root}/.magnesium/**)")));
-    // Talk carries its plain-words lead, which the teaching files respect.
     let received = entries
         .iter()
         .filter(|e| e["kind"] == "received")
@@ -3202,7 +2968,6 @@ fn a_kept_turn_says_how_it_was_sent_and_which_task_it_left_open() {
     let session = manager.store().folder(&folder).session_id.unwrap();
     let turns = manager.store().turns(&folder, &session);
     assert_eq!(turns.len(), 3, "{turns:#?}");
-    // The window's opening words were sent with no intent, and the reply posed the task.
     assert_eq!(turns[0].intent, None);
     assert_eq!(turns[0].task.as_deref(), Some(FIRST));
     assert!(turns[0].posed);
@@ -3217,15 +2982,12 @@ fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    // A wrong answer: no pass today, and its quick check is due tomorrow.
     manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     next_event(&mut events, "marked", |e| {
         matches!(e, AgentEvent::Marked { .. })
     });
     events.take();
-    // Saying so ends the sitting: the engine tells the runtime, and the
-    // lines come from the record once the turn has settled.
     manager
         .send_with("That's me done for today", Some(Intent::Talk))
         .unwrap();
@@ -3239,7 +3001,6 @@ fn a_learner_who_stops_for_today_gets_the_runtimes_closing_lines_under_the_reply
         }
         _ => unreachable!(),
     }
-    // Kept beside the turn, so a reopened lesson shows them again.
     let session = manager.lessons(None).unwrap()[0].session.clone();
     let turns = manager.lesson_turns(None, &session).unwrap();
     assert_eq!(
@@ -3254,7 +3015,6 @@ fn the_turn_whose_reply_moves_the_lesson_on_keeps_the_step_it_began() {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
-    // The step a turn began, if any: it is sent before the turn's record is said to be read.
     let step_of =
         |events: &mut Events| match next_event(events, "the step or the record read", |e| {
             matches!(e, AgentEvent::StepBegun { .. } | AgentEvent::Settled)
@@ -3267,18 +3027,15 @@ fn the_turn_whose_reply_moves_the_lesson_on_keeps_the_step_it_began() {
             }
             _ => None,
         };
-    // The lesson's first reply sets the route and begins its first step.
     manager.send_new_lesson("TEACH me").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(
         step_of(&mut events),
         Some((1, 2, "Read a, b, c".to_owned()))
     );
-    // A wrong answer keeps the step in hand: no step begins.
     manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(step_of(&mut events), None);
-    // The right one moves the lesson on.
     manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     assert_eq!(
@@ -3287,7 +3044,6 @@ fn the_turn_whose_reply_moves_the_lesson_on_keeps_the_step_it_began() {
     );
     manager.shut_down();
 
-    // Kept beside the turns, so a reopened lesson draws its heads where they were.
     let session = manager.lessons(None).unwrap()[0].session.clone();
     let turns = manager.lesson_turns(None, &session).unwrap();
     let steps: Vec<Option<(usize, String)>> = turns
@@ -3314,9 +3070,6 @@ fn a_step_read_that_finishes_after_the_next_message_stays_with_its_own_turn() {
     next_event(&mut events, "the record read", |e| {
         matches!(e, AgentEvent::Settled)
     });
-    // The right answer moves the lesson on to its second step. The learner
-    // writes again as soon as the reply ends, while its record is still being
-    // kept: the step this turn began is read after the next turn has begun.
     manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     events.turn_end();
     manager
@@ -3334,7 +3087,6 @@ fn a_step_read_that_finishes_after_the_next_message_stays_with_its_own_turn() {
         .iter()
         .map(|turn| turn.step.as_ref().map(|step| (step.n, step.name.clone())))
         .collect();
-    // The head is the answer's, never the talk's after it.
     assert_eq!(
         steps,
         [
@@ -3355,8 +3107,6 @@ fn a_step_read_that_finishes_after_the_session_closed_stays_with_its_turn() {
     next_event(&mut events, "the record read", |e| {
         matches!(e, AgentEvent::Settled)
     });
-    // The session closes as soon as the reply that moves the lesson on ends,
-    // while its record is still being kept.
     manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     events.turn_end();
     manager.shut_down();
@@ -3380,8 +3130,6 @@ fn a_message_dropped_by_a_stop_leaves_later_steps_drawn_live() {
     next_event(&mut events, "the record read", |e| {
         matches!(e, AgentEvent::Settled)
     });
-    // A message written while the reply's record is being kept waits its
-    // turn; a stop then drops it, and it never ends a turn.
     manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
     events.turn_end();
     manager
@@ -3389,7 +3137,6 @@ fn a_message_dropped_by_a_stop_leaves_later_steps_drawn_live() {
         .unwrap();
     manager.interrupt().unwrap();
     assert!(manager.wait_saved(Duration::from_secs(30)));
-    // The answer that moves the lesson on is still drawn while it is read.
     manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
     let heard = next_event(&mut events, "the step or the record read", |e| {

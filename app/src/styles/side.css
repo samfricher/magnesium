@@ -1,9 +1,3 @@
-/*
- * The panel beside the lesson when it holds documents: its switcher, its
- * edge, a document's pages and a note. In the window's own neutrals and ink,
- * as the tab bar and the plan are (window.css).
- */
-
 .panel.side {
   display: flex;
   flex-direction: column;
@@ -19,13 +13,10 @@
   max-width: none;
   border-left: 0;
 }
-/* Flipped to the lesson while the panel fills the session: the lesson is in front, the panel waits. */
-/* "inherit", not "visible": a session behind the one in front stays hidden whatever its panel does. */
 .session.expanded.lesson-front .surface,
 .session.expanded.lesson-front .top-edge { visibility: inherit; right: 0; }
 .session.expanded.lesson-front .panel.side { display: none; }
 
-/* The left edge, dragged to make the panel wider. */
 .side-grip {
   position: absolute;
   top: 0;
@@ -47,7 +38,6 @@
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  /* Its tabs' words (8px into each tab) start on the plan's own left edge, 18px in. */
   padding: calc(var(--head-room) - 14px) 12px 6px 10px;
   border-bottom: 1px solid var(--edge);
 }
@@ -73,7 +63,6 @@
   white-space: nowrap;
 }
 .side-tab.doc { padding: 0; max-width: 14rem; flex-shrink: 3; min-width: 3.2rem; }
-/* The document in front keeps more of its name, but never so much that the others cannot be read. */
 .side-tab.doc.here { flex-shrink: 1; max-width: 45%; min-width: 6rem; }
 .side-tab-name { padding: 3px 4px 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .side-tab.here { background: var(--tint); color: var(--text); }
@@ -85,8 +74,6 @@
 .side-close:focus-visible { visibility: visible; }
 .side-close:hover { color: var(--text); }
 .side-tools { flex: none; display: flex; align-items: center; gap: 2px; margin-left: auto; }
-/* The panel's tools in the type and padding of its tabs, so both sit on one line; the head keeps the height the
-   taller tools gave it, so the tabs do not sit on its rule. */
 .side-tools .bar-act { padding: 3px 8px; font-size: 12.5px; }
 .side-head { padding-bottom: 9px; }
 .side-zoom { display: inline-flex; align-items: center; }
@@ -99,7 +86,6 @@
   display: flex;
   flex-direction: column;
 }
-/* The plan, in the panel's body: it scrolls on its own, under the switcher. */
 .side-body > .plan-view {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -109,12 +95,8 @@
 .doc-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; outline: none; }
 .doc-note { margin: 0; padding: 1rem 20px; font: 400 0.765rem/1.55 var(--app); color: var(--quiet); }
 
-/* A PDF: its pages in a column, on the window's ground. */
-/* Positioned, so each page's offset is measured from the column it scrolls in, not from the panel. */
 .doc-pdf { position: relative; padding: 16px 0 24vh; }
-/* Fitted, the pages are set so their drawing fills the panel: the sheet's blank margins fall outside it. */
 .doc-pdf.fitted { overflow-x: hidden; }
-/* Fitted, the first page starts at the head's rule: a strip of ground between them drew the rule twice. */
 .doc-pdf.fitted { padding-top: 0; }
 .doc-page {
   position: relative;
@@ -122,10 +104,8 @@
   background: white;
   box-shadow: 0 0 0 1px var(--edge);
 }
-/* The picture fills its page's box, so while a new zoom or width settles it stretches with the page. */
 .doc-page canvas { display: block; width: 100%; height: 100%; }
 
-/* A page's words, laid over its picture so they can be selected: from the PDF reader's own rules. */
 .textLayer {
   position: absolute;
   text-align: initial;
@@ -163,7 +143,6 @@
 }
 .textLayer.selecting .endOfContent { top: 0; }
 
-/* A note, drawn as prose at the panel's own measure. */
 .doc-flow { padding: 1.2rem 22px 24vh; }
 .doc-prose { max-width: var(--measure); margin: 0 auto; font-size: 0.941rem; }
 .panel.side.expanded .doc-prose { font-size: 1rem; }
@@ -174,7 +153,6 @@
   .panel.side { transition: none; }
 }
 
-/* A file the tutor names reads as its title, as a link, in the words around it: never as code, never as a path. */
 .prose code.path.titled {
   font: inherit;
   padding: 0;
@@ -188,7 +166,6 @@
 .prose code.path.titled:hover,
 .prose a.source:hover { text-decoration-color: var(--ink); }
 
-/* A workspace's page with material open beside it: the page scrolls on its own, left of the panel. */
 .workspace-page.with-docs { position: absolute; inset: 0; }
 .workspace-page.with-docs > .page-scroll { position: absolute; inset: 0 var(--side-w) 0 0; overflow-y: auto; overflow-x: hidden; }
 .workspace-page.with-docs.expanded > .page-scroll { visibility: hidden; }
@@ -196,10 +173,8 @@
 .workspace-page.with-docs.expanded.lesson-front > .panel.side { display: none; }
 .side-open { flex: none; padding: 3px 8px; border-radius: 6px; font: 400 12.5px/1.3 var(--app); color: var(--hint); }
 .side-open:hover { color: var(--text); }
-/* Named in the reply that sets the open task: its title, as plain words, until the task is answered. */
 .prose code.titled.shut { font: inherit; padding: 0; background: none; border-radius: 0; }
 
-/* Flipped to the lesson while the panel fills the session: the lesson's column is where it is with no panel. */
 .session.expanded.lesson-front .column,
 .session.expanded.lesson-front .top-edge .inner {
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
@@ -208,14 +183,11 @@
 }
 
 
-/* In the dark, the white page is dimmed so it does not glare beside the lesson. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) .doc-page { filter: brightness(0.8) contrast(0.95); }
 }
 :root[data-scheme="dark"] .doc-page { filter: brightness(0.8) contrast(0.95); }
 
-/* A document closed while the learner answers: kept at its page and zoom underneath, out of sight. Its place says so,
-   and how to have it back. The plan is never closed. */
 .side-body { position: relative; }
 .side-doc { display: contents; }
 .side-doc[inert] > * { visibility: hidden; }
@@ -230,7 +202,6 @@
   font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
 }
-/* A document that filled the session steps aside while the page is the task, as if the lesson were switched to. */
 .session.doc-closed.expanded:not(.lesson-front) .surface,
 .session.doc-closed.expanded:not(.lesson-front) .top-edge { visibility: inherit; right: 0; }
 .session.doc-closed.expanded:not(.lesson-front) .panel.side { display: none; }

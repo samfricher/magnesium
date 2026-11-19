@@ -1,6 +1,3 @@
-//! Actual adapter reads of unprocessed native work across host conversations.
-//! These deterministic checks establish discovery and control behavior, not
-//! whether a live tutor chooses or interprets the recovered evidence correctly.
 use crate::support::{TestEnvironment, mcp::McpClient, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};

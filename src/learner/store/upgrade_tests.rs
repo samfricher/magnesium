@@ -1,9 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-/// The schema 2 SQL exactly as the previous release shipped it.
 const SCHEMA_2: &str = include_str!("../../../tests/fixtures/learner_model/schema-2.sql");
-/// The schema 3 SQL exactly as the main branch had it before schema 4.
 const SCHEMA_3: &str = include_str!("../../../tests/fixtures/learner_model/schema-3.sql");
 const WORKSPACE: &str = "upgrade-test";
 
@@ -13,7 +11,6 @@ fn folder() -> PathBuf {
     dir
 }
 
-/// A store the previous runtime would have made, with a lesson in it.
 fn schema_2_store(dir: &Path) -> PathBuf {
     let path = dir.join("state.sqlite");
     let conn = Connection::open(&path).unwrap();
@@ -80,7 +77,6 @@ fn rows(conn: &Connection, table: &str) -> Vec<Vec<String>> {
         .unwrap()
 }
 
-/// Every table and index, with its SQL minus spacing and quotes.
 fn shape(conn: &Connection) -> BTreeMap<String, String> {
     let mut statement = conn
         .prepare("SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL")
@@ -92,12 +88,29 @@ fn shape(conn: &Connection) -> BTreeMap<String, String> {
             let (name, sql) = row.unwrap();
             (
                 name,
-                sql.chars()
+                without_comments(&sql)
+                    .chars()
                     .filter(|c| !c.is_whitespace() && *c != '"')
                     .collect(),
             )
         })
         .collect()
+}
+
+fn without_comments(sql: &str) -> String {
+    let mut kept = String::new();
+    let mut chars = sql.chars().peekable();
+    let mut quoted = false;
+    while let Some(c) = chars.next() {
+        if c == '\'' {
+            quoted = !quoted;
+        } else if !quoted && c == '-' && chars.peek() == Some(&'-') {
+            while chars.next_if(|&next| next != '\n').is_some() {}
+            continue;
+        }
+        kept.push(c);
+    }
+    kept
 }
 
 fn backups(dir: &Path) -> Vec<PathBuf> {
@@ -141,8 +154,6 @@ fn a_schema_2_store_upgrades_in_place_with_its_history_and_keeps_a_schema_2_copy
         })
         .unwrap();
     assert_eq!(version, 5);
-    // The history is intact: every old row is still there, unchanged but
-    // for the version number.
     for (table, old) in OLD_TABLES.iter().zip(&before) {
         let mut old = old.clone();
         if *table == "workspace_meta" {
@@ -156,8 +167,6 @@ fn a_schema_2_store_upgrades_in_place_with_its_history_and_keeps_a_schema_2_copy
         .unwrap();
     assert_eq!(attempts, 0);
 
-    // The copy is the schema 2 store as it was, which the previous runtime
-    // opens: same family, version 2, same workspace, same rows.
     let copies = backups(&dir);
     assert_eq!(copies.len(), 1, "{copies:?}");
     let copy = Connection::open(&copies[0]).unwrap();
@@ -178,7 +187,6 @@ fn a_schema_2_store_upgrades_in_place_with_its_history_and_keeps_a_schema_2_copy
         assert_eq!(mode & 0o077, 0, "the copy is private: {mode:o}");
     }
 
-    // Opening it again changes nothing and makes no second copy.
     drop(store);
     LearnerStore::open(&path, WORKSPACE).unwrap();
     assert_eq!(backups(&dir).len(), 1);
@@ -194,8 +202,6 @@ fn an_upgraded_store_has_exactly_the_tables_of_a_fresh_one() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// A store the main branch made at schema 3, with a lesson and one
-/// attempt in it.
 fn schema_3_store(dir: &Path) -> PathBuf {
     let path = dir.join("state.sqlite");
     let conn = Connection::open(&path).unwrap();
@@ -231,8 +237,6 @@ fn a_schema_3_store_upgrades_to_5_with_its_attempts_and_keeps_a_schema_3_copy() 
         })
         .unwrap();
     assert_eq!(version, 5);
-    // Each attempt keeps its row and gains slow, kind_key and no_start:
-    // false, none and false.
     let after = rows(&store.conn, "attempts");
     assert_eq!(after.len(), 1);
     assert_eq!(after[0][..before[0].len()], before[0][..]);
@@ -256,11 +260,8 @@ fn a_schema_3_store_upgrades_to_5_with_its_attempts_and_keeps_a_schema_3_copy() 
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// The schema 4 SQL exactly as the main branch had it before schema 5.
 const SCHEMA_4: &str = include_str!("../../../tests/fixtures/learner_model/schema-4.sql");
 
-/// A store the main branch made at schema 4, whose memories state help
-/// levels and readings in words, as the tutor used to write them.
 fn schema_4_store(dir: &Path) -> PathBuf {
     let path = dir.join("state.sqlite");
     let conn = Connection::open(&path).unwrap();
@@ -296,8 +297,6 @@ fn a_schema_4_store_upgrades_to_5_and_reads_the_steps_and_readings_its_memories_
         })
         .unwrap();
     assert_eq!(version, 5);
-    // Two memories state a step for one kind: the less help is kept, as
-    // a merge kept it. A retired memory states nothing.
     assert_eq!(
         rows(&store.conn, "help_levels")
             .into_iter()
@@ -334,7 +333,6 @@ fn a_schema_4_store_upgrades_to_5_and_reads_the_steps_and_readings_its_memories_
     assert_eq!(shape(&copy), shape(&fresh_schema_4));
     let fresh = LearnerStore::initialize(&dir.join("fresh.sqlite"), WORKSPACE).unwrap();
     assert_eq!(shape(&store.conn), shape(&fresh.conn));
-    // Opening it again reads nothing twice.
     drop(store);
     let again = LearnerStore::open(&path, WORKSPACE).unwrap();
     assert_eq!(rows(&again.conn, "help_levels").len(), 1);
@@ -346,8 +344,6 @@ fn a_schema_4_store_upgrades_to_5_and_reads_the_steps_and_readings_its_memories_
 fn a_failed_upgrade_leaves_the_store_at_schema_2_unchanged() {
     let dir = folder();
     let path = schema_2_store(&dir);
-    // A file where the backups folder goes stops the copy, so the upgrade
-    // must not start.
     std::fs::write(dir.join(BACKUP_DIR), "not a folder").unwrap();
     let before = std::fs::read(&path).unwrap();
     assert!(LearnerStore::open(&path, WORKSPACE).is_err());
@@ -360,7 +356,6 @@ fn a_checkpoint_saved_before_goal_steps_still_reads() {
     let old = r#"{"current_problem":"b","working_diagnosis":"sign of b","next_action":"check b","plan_text":null,"memory_refs":[],"pending_task":null}"#;
     let checkpoint: Checkpoint = serde_json::from_str(old).unwrap();
     assert!(checkpoint.goal_steps.is_empty());
-    // And one without steps saves as it did before.
     assert_eq!(
         serde_json::to_value(&checkpoint).unwrap(),
         serde_json::from_str::<serde_json::Value>(old).unwrap()

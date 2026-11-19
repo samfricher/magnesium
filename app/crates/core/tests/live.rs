@@ -1,15 +1,3 @@
-//! The pipe against the real Claude Code. It is ignored by default, because
-//! it starts a model on your own subscription and takes a few minutes.
-//!
-//!   scripts/live-check.sh
-//!
-//! It answers the one question the stand-in cannot: does a lesson started by
-//! the window load Magnesium's plugin, hooks and tool server as a terminal
-//! session does, and leave the same kind of record?
-//!
-//! It works in a new scratch study folder (or the one named by
-//! MAGNESIUM_LIVE_FOLDER) and prints the folder at the end so you can look.
-
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
@@ -24,7 +12,6 @@ struct Live {
     events: Receiver<AgentEvent>,
 }
 
-/// What one turn gave back.
 #[derive(Default, Debug)]
 struct TurnReport {
     text: String,
@@ -36,11 +23,8 @@ struct TurnReport {
     ok: bool,
     interrupted: bool,
     error: Option<String>,
-    /// Milliseconds from the start of the wait to the first piece of the
-    /// reply, and to its first finished block.
     first_piece_ms: Option<u128>,
     first_block_ms: Option<u128>,
-    /// The lines that named the work while the tutor worked.
     doing: Vec<String>,
 }
 
@@ -59,10 +43,6 @@ impl Live {
         Self { manager, events }
     }
 
-    /// Wait for the turn to end. Every permission request is allowed once and
-    /// printed, and every question gets its first option, so the turn can
-    /// finish with nobody at the keyboard. `interrupt_after` stops the reply
-    /// once that many pieces of text have arrived.
     fn turn(&self, limit: Duration, interrupt_after: Option<usize>) -> TurnReport {
         let started = Instant::now();
         let deadline = started + limit;
@@ -145,8 +125,6 @@ impl Live {
 }
 
 impl Live {
-    /// Press Stop once that many pieces of the reply have arrived, as the
-    /// Stop button does while the tutor writes. Returns what arrived before.
     fn stop_during_reply(&self, limit: Duration, after: usize, line: &str) -> TurnReport {
         let deadline = Instant::now() + limit;
         let mut report = TurnReport::default();
@@ -226,7 +204,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         runtime::version()
     );
 
-    // What `magnesium init` does in any study folder.
     runtime::init(&folder).expect("magnesium sets the folder up");
 
     let minutes = |n: u64| Duration::from_secs(60 * n);
@@ -280,8 +257,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         "an interrupt sent before the first word did not end the turn"
     );
 
-    // Stop pressed while the tutor writes. The reply is interrupted first,
-    // then the conversation closes, and nothing more reaches the page.
     live.manager
         .send("In about 400 words, explain how the sieve of Eratosthenes finds primes.")
         .unwrap();
@@ -291,9 +266,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
         "primes: the proof that there are infinitely many",
     );
     show("3c. Stop pressed during a reply", &stopped);
-    // The agent sends text in bursts, so pieces that reached the page before
-    // Stop can still wait in this test's queue. Once stop() returns, the
-    // window passes nothing more on, so all that waits arrived before Stop.
     let before_stop = live.events.try_iter().count();
     println!("events that reached the page before Stop, still queued: {before_stop}");
     let after_stop = live.events.recv_timeout(Duration::from_secs(15));
@@ -303,7 +275,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
     );
     drop(live);
 
-    // The window, opened again.
     let again = Live::new(&folder, &home);
     let opened = again
         .manager
@@ -327,7 +298,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
     );
     again.manager.stop(None).unwrap();
 
-    // The record a terminal lesson would leave.
     let digest = runtime::digest(&folder).expect("the digest reads");
     let sessions = digest["record"]["sessions"]
         .as_array()
@@ -349,7 +319,6 @@ fn the_real_agent_holds_a_lesson_through_the_pipe() {
     println!("\nAll five parts passed. Look in: {}", folder.display());
 }
 
-/// The tutor's delivered replies, as the runtime recorded them.
 fn delivered(folder: &Path) -> Vec<String> {
     let conn = rusqlite::Connection::open(folder.join(".magnesium/state.sqlite")).unwrap();
     let mut statement = conn
@@ -362,7 +331,6 @@ fn delivered(folder: &Path) -> Vec<String> {
         .unwrap()
 }
 
-/// Words that would give a tool, a command or a path away.
 fn gives_away(line: &str) -> bool {
     let lower = line.to_lowercase();
     [
@@ -411,7 +379,6 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
     );
     assert!(first.ok && first.deltas > 1, "{first:#?}");
 
-    // A reply of 100 words or more shows its first words before it is whole.
     live.manager
         .send("Before the next question: explain in about 200 words what a derivative measures, then give me one task.")
         .unwrap();
@@ -425,7 +392,6 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
         "first words at {piece} ms, the whole reply at {block} ms"
     );
 
-    // What the runtime recorded as delivered is what the window showed.
     let kept = delivered(&folder);
     assert!(
         kept.iter().any(|reply| reply.trim() == long.text.trim()),
@@ -433,7 +399,6 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
         long.text
     );
 
-    // Answer its task, then close the window in the middle of the lesson.
     live.manager
         .send("I think it's 2x, because the power comes down and drops by one.")
         .unwrap();
@@ -454,7 +419,6 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
     );
     assert!(up_next.is_some(), "the course page has no Up next");
 
-    // A paper, built and marked from the window.
     let papers = Live::new(&folder, &home);
     papers
         .manager
@@ -509,8 +473,6 @@ fn a_window_lesson_streams_its_reply_names_its_work_and_builds_a_paper() {
     println!("\nLook in: {}", folder.display());
 }
 
-/// The session's checkpoint revision and the memories' revisions, to see a
-/// save land.
 fn saved_state(folder: &Path) -> (i64, i64) {
     let conn = rusqlite::Connection::open(folder.join(".magnesium/state.sqlite")).unwrap();
     let session: i64 = conn
@@ -530,8 +492,6 @@ fn saved_state(folder: &Path) -> (i64, i64) {
     (session, memories)
 }
 
-/// MAGNESIUM_LIVE_FOLDER names a study folder that has a record: a copy of
-/// it is used, so the folder itself is not changed.
 #[test]
 #[ignore = "starts Claude Code on your own subscription; run it yourself"]
 fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() {
@@ -550,7 +510,6 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
         .unwrap()
         .success());
     println!("study folder: {}", folder.display());
-    // An earlier build set the copy up: upgrade it, as the window's button does.
     assert!(std::process::Command::new("magnesium")
         .args(["init", "--upgrade-instructions"])
         .current_dir(&folder)
@@ -562,10 +521,6 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
     live.manager
         .open_session(false)
         .expect("Claude Code starts");
-    // The lesson's opening, then answers that drop the sign of b, until a
-    // turn saves its notes after its reply. The lesson is closed during that
-    // save, which must still land. The record at the start is read from the
-    // trace (MAGNESIUM_APP_TRACE): the start's result carries `context`.
     for n in 0..5 {
         if n == 0 {
             live.manager
@@ -594,7 +549,6 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
                 {
                     println!("\n== {} . notes being saved after the reply, at {} ms; closing the lesson ==", n + 2, started.elapsed().as_millis());
                     println!("reply: {}", text.chars().take(300).collect::<String>());
-                    // Taken now, so only a save after the close can change it.
                     let before = saved_state(&folder);
                     live.manager.stop(None).unwrap();
                     let deadline = Instant::now() + Duration::from_secs(45);
@@ -624,9 +578,6 @@ fn a_window_lesson_starts_with_the_record_and_its_notes_save_survives_a_close() 
 }
 
 impl Live {
-    /// After a turn has ended: what the window then reads from the record,
-    /// until it says it has read it. The open task, if the window sent one,
-    /// and the marks.
     fn settled(&self, limit: Duration) -> (Option<(Option<String>, bool)>, Vec<String>) {
         let deadline = Instant::now() + limit;
         let (mut task, mut marks) = (None, Vec::new());
@@ -644,12 +595,6 @@ impl Live {
     }
 }
 
-/// Issues 65 and 66 on Claude Code's engine: the open task comes from the
-/// record, and a message sent as talk while it is open is not marked.
-///
-/// Run it with this checkout's runtime first on PATH, so Claude Code's
-/// plugin hooks and tool server run it too, and a model picked in
-/// MAGNESIUM_LIVE_MODEL (for example claude-haiku-5-5) at medium effort.
 #[test]
 #[ignore = "starts Claude Code on your own subscription; run it yourself"]
 fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
@@ -679,7 +624,6 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
         .open_session(false)
         .expect("Claude Code starts");
 
-    // Ask for a task that is not written with a bold word.
     live.manager
         .send_new_lesson("Factorising quadratics like x² + 5x + 6. Teach one short idea, then set me x² + 7x + 12 to factorise. Write the problem as a plain sentence, with no bold heading or label.")
         .unwrap();
@@ -698,7 +642,6 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
         panic!("the record names no task posed by this reply: {task:?}")
     };
 
-    // Talk while it is open: not marked, and the task stays open.
     live.manager
         .send_with(
             "Before I try: why do we look for two numbers that multiply to the last term?",
@@ -716,7 +659,6 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
         "talk closed the task"
     );
 
-    // An answer to the task: marked, and the task closes or another is posed.
     live.manager
         .send_with(
             "The numbers are 3 and 4, so x² + 7x + 12 = (x + 3)(x + 4).",
@@ -736,10 +678,6 @@ fn on_claude_code_the_open_task_comes_from_the_record_and_talk_is_not_marked() {
     println!("\nLook in: {}", folder.display());
 }
 
-/// The tutor of a window lesson writes its mathematics in TeX, which the
-/// window draws, and not as plain text such as `1/(1 + e^(−s))`, which it
-/// shows as typed. Claude Code's engine, the window's own prompt line
-/// (`claude::DRAWS`). Pick the model in MAGNESIUM_LIVE_MODEL, at medium effort.
 #[test]
 #[ignore = "starts Claude Code on your own subscription; run it yourself"]
 fn a_window_lesson_writes_its_mathematics_in_tex() {
@@ -777,9 +715,6 @@ fn a_window_lesson_writes_its_mathematics_in_tex() {
     );
 }
 
-/// Fractions written as plain text outside TeX: a digit, letter or bracket,
-/// a slash with or without spaces, then an opening bracket, as in
-/// `1/(1 + e^(−s))` and `1 / (1 + e^(−x))`.
 fn plain_fractions(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut in_math = false;
@@ -805,12 +740,6 @@ fn plain_fractions(text: &str) -> Vec<String> {
     found
 }
 
-/// What a window lesson's tutor saves to the record stays in words. The
-/// window tells it to write formulas in TeX (`claude::DRAWS`), and a skill's
-/// name is also shown where TeX is not drawn: the runtime's closing lines,
-/// and in a terminal. Two maths lessons, each answered once; every mark's
-/// skill name is checked. Pick the model in MAGNESIUM_LIVE_MODEL, at medium
-/// effort.
 #[test]
 #[ignore = "starts Claude Code on your own subscription; run it yourself"]
 fn a_window_lessons_skill_names_stay_in_words() {
@@ -875,10 +804,6 @@ fn a_window_lessons_skill_names_stay_in_words() {
     assert!(found.is_empty(), "skill names saved in TeX: {found:?}");
 }
 
-/// Issue 150: the call that starts a lesson is accepted the first time it is
-/// sent. Claude Code's engine. The calls are read from the trace, so name a
-/// new file in MAGNESIUM_APP_TRACE, and pick the model in
-/// MAGNESIUM_LIVE_MODEL, at medium effort.
 #[test]
 #[ignore = "starts Claude Code on your own subscription; run it yourself"]
 fn a_window_lessons_first_call_starts_the_lesson() {
@@ -923,13 +848,10 @@ fn a_window_lessons_first_call_starts_the_lesson() {
     );
 }
 
-/// Each `learning_step` call in a trace, in the order sent, with what the
-/// runtime answered.
 fn learning_steps(trace: &Path) -> Vec<(serde_json::Value, String)> {
     let text = std::fs::read_to_string(trace).unwrap_or_default();
     let mut calls: Vec<(String, serde_json::Value, String)> = Vec::new();
     for line in text.lines() {
-        // "< <milliseconds> <what the agent wrote>"
         let Some(json) = line.strip_prefix("< ").and_then(|l| l.split_once(' ')) else {
             continue;
         };

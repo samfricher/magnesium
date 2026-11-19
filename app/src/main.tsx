@@ -10,7 +10,6 @@ import "./styles/prose.css";
 import "./styles/window.css";
 import "./styles/side.css";
 
-// Anything that goes wrong on the page is kept, so the self-check can report it.
 declare global {
   interface Window {
     __mgErrors: string[];
@@ -24,26 +23,18 @@ document.addEventListener("securitypolicyviolation", (event) =>
   window.__mgErrors.push(`blocked by the content policy: ${event.violatedDirective} ${event.blockedURI}`),
 );
 
-// The learner's face, size, scheme and ink are on the page before anything is drawn.
 applyPrefs(loadPrefs());
 
-// A focus ring is for the keyboard: the first key pressed shows it, the next click hides it.
 document.documentElement.dataset.input = "pointer";
 window.addEventListener("keydown", () => (document.documentElement.dataset.input = "key"), true);
 window.addEventListener("pointerdown", () => (document.documentElement.dataset.input = "pointer"), true);
 
-// While text is selected, every reply in a long lesson is drawn (prose.css): WebKit
-// leaves a reply it skips out of the page's text, so a copy across it would lose
-// it.
 document.addEventListener("selectionchange", () => {
   const selection = document.getSelection();
   const whole = selection !== null && !selection.isCollapsed;
   if (whole !== "whole" in document.documentElement.dataset) document.documentElement.toggleAttribute("data-whole", whole);
 });
 
-// Tab reaches every button and link. In WebKit, which draws the real window,
-// Tab skips them unless the Mac's "keyboard navigation" setting is on, so each
-// control with no tabindex of its own is given 0 as it appears.
 const REACHABLE = 'button, a[href], [role="button"], summary';
 function reachable(element: Element) {
   if (element.hasAttribute("tabindex")) return;
@@ -63,7 +54,6 @@ new MutationObserver((changes) => {
   }
 }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "href", "role"] });
 
-/** A page that fails says so in a line, and keeps what failed for the self-check, instead of going blank. */
 class Kept extends Component<{ children: ReactNode }, { failed: string | null }> {
   state = { failed: null as string | null };
   static getDerivedStateFromError(error: unknown) {
@@ -71,7 +61,6 @@ class Kept extends Component<{ children: ReactNode }, { failed: string | null }>
   }
   componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
     window.__mgErrors.push(`render: ${String(error)} ${(info.componentStack ?? "").split("\n").slice(0, 4).join(" ")}`);
-    // The shell keeps the window unseen until its first screen is drawn: this line is that screen now.
     void core().then((api) => api.showWindow()).catch(() => {});
   }
   render() {
@@ -80,8 +69,6 @@ class Kept extends Component<{ children: ReactNode }, { failed: string | null }>
   }
 }
 
-// The text faces are the Mac's own and the faces mathematics is set in are
-// bundled, so nothing waits for a face: the first paint is the real one.
 createRoot(document.getElementById("root")!).render(
   <Kept>
     <App />

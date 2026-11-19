@@ -1,15 +1,3 @@
-// The tutor writes Markdown with mathematics. This turns it into safe HTML.
-//
-// Order matters. Mathematics is lifted out first, so Markdown cannot mangle
-// it. The Markdown is rendered and cleaned. Then the mathematics, rendered
-// here by KaTeX, is put back. Nothing the tutor wrote reaches the page
-// without passing the cleaner.
-//
-// Two entry points. `renderMarkdown` is for a whole reply. `renderInline` is
-// for one line of text shown anywhere else: a goal, a step, a skill's name,
-// the learner's own answer. Both draw the same mathematics, so a formula
-// reads the same wherever it appears.
-
 import DOMPurify from "dompurify";
 import katex from "katex";
 import { marked } from "marked";
@@ -21,7 +9,6 @@ type Math = { tex: string; display: boolean };
 const token = (index: number) => `MGMATH${index}ENDMG`;
 
 function closingFence(src: string, from: number, fence: string): number {
-  // The end of the line that closes a fenced block, or the end of the text.
   const mark = fence[0];
   let at = from;
   while (at < src.length) {
@@ -37,24 +24,15 @@ function closingFence(src: string, from: number, fence: string): number {
   return src.length;
 }
 
-/** Environments that are display mathematics even with no `$$` around them. */
 const ENVIRONMENT = /^\\begin\{(equation\*?|align\*?|aligned|gather\*?|gathered|cases|array|[pbvBV]?matrix|split|multline\*?)\}/;
 
-/** How long a formula in a line of text may run before it is taken for something else, such as a price. */
 const INLINE_LIMIT = 200;
 
-/**
- * Lift mathematics out of Markdown, leaving a token in its place. `open` is
- * where a formula starts that the text ends inside of: a reply that is still
- * being written stops in the middle of one.
- */
 export function liftMath(src: string): { text: string; math: Math[]; open: number | null; hold: number | null } {
   const math: Math[] = [];
   let out = "";
   let i = 0;
   let open: number | null = null;
-  // Where a bold span or a link the text ends inside of began. Their marks are
-  // not read as Markdown until they close, so they are held back like a formula.
   let boldAt: number | null = null;
   let linkAt: number | null = null;
   let inUrl = false;
@@ -113,7 +91,6 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
       unclosed(i);
     }
     if (c === "\\" && src[i + 1] === "b") {
-      // An environment written with no dollar signs around it.
       const begin = ENVIRONMENT.exec(src.slice(i, i + 24));
       if (begin) {
         const closer = `\\end{${begin[1]}}`;
@@ -127,8 +104,6 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
       }
     }
     if (c === "$" && src[i + 1] !== undefined && !/\s/.test(src[i + 1])) {
-      // Inline mathematics: the closing sign has no space before it and no
-      // digit after it, which keeps prices such as $5 and $10 as text.
       let close = -1;
       let ranOut = true;
       for (let j = i + 1; j < src.length; j++) {
@@ -151,8 +126,6 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
         i = close + 1;
         continue;
       }
-      // The text ends before this formula does. A long run is more likely a
-      // price than a formula, and is left as it is.
       if (ranOut && src.length - i <= INLINE_LIMIT) unclosed(i);
     }
     if (c === "*" && src[i + 1] === "*") {
@@ -168,7 +141,6 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
       if (src[i + 1] === "(") {
         inUrl = true;
       } else if (i + 1 < src.length) {
-        // A bracket that is not a link, such as [S], is text.
         linkAt = null;
       }
     } else if (c === ")" && inUrl) {
@@ -182,7 +154,6 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
     out += c;
     i++;
   }
-  // A stray mark far from the end is text, not a span still being written.
   const near = (at: number | null) => (at !== null && src.length - at <= HOLD_LIMIT ? at : null);
   const holds = [near(boldAt), near(linkAt)].filter((at): at is number => at !== null);
   return { text: out, math, open, hold: holds.length > 0 ? Math.min(...holds) : null };
@@ -190,22 +161,11 @@ export function liftMath(src: string): { text: string; math: Math[]; open: numbe
 
 const HOLD_LIMIT = 400;
 
-/**
- * While a reply is still being written, its last formula can be half there.
- * Cut the text before it, so the formula appears whole, in one step, and its
- * source is never on screen.
- */
 export function withoutOpenMath(src: string): string {
   const { open } = liftMath(src);
   return open === null ? src : src.slice(0, open).trimEnd();
 }
 
-/**
- * What to show of a reply that is not finished, or that was stopped: the text
- * cut before a formula, a bold span or a link it ends inside of, so none of
- * their marks is ever on screen. `wait` is true when what is held back is a
- * display formula, which will take a line or more of height when it closes.
- */
 export function holdBack(src: string): { text: string; wait: boolean } {
   const { open, hold } = liftMath(src);
   const cuts = [open, hold].filter((at): at is number => at !== null);
@@ -219,18 +179,12 @@ const rendered = new Map<string, string>();
 
 const escape = (text: string) => text.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch);
 
-/**
- * A subscript that is a word names a thing, and a word is upright: V_{max}
- * and V_max both become V_{\text{max}}. Only this short list of words: a
- * single letter or an index (x_{ij}, K_m) stays italic, as it is a variable.
- */
 const WORDS = "max|min|eq|tot|avg|obs|exp|crit|cat|sys|rel|net|in|out|ref";
 const BRACED = new RegExp(`(^|[^\\\\])_\\{\\s*(${WORDS})\\s*\\}`, "g");
 const BARE = new RegExp(`(^|[^\\\\])_(${WORDS})(?![A-Za-z])`, "g");
 
 export function uprightWords(tex: string): string {
   if (!tex.includes("_")) return tex;
-  // Twice: two subscripts side by side share the character between them.
   const once = (text: string) => text.replace(BRACED, "$1_{\\text{$2}}").replace(BARE, "$1_{\\text{$2}}");
   return once(once(tex));
 }
@@ -259,17 +213,11 @@ function renderMath({ tex: source, display }: Math): string {
 
 let hooked = false;
 
-// The mathematics of the text being cleaned. A token inside an attribute value,
-// such as an image's alt text or a link's title, cannot hold markup, so it goes
-// back as the TeX source. It does so before the cleaner checks the value.
 let lifted: Math[] = [];
 
 function hook(): void {
   if (hooked) return;
   hooked = true;
-  // An image is never loaded by the page itself. A local one is fetched
-  // through the core, which keeps it inside the study folder. A remote one
-  // is not fetched at all: the window makes no network request of its own.
   DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
     data.attrValue = data.attrValue.replace(/MGMATH(\d+)ENDMG/g, (whole, index: string) => lifted[Number(index)]?.tex ?? whole);
   });
@@ -302,10 +250,6 @@ function putMathBack(html: string, math: Math[], display: boolean): string {
 
 marked.setOptions({ gfm: true, breaks: false });
 
-/**
- * The words a tutor opens a task with. A paragraph that starts with one of
- * them in bold is the thing to do next, and the page sets it apart.
- */
 const TASK = /<p>(<strong>(?:task|check|quick check|question|your turn|try it|try this|redo|paper redo|now you)\b[^<]{0,40}<\/strong>)/gi;
 
 export function renderMarkdown(src: string): string {
@@ -313,22 +257,13 @@ export function renderMarkdown(src: string): string {
   let html = clean(marked.parse(text, { async: false }) as string, math);
   html = putMathBack(html, math, true);
   if (math.length > 0) {
-    // A display formula alone in a paragraph should not carry the paragraph's margins twice.
     html = html.replace(/<p>(<span class="katex-display">[\s\S]*?<\/span>)<\/p>/g, "$1");
   }
-  // Tables scroll inside their own box, so a wide one never widens the page.
   html = html.replace(/<table>/g, '<div class="table"><table>').replace(/<\/table>/g, "</table></div>");
-  // A diagram is drawn as soon as its code is complete. Until then its place is kept, not its code.
   html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');
-  // The label loses the full stop or colon the tutor closed it with.
   return quietEarlier(setTaskApart(html.replace(TASK, (_whole, label: string) => `<p class="task">${label.replace(/\s*[.:]\s*<\/strong>$/, "</strong>")}`)));
 }
 
-/**
- * A task is the last thing in a reply, and it can run over several blocks: a
- * sentence, a formula, a list. Everything from the last task paragraph to the
- * end goes in one box.
- */
 function setTaskApart(html: string): string {
   if (!html.includes('<p class="task">')) return html;
   const holder = document.createElement("template");
@@ -350,7 +285,6 @@ function setTaskApart(html: string): string {
 
 const inline = new Map<string, string>();
 
-/** One line of text with mathematics, bold, italics and code. No links, images or blocks. */
 export function renderInline(src: string): string {
   let html = inline.get(src);
   if (html !== undefined) return html;
@@ -367,29 +301,18 @@ export function renderInline(src: string): string {
   return html;
 }
 
-/**
- * The learner's own words: every character as typed, with line breaks kept
- * and only the mathematics drawn. Nothing else is read as markup, so `2*x*3`
- * stays `2*x*3`.
- */
 export function renderPlain(src: string): string {
   const { text, math } = liftMath(src);
-  // Lifting sets a display formula on its own paragraph. Here it stays in the line it was typed in.
   const lines = text.replace(/\n\n(MGMATH\d+ENDMG)\n\n/g, " $1 ").trim();
   return putMathBack(escape(lines).replace(/\n/g, "<br>"), math, false);
 }
 
-/** Whether the text holds mathematics the page would draw. */
 export function hasMath(src: string): boolean {
   return liftMath(src).math.length > 0;
 }
 
 const tasks = new Map<string, boolean>();
 
-/**
- * Whether a reply sets a task: the same test that draws the task box. The
- * page closes a source when the tutor poses the next one.
- */
 export function hasTask(src: string): boolean {
   let found = tasks.get(src);
   if (found === undefined) {
@@ -400,7 +323,6 @@ export function hasTask(src: string): boolean {
   return found;
 }
 
-/** The links in a reply that open a source beside the lesson, in the order written. */
 export function sourceLinks(src: string): { text: string; href: string }[] {
   const holder = document.createElement("template");
   holder.innerHTML = renderMarkdown(src);
@@ -409,11 +331,6 @@ export function sourceLinks(src: string): { text: string; href: string }[] {
     .filter((link) => link.text !== "" && sourceRef(link.href) !== null);
 }
 
-/**
- * Mark the links that open a source beside the lesson. While `open` is false
- * they are plain text, not links: a passage next to a question often holds
- * the answer, so it stays shut until the learner has answered.
- */
 export function setSourcesApart(html: string, open: boolean, opensNow?: (path: string) => boolean): string {
   if (!html.includes("<a ")) return html;
   const holder = document.createElement("template");
@@ -421,7 +338,6 @@ export function setSourcesApart(html: string, open: boolean, opensNow?: (path: s
   const links = Array.from(holder.content.querySelectorAll("a[href]")).filter((a) => sourceRef(a.getAttribute("href") ?? "") !== null);
   if (links.length === 0) return html;
   for (const link of links) {
-    // A past paper opens at once: it holds the questions, not their answers.
     const path = sourceRef(link.getAttribute("href") ?? "")?.path ?? "";
     if (open || opensNow?.(path)) {
       link.classList.add("source");
@@ -429,7 +345,6 @@ export function setSourcesApart(html: string, open: boolean, opensNow?: (path: s
     }
     const plain = document.createElement("span");
     plain.className = "source-shut";
-    // What it pointed at is kept, so its words are read against it, never rewritten as a file name.
     plain.dataset.href = link.getAttribute("href") ?? "";
     plain.replaceChildren(...Array.from(link.childNodes));
     link.replaceWith(plain);
@@ -437,7 +352,6 @@ export function setSourcesApart(html: string, open: boolean, opensNow?: (path: s
   return holder.innerHTML;
 }
 
-/** The words of a text worth matching on: three letters or more, lower case, formulas left out. */
 export function taskWords(text: string): string[] {
   const plain = text
     .replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g, " ")
@@ -446,7 +360,6 @@ export function taskWords(text: string): string[] {
   return plain.split(" ").filter((word) => word.length >= 3);
 }
 
-/** How much of a task's words a text holds, from 0 to 1. */
 export function coverage(text: string, task: string): number {
   const wanted = new Set(taskWords(task));
   if (wanted.size === 0) return 0;
@@ -456,25 +369,10 @@ export function coverage(text: string, task: string): number {
   return found / wanted.size;
 }
 
-/** Whether a reply poses this task: it holds nearly all of the task's words. */
 export function poses(reply: string, task: string): boolean {
   return reply.trim() !== "" && coverage(reply, task) >= 0.8;
 }
 
-/**
- * Where an answer written on Home goes once the reply that was to pose its check has ended: to that check, or onto the
- * line, unsent. A wrong attempt on the record is worse than words left for one more Return, so both tests are strict.
- *
- * - The check: the record says which check a reply posed (`posed`, its ID; null when none is open; undefined from a
- *   runtime that cannot say). Only Home's check (`id`) takes the words.
- * - The question: the same check can be posed with a new problem, which the learner has not seen. The open task (or,
- *   when the page sees none, the reply that posed it) must hold Home's whole question, formulas and numbers included,
- *   spacing aside, as a stored question posed as written does. `poses` is no test here: it drops formulas and short
- *   words, so the same question with other numbers would pass.
- *
- * With both, the words go as an answer when the page or the record knows the check is open, and with nothing said of
- * them (the tutor decides, as for words sent from the line then) when neither does.
- */
 export function heldAnswerGoes(
   held: { question: string; id: string | null },
   after: { posed: string | null | undefined; task: string | null; taskUnseen: boolean; reply: string },
@@ -488,11 +386,6 @@ export function heldAnswerGoes(
   return byRecord ? "answer" : after.taskUnseen ? "unmarked" : "line";
 }
 
-/**
- * The words the engine needs a due question to open with ("Quick check 2:",
- * "Paper redo 1:") are not a queue to show: they are drawn as one quiet
- * "From earlier", with no number.
- */
 export function quietEarlier(html: string): string {
   return html.replace(
     /(<p[^>]*>|<li>)\s*(?:<strong>)?(?:Quick check|Paper redo|Repair)\s+\d+(?:\s+of\s+\d+)?\s*[:.]?\s*(?:<\/strong>)?\s*[:.]?/g,

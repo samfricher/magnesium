@@ -1,7 +1,3 @@
-//! The runtime keeps each kind of problem's help level and works out each
-//! topic's reading, and the tool results state both (#31). The tutor judges
-//! the kind and whether the learner could start; it writes neither fact into
-//! a memory.
 use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -52,7 +48,6 @@ fn days_pass(e: &TestEnvironment, days: u64) {
     clock::days_pass(&e.workspace, days);
 }
 
-/// The help level a result states for the kind.
 fn level(result: &Value) -> &Value {
     let kinds = result["help_levels"]["kinds"]
         .as_array()
@@ -86,7 +81,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
 
-    // First time stuck on the kind: a full worked example.
     let first = stuck(&e, "stuck-1", "A die shows 6 half the time. Find E[X].");
     let now = level(&first);
     assert_eq!(now["level"], "full", "{first}");
@@ -98,7 +92,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
         "{first}"
     );
     assert_eq!(first["help_levels"]["known_kinds"], json!([KIND]));
-    // The changed version, solved alone, holds the step.
     let changed = answer(
         &e,
         "changed-1",
@@ -115,7 +108,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
         "{changed}"
     );
 
-    // A later problem of the kind, stuck again: a partly worked example.
     days_pass(&e, 2);
     let second = stuck(
         &e,
@@ -130,7 +122,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
             .contains("partly worked example"),
         "{second}"
     );
-    // The full problem that follows is not solved alone: one step back.
     let failed = answer(
         &e,
         "full-2",
@@ -139,7 +130,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
             "first_try":"wrong","help":"none","cold":false,"kind":KIND}),
     );
     assert_eq!(level(&failed)["level"], "full", "{failed}");
-    // Stuck on the next problem: partly worked again, not the problem only.
     days_pass(&e, 2);
     let third = stuck(
         &e,
@@ -148,7 +138,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
     );
     assert_eq!(level(&third)["level"], "partly worked", "{third}");
 
-    // The tutor wrote no memory, and the store holds the level.
     assert_eq!(memories(&e), 0);
     let stored: (String, Option<String>) = store(&e)
         .query_row(
@@ -159,7 +148,6 @@ fn a_learner_stuck_twice_on_one_kind_gets_a_full_example_then_a_partly_worked_on
         .unwrap();
     assert_eq!(stored, (KIND.to_owned(), Some("partial".to_owned())));
 
-    // Correcting the failed answer to right moves the ladder on from it.
     let attempt_id: String = store(&e)
         .query_row(
             "SELECT attempt_id FROM attempts WHERE question LIKE '%weights 1/2%'",
@@ -237,7 +225,6 @@ fn plan(e: &TestEnvironment) {
     std::fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
 }
 
-/// The reading a result states for a tag, and why.
 fn reading(result: &Value, tag: &str) -> (String, String) {
     let plan = &result["readings"]["plans"][0];
     assert_eq!(plan["plan"], "midterm-1", "{result}");
@@ -263,7 +250,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
     v2::init(&e);
     plan(&e);
 
-    // Starting a session for the plan states its readings: nothing yet.
     let started = step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"start",
@@ -272,8 +258,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
     assert_eq!(reading(&started, "lineweaver-burk").0, "untested");
     assert_eq!(reading(&started, "inhibition").0, "untested");
 
-    // A marked paper: the double reciprocal question right, cold and in
-    // time; the inhibition question lost marks on the reciprocal.
     let event = prompt(&e, "p-1", "Diagnostic: 1. Km = 2 (S) 2. Vmax = 4 (U)");
     let marked = step(
         &e,
@@ -287,8 +271,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
                      "paper":{"name":"Diagnostic","question":"2","marks":1,"out_of":3},
                      "gap":{"type":"K","what_went_wrong":"Took 1/0.25 as 0.4."}}]}]}),
     );
-    // The row is open, so the tags that run through it read conditional,
-    // even the one with its own cold pass.
     assert_eq!(
         reading(&marked, "reciprocals"),
         (
@@ -305,7 +287,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
     );
     assert_eq!(reading(&marked, "inhibition").0, "untested");
 
-    // The repair dates the first redo; the row is still open.
     let repaired = step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"repair",
@@ -314,8 +295,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
     );
     assert_eq!(reading(&repaired, "reciprocals").0, "open");
 
-    // A day later the cold redo passes: the row is at 1 of 3, and the reading
-    // follows it, with no memory edit.
     days_pass(&e, 1);
     answer(
         &e,
@@ -338,7 +317,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
         ("sound".to_owned(), "cold in Diagnostic Q1".to_owned())
     );
 
-    // A paper stage load states them too.
     let load = v2::tool(
         &e,
         "claude",
@@ -349,8 +327,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
     assert_eq!(reading(&load, "reciprocals").0, "conditional");
     assert_eq!(memories(&e), 0);
 
-    // An attempt whose kind is a tag states the plan's readings with the
-    // tag's help level, even when its label is not a tag.
     let stuck = answer(
         &e,
         "stuck",
@@ -363,7 +339,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
         "{stuck}"
     );
 
-    // A graph.yaml it cannot read is named, and the rows still read.
     std::fs::write(
         e.workspace.join("Study/midterm-1/graph.yaml"),
         "tags:\n  a:\n    needs: b, c\n",

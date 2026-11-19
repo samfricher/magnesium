@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Worker self-tests (LEARN-208): execute `worker.py` for real with a
-stubbed `docling` module, covering framing, validation, mapping, and
-error paths. Only Docling's own conversion quality stays unverified
-here (needs the installed stack + models); everything the worker owns
-is executed. No model inference; loopback-free local subprocesses.
-"""
 
 import hashlib
 import json
@@ -17,16 +11,11 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKER = os.path.join(HERE, "..", "worker.py")
 STUB = os.path.join(HERE, "stub_docling")
-# Installed packages report real versions; absent ones report "unknown".
 METHOD_VERSION = re.compile(r"docling \S+ \(docling-slim \S+, docling-core \S+\)")
 
 
 def run_worker(payload_or_raw, files=None, extra_env=None):
-    """Run worker.py with a framed request; return (exit, framed_json_or_None, stderr).
 
-    Accepts a request dict (framed here) or raw bytes (sent verbatim for
-    malformed-frame cases).
-    """
     if isinstance(payload_or_raw, (bytes, bytearray)):
         frame = bytes(payload_or_raw)
     else:

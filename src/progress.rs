@@ -1,22 +1,3 @@
-//! `magnesium progress`: each skill's passes, the level they add up to, what
-//! is due, and the days with a marked answer.
-//!
-//! Read-only, like `magnesium digest`. It never upgrades a folder: for a
-//! folder an earlier version set up it says so and prints no record.
-//!
-//! A pass is one answer the learner gave right, alone and cold, on its own
-//! day. Three passes prove a skill. Every skill can earn them:
-//!
-//! - A skill with a practice item (a gap-log row from a paper, or a quick
-//!   check from chat) has the item's passes, as the runtime works them out
-//!   from the item's events. With several items it is as proved as the
-//!   weakest.
-//! - A skill with no item was never got wrong. Its passes are the days with
-//!   a right, unaided, cold, in-time answer labelled with it, counted since
-//!   its last wrong or partly right answer.
-//!
-//! A study window reads this in place of the Markdown gap log and the
-//! runtime's own tables, so what it shows is what the record holds.
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::ExitCode;
@@ -35,21 +16,16 @@ use crate::readings::{
 };
 use crate::workspace::{Workspace, reject_symlink_components};
 
-/// The highest level, reached when every skill is proven.
 const TOP_LEVEL: u64 = 10;
-/// How many days the text form lists.
 const DAYS_IN_TEXT: usize = 14;
 
-/// One marked answer, as progress sees it.
 #[derive(Clone, Debug)]
 struct Answer {
     attempt_id: String,
     key: String,
     label: String,
     day: NaiveDate,
-    /// Right, unaided, cold and in time.
     clean: bool,
-    /// Wrong or partly right.
     miss: bool,
     declined: bool,
 }
@@ -78,39 +54,24 @@ fn load_answers(conn: &Connection) -> rusqlite::Result<Vec<Answer>> {
         .collect()
 }
 
-/// One skill and how far it is proved.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Skill {
     name: String,
-    /// 0 to 3.
     passes: i64,
-    /// Passes made before the last miss. They are history and do not count.
     earlier_passes: i64,
-    /// The most passes the skill has held at one time, 0 to 3. A plan's
-    /// level counts these, so a miss never lowers it.
     best_passes: i64,
-    /// The plan's reading of the tag, and why. A skill in no plan has none.
     reading: Option<&'static str>,
     why: String,
     due: bool,
     next_on: Option<NaiveDate>,
     last_pass_on: Option<NaiveDate>,
-    /// The day of the miss that started its passes again.
     restarted_on: Option<NaiveDate>,
-    /// A gap-log row that waits for its repair before it can be redone.
     needs_repair: bool,
     what_went_wrong: String,
-    /// Its gap-log rows, as the tutor names them: "midterm-1#3".
     rows: Vec<String>,
     quick_check: bool,
-    /// The answers that earned the passes it holds now, first pass first.
-    /// None for a pass brought in from a gap log the tutor kept before the
-    /// record did, which no answer in the record made.
     passed_by: Vec<Option<String>>,
-    /// The newest answer marked on it, whatever its mark.
     last_answer: Option<String>,
-    /// Its passes when today began, counted as `passes` is (the closing
-    /// lines name a skill whose passes rose today).
     passes_before_today: i64,
 }
 
@@ -144,8 +105,6 @@ impl Skill {
     }
 }
 
-/// What one item's events say beyond its passes: the passes made before its
-/// last miss, the day of that miss, and the day of its last pass.
 fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
     let day_of = |event_no: i64| {
         item.facts
@@ -169,7 +128,6 @@ fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
                 running = 0;
                 restarted_on = day_of(*event_no);
             }
-            // The item was made again, by a new miss with no redo between.
             Effect::Made => running = 0,
             _ => {}
         }
@@ -181,8 +139,6 @@ fn item_history(item: &Item) -> (i64, Option<NaiveDate>, Option<NaiveDate>) {
     )
 }
 
-/// The answers that earned the passes an item holds now, first pass first.
-/// A pass it was brought in with has no answer.
 fn item_passed_by(item: &Item) -> Vec<Option<String>> {
     let attempt_of = |event_no: i64| {
         item.facts
@@ -201,8 +157,6 @@ fn item_passed_by(item: &Item) -> Vec<Option<String>> {
             _ => {}
         }
     }
-    // The item's count is the one the record keeps: the list is cut or
-    // filled to it, so a pass is never named that the count does not hold.
     let passes = item.state.passes.clamp(0, PASSES_TO_CLOSE) as usize;
     by.truncate(passes);
     while by.len() < passes {
@@ -211,10 +165,6 @@ fn item_passed_by(item: &Item) -> Vec<Option<String>> {
     by
 }
 
-/// The most passes a skill with items has held at one time. Its passes at
-/// any moment are its weakest item's, among the items made by then. So the
-/// items' events are put in one order, by day and then as they were stored,
-/// and the fewest passes is taken after each one.
 fn most_passes_held(items: &[&Item]) -> i64 {
     let mut steps: Vec<(NaiveDate, i64, usize, i64)> = Vec::new();
     for (index, item) in items.iter().enumerate() {
@@ -225,7 +175,6 @@ fn most_passes_held(items: &[&Item]) -> i64 {
                 .find(|event| event.event_no == event_no)
                 .map_or(item.facts.logged_on, |event| event.day)
         };
-        // What it was brought in with, before any event of its own.
         let first_day = item
             .facts
             .events
@@ -247,9 +196,6 @@ fn most_passes_held(items: &[&Item]) -> i64 {
     most
 }
 
-/// A skill with practice items is as proved as its weakest item. `before`
-/// are its answers from before its first item was made, when its passes
-/// were counted from its answers.
 fn from_items(name: &str, items: &[&Item], before: &[&Answer], today: NaiveDate) -> Skill {
     let weakest = items
         .iter()
@@ -300,8 +246,6 @@ fn from_items(name: &str, items: &[&Item], before: &[&Answer], today: NaiveDate)
     }
 }
 
-/// A skill with no practice item was never got wrong on a paper or in a
-/// check. Its passes are the days with a clean answer since its last miss.
 fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
     let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
     let mut passed_by: Vec<Option<String>> = Vec::new();
@@ -315,7 +259,6 @@ fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
             days.clear();
             passed_by.clear();
         } else if answer.clean {
-            // The first clean answer on a new day is the one that earned it.
             if days.insert(answer.day) && passed_by.len() < PASSES_TO_CLOSE as usize {
                 passed_by.push(Some(answer.attempt_id.clone()));
             }
@@ -335,8 +278,6 @@ fn from_answers(name: &str, answers: &[&Answer]) -> Skill {
     }
 }
 
-/// The level a share of passes stands for, from 1 to 10, and the passes
-/// still to earn before the next level. It moves only when a pass is earned.
 fn level(passes: u64, of: u64) -> (u64, u64) {
     let passes = passes.min(of);
     let steps = TOP_LEVEL - 1;
@@ -349,9 +290,6 @@ fn level(passes: u64, of: u64) -> (u64, u64) {
     (level, to_next)
 }
 
-/// A set of skills' passes, proven skills and level. `passes` is what the
-/// skills hold now. The level counts each skill's most passes held at one
-/// time, `level_passes`, so a failed check never lowers it.
 fn total<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     let (mut passes, mut held, mut count, mut proven) = (0u64, 0u64, 0u64, 0u64);
     for skill in skills {
@@ -374,9 +312,6 @@ fn total<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     })
 }
 
-/// Skills in no plan: how many are proven and how many are in progress. A
-/// list of names that grows with every lesson is no fixed whole, so it gets
-/// no level.
 fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     let (mut count, mut proven) = (0u64, 0u64);
     for skill in skills {
@@ -390,17 +325,6 @@ fn counts<'a>(skills: impl Iterator<Item = &'a Skill>) -> Value {
     })
 }
 
-/// The first day a skill's next pass can count, and whether that is today.
-///
-/// The runtime takes an answer as cold only on a later day than every
-/// earlier answer on its label, whatever their marks
-/// (`learner::update::observations`), so no pass counts before the day
-/// after the skill's last answer. A skill with a practice item also waits
-/// for the day its item gives (the next day, then 3 and 7 days on, or the
-/// day after its repair); one waiting for a repair has no day yet. A skill
-/// with no item has no such schedule: any day after its last answer can
-/// count, so the first of those from today is named, and it is never due,
-/// since nothing in the record asks for it.
 fn with_next_pass(
     mut skill: Skill,
     answered_on: Option<NaiveDate>,
@@ -422,9 +346,6 @@ fn with_next_pass(
     skill
 }
 
-/// A skill's passes when `today` began, counted as its passes now are: the
-/// weakest of the items it had by then, each where its events before today
-/// left it, or, with no item yet, its clean answers' days before today.
 fn passes_when_today_began(items: &[&Item], own: &[&Answer], today: NaiveDate) -> i64 {
     let held = items.iter().filter_map(|item| {
         let day_of = |event_no: i64| {
@@ -456,7 +377,6 @@ fn passes_when_today_began(items: &[&Item], own: &[&Answer], today: NaiveDate) -
     })
 }
 
-/// The skill a key names, from its items when it has any, else its answers.
 fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: NaiveDate) -> Skill {
     let own: Vec<&Answer> = answers.iter().filter(|a| a.key == key).collect();
     let last_answer = own.last().map(|answer| answer.attempt_id.clone());
@@ -470,7 +390,6 @@ fn skill_of(name: &str, key: &str, items: &[&Item], answers: &[Answer], today: N
         };
         return with_next_pass(skill, answered_on, false, today);
     }
-    // The answer that made its first item, and the answers before it.
     let made_by: BTreeSet<&str> = items
         .iter()
         .flat_map(|item| &item.facts.events)
@@ -497,9 +416,6 @@ struct Record<'a> {
     answers: &'a [Answer],
 }
 
-/// One plan's skills: every tag of its graph and every label of its rows.
-/// None when the plan's gap log is still a file the runtime has not taken
-/// over, so its rows are not in the record yet.
 fn plan_skills(conn: &Connection, record: &Record<'_>, plan: &str) -> Option<Vec<(String, Skill)>> {
     let taken: bool = conn
         .query_row(
@@ -548,8 +464,6 @@ fn plan_skills(conn: &Connection, record: &Record<'_>, plan: &str) -> Option<Vec
     )
 }
 
-/// The skills that belong to no plan: quick checks, paper rows in no plan,
-/// and every other label an answer was marked on.
 fn other_skills(record: &Record<'_>, in_a_plan: &BTreeSet<String>) -> Vec<Skill> {
     let mut names: Vec<(String, String)> = Vec::new();
     let mut seen: BTreeSet<String> = in_a_plan.clone();
@@ -581,8 +495,6 @@ fn other_skills(record: &Record<'_>, in_a_plan: &BTreeSet<String>) -> Vec<Skill>
         .collect()
 }
 
-/// The days with at least one answer the learner gave, oldest first. A
-/// declined question is not an answer.
 fn answered_days(answers: &[Answer]) -> Vec<String> {
     answers
         .iter()
@@ -594,8 +506,6 @@ fn answered_days(answers: &[Answer]) -> Vec<String> {
         .collect()
 }
 
-/// The days on which a skill with no item earned its passes: each new day
-/// with a clean answer, since its last miss, up to three.
 fn answer_pass_days(answers: &[&Answer]) -> Vec<NaiveDate> {
     let mut days: BTreeSet<NaiveDate> = BTreeSet::new();
     let mut earned = Vec::new();
@@ -610,9 +520,6 @@ fn answer_pass_days(answers: &[&Answer]) -> Vec<NaiveDate> {
     earned
 }
 
-/// What the learner did today, over the whole study folder: answers given
-/// (a declined question is not one), skills first answered, passes earned,
-/// and checks and redos that first fall due tomorrow.
 fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
     let given: Vec<&Answer> = answers.iter().filter(|answer| !answer.declined).collect();
     let answered = given.iter().filter(|answer| answer.day == today).count();
@@ -652,8 +559,6 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
                 .count()
         })
         .sum();
-    // A check or redo due today whose label was already answered today can
-    // pass only from tomorrow, so it is counted with tomorrow's.
     let answered_today: BTreeSet<String> = answers
         .iter()
         .filter(|answer| answer.day == today)
@@ -676,12 +581,6 @@ fn today_counts(items: &[Item], answers: &[Answer], today: NaiveDate) -> Value {
     })
 }
 
-/// The quick check a sitting begun today poses first (the longest due, as
-/// the sitting takes them), with the question the record stores for it and
-/// its practice item's ID. Its answer key stays out: the window draws this
-/// question before the tutor poses it, and the key must reach the learner only
-/// after they answer. Null when no check is due, or the first has no stored
-/// question, which the tutor then makes up as it poses it.
 fn first_check(items: &[Item], today: NaiveDate) -> Value {
     crate::practice::due_checks(items, today)
         .first()
@@ -692,16 +591,11 @@ fn first_check(items: &[Item], today: NaiveDate) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// The quick check a reply of the current sitting has posed and no answer has
-/// settled, by its practice item's ID, so a host can tell which check is open
-/// now: the one whose question it showed, or another. Null when none is.
 fn posed_check(workspace: &Workspace) -> Value {
     crate::sittings::open_check_item_read_only(workspace)
         .map_or(Value::Null, |id| json!({"id": id}))
 }
 
-/// What `magnesium progress --json` prints, for another part of the runtime
-/// that reads the same facts (the closing lines).
 pub(crate) fn record(workspace: &Workspace, now_ms: i64) -> Result<Value, String> {
     progress(workspace, now_ms)
 }
@@ -711,8 +605,6 @@ pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, Stri
     let id = workspace.id().map_err(|e| e.to_string())?;
     reject_symlink_components(&workspace.store_path(), workspace.control())
         .map_err(|e| e.to_string())?;
-    // Opening an earlier version's record upgrades it. This command changes
-    // nothing, so it says so and stops, as the digest does.
     if crate::learner::store::needs_upgrade(&workspace.store_path()).map_err(|e| e.to_string())?
         || crate::workspace::instruction_bundle::earlier_bundle_active(workspace.control())
     {
@@ -766,21 +658,15 @@ pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, Stri
     let plans_json: Vec<Value> = by_plan
         .iter()
         .map(|(plan, skills)| match skills {
-            // Its rows are in a file the runtime has not read into the
-            // record, so nothing true can be said about its skills here.
             None => json!({"plan": plan, "from": "file"}),
             Some(skills) => json!({
                 "plan": plan,
                 "from": "record",
                 "skills": skills.iter().map(Skill::to_json).collect::<Vec<_>>(),
-                // A plan's graph is a fixed whole, so its level counts its
-                // own skills only, and cannot fall when the learner starts
-                // something new.
                 "progress": total(skills.iter()),
             }),
         })
         .collect();
-    // What is due counts only what can pass today, as each skill's `due` does.
     let answered_today: BTreeSet<String> = answers
         .iter()
         .filter(|answer| answer.day == today)
@@ -800,8 +686,6 @@ pub(crate) fn progress(workspace: &Workspace, now_ms: i64) -> Result<Value, Stri
             "skills": other.iter().map(Skill::to_json).collect::<Vec<_>>(),
             "progress": counts(other.iter()),
         },
-        // `checks_alone`: how many checks "just the checks" would pose now.
-        // The window offers it only when this runtime says so.
         "due": {
             "redos": due(Origin::Paper),
             "checks": due(Origin::Chat),
@@ -859,7 +743,6 @@ fn progress_line(progress: &Value) -> String {
     )
 }
 
-/// The same facts for a person reading a terminal.
 fn render(value: &Value) -> String {
     if value["upgrade_needed"] == true {
         return "An earlier version of Magnesium set this folder up. Run `magnesium init --upgrade-instructions` to upgrade it, then ask again.\n".into();
@@ -974,11 +857,9 @@ mod tests {
         assert_eq!((one.passes, one.proven()), (1, false));
         assert_eq!(one.last_pass_on, Some(day("2026-11-02")));
 
-        // Two clean answers on one day are one pass.
         let same_day = skill(&[answer("2026-11-02", "clean"), answer("2026-11-02", "clean")]);
         assert_eq!(same_day.passes, 1);
 
-        // Three days prove it, and a fourth adds nothing.
         let proven = skill(&[
             answer("2026-11-02", "clean"),
             answer("2026-11-05", "clean"),
@@ -990,7 +871,6 @@ mod tests {
 
     #[test]
     fn an_answer_with_help_or_not_cold_is_no_pass_and_a_miss_starts_the_passes_again() {
-        // Right, but with a hint or not cold: stored as neither clean nor a miss.
         let helped = skill(&[answer("2026-11-02", "helped")]);
         assert_eq!(helped.passes, 0);
         assert_eq!(helped.restarted_on, None);
@@ -1003,7 +883,6 @@ mod tests {
         assert_eq!((missed.passes, missed.earlier_passes), (0, 2));
         assert_eq!(missed.restarted_on, Some(day("2026-11-08")));
 
-        // A clean answer after the miss counts, and the earlier ones stay history.
         let back = skill(&[
             answer("2026-11-02", "clean"),
             answer("2026-11-08", "wrong"),
@@ -1029,14 +908,12 @@ mod tests {
                 Some("2026-11-04-clean".to_owned())
             ]
         );
-        // A miss starts them again: the earlier answers no longer earn one.
         let missed = skill(&[
             answer("2026-11-02", "clean"),
             answer("2026-11-03", "wrong"),
             answer("2026-11-05", "clean"),
         ]);
         assert_eq!(missed.passed_by, [Some("2026-11-05-clean".to_owned())]);
-        // The newest answer is named, whatever its mark.
         let answers = [
             answer("2026-11-02", "clean"),
             answer("2026-11-03", "helped"),
@@ -1044,7 +921,6 @@ mod tests {
         let of = skill_of("units", "units", &[], &answers, day("2026-11-03"));
         assert_eq!(of.last_answer.as_deref(), Some("2026-11-03-helped"));
 
-        // A check's passes are the due answers that passed it.
         let item = check("2026-11-02", &[("2026-11-03", true), ("2026-11-06", true)]);
         let checked = from_items("units", &[&item], &[], day("2026-11-06"));
         assert_eq!(checked.passes, 2);
@@ -1059,20 +935,16 @@ mod tests {
 
     #[test]
     fn a_level_moves_only_when_a_pass_is_earned() {
-        // 12 skills, 36 passes: a level every 4 passes, the tenth when all are earned.
         assert_eq!(level(0, 36), (1, 4));
         assert_eq!(level(3, 36), (1, 1));
         assert_eq!(level(4, 36), (2, 4));
         assert_eq!(level(35, 36), (9, 1));
         assert_eq!(level(36, 36), (10, 0));
-        // No skill yet: the first level, with nothing to earn.
         assert_eq!(level(0, 0), (1, 0));
     }
 
     #[test]
     fn every_skill_counts_toward_the_level_so_the_top_level_can_be_reached() {
-        // Ten skills that were missed and are proven, and twenty that were
-        // never missed and were answered right on three days.
         let proven = Skill {
             passes: 3,
             ..Skill::default()
@@ -1081,7 +953,6 @@ mod tests {
         let whole = total(all.iter());
         assert_eq!(whole["level"], 10);
         assert_eq!(whole["proven"], 30);
-        // With the twenty still untested, the level says so.
         let untested = Skill::default();
         let part: Vec<Skill> = all[..10]
             .iter()
@@ -1096,8 +967,6 @@ mod tests {
         assert_eq!(partly["level"], 4);
     }
 
-    /// A quick check on "units", made by a miss on `made_on`, with a cold
-    /// answer on each of `answers`: right when true, wrong when false.
     fn check(made_on: &str, answers: &[(&str, bool)]) -> Item {
         use crate::learner::FirstTry;
         use crate::learner::practice::{AttemptFacts, EventKind, ItemEvent, ItemFacts, derive};
@@ -1161,7 +1030,6 @@ mod tests {
 
     #[test]
     fn a_failed_check_leaves_the_level_where_the_passes_took_it() {
-        // Two passes on a check, then a due answer that is wrong.
         let item = check(
             "2026-11-02",
             &[
@@ -1171,12 +1039,10 @@ mod tests {
             ],
         );
         let failed = from_items("units", &[&item], &[], day("2026-11-13"));
-        // The dots tell the truth: the passes start again.
         assert_eq!((failed.passes, failed.earlier_passes), (0, 2));
         let whole = total(std::iter::once(&failed));
         assert_eq!(whole["passes"], 0, "{whole}");
         assert_eq!(whole["proven"], 0, "{whole}");
-        // The level stays where two passes of three took it.
         assert_eq!(
             (whole["level"].as_u64(), whole["to_next"].as_u64()),
             (Some(7), Some(1)),
@@ -1186,7 +1052,6 @@ mod tests {
 
     #[test]
     fn a_miss_that_makes_a_check_keeps_the_passes_the_answers_held_in_the_level() {
-        // Two days of clean answers, then a miss that makes a check.
         let answers = [
             answer("2026-11-02", "clean"),
             answer("2026-11-05", "clean"),
@@ -1195,8 +1060,6 @@ mod tests {
         let item = check("2026-11-08", &[]);
         let skill = skill_of("units", "units", &[&item], &answers, day("2026-11-08"));
         assert_eq!((skill.passes, skill.best_passes), (0, 2));
-        // A second item on the skill, made after the first earned a pass,
-        // starts at none: the skill now holds none, and the level holds.
         let first = check("2026-11-02", &[("2026-11-03", true)]);
         let mut second = check("2026-11-04", &[]);
         second.facts.item_id = "q2".into();
@@ -1210,9 +1073,6 @@ mod tests {
 
     #[test]
     fn a_pass_today_is_seen_when_the_skills_tied_items_got_there_on_different_days() {
-        // Item X holds a pass from 11-03; item Y, made on 11-10, earns its
-        // first today. The skill went from none to one today, whichever
-        // tied item its passes are read from.
         let x = check("2026-11-02", &[("2026-11-03", true)]);
         let mut y = check("2026-11-10", &[("2026-11-16", true)]);
         y.facts.item_id = "q2".into();
@@ -1225,10 +1085,8 @@ mod tests {
             let skill = skill_of("units", "units", &items, &[], today);
             assert_eq!((skill.passes, skill.passes_before_today), (1, 0));
         }
-        // On a later day nothing more was earned.
         let skill = skill_of("units", "units", &[&x, &y], &[], day("2026-11-17"));
         assert_eq!((skill.passes, skill.passes_before_today), (1, 1));
-        // An item made today starts the skill again: nothing earned today.
         let mut z = check("2026-11-16", &[]);
         z.facts.item_id = "q3".into();
         for event in &mut z.facts.events {
@@ -1297,8 +1155,6 @@ mod tests {
         assert_eq!(days, ["2026-11-02", "2026-11-05"]);
     }
 
-    /// The day a skill's next pass can count, and whether it is due, as
-    /// `skill_of` works them out on `today` from its answers and items.
     fn next_pass(items: &[&Item], answers: &[Answer], today: &str) -> (Option<NaiveDate>, bool) {
         let skill = skill_of("units", "units", items, answers, day(today));
         (skill.next_on, skill.due)
@@ -1306,14 +1162,11 @@ mod tests {
 
     #[test]
     fn a_skill_never_got_wrong_can_pass_again_from_the_day_after_its_last_answer() {
-        // A right, cold answer today: the next can count from tomorrow.
         let today = [answer("2026-11-16", "clean")];
         assert_eq!(
             next_pass(&[], &today, "2026-11-16"),
             (Some(day("2026-11-17")), false)
         );
-        // Answered yesterday or last week: it can count today. Nothing
-        // schedules it, so it is never due.
         let yesterday = [answer("2026-11-15", "clean")];
         assert_eq!(
             next_pass(&[], &yesterday, "2026-11-16"),
@@ -1324,7 +1177,6 @@ mod tests {
             next_pass(&[], &last_week, "2026-11-16"),
             (Some(day("2026-11-16")), false)
         );
-        // Any answer today rules out a cold one later today, a pass or not.
         for mark in ["wrong", "helped", "declined"] {
             let answers = [answer("2026-11-12", "clean"), answer("2026-11-16", mark)];
             assert_eq!(
@@ -1333,7 +1185,6 @@ mod tests {
                 "{mark}"
             );
         }
-        // Proven, or never answered: no day.
         let proven = [
             answer("2026-11-02", "clean"),
             answer("2026-11-05", "clean"),
@@ -1345,8 +1196,6 @@ mod tests {
 
     #[test]
     fn a_skill_with_a_check_waits_for_its_day_and_for_a_day_after_its_last_answer() {
-        // A check made by a miss on the 2nd is due the next day; untouched
-        // since, it is still due, from its own day.
         let made = check("2026-11-02", &[]);
         let miss = [answer("2026-11-02", "wrong")];
         assert_eq!(
@@ -1357,15 +1206,12 @@ mod tests {
             next_pass(&[&made], &miss, "2026-11-05"),
             (Some(day("2026-11-03")), true)
         );
-        // Passed on the 3rd: the next pass is 3 days on, then 7.
         let once = check("2026-11-02", &[("2026-11-03", true)]);
         let answers = [answer("2026-11-02", "wrong"), answer("2026-11-03", "clean")];
         assert_eq!(
             next_pass(&[&once], &answers, "2026-11-03"),
             (Some(day("2026-11-06")), false)
         );
-        // Due today, and answered today without a pass (here with help): the
-        // check is still on its day, but no answer later today can be cold.
         let helped = [
             answer("2026-11-02", "wrong"),
             answer("2026-11-05", "helped"),
@@ -1374,7 +1220,6 @@ mod tests {
             next_pass(&[&made], &helped, "2026-11-05"),
             (Some(day("2026-11-06")), false)
         );
-        // Proven by its checks: no day.
         let closed = check(
             "2026-11-02",
             &[

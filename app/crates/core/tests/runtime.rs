@@ -1,18 +1,3 @@
-//! The window's readers against the runtime built from this same checkout.
-//!
-//! The window reads what the runtime prints: `magnesium digest`, `magnesium
-//! progress --json`, `magnesium attempts --json` and `magnesium lesson
-//! --json`. This test builds the
-//! runtime at the root of the repository, lets it make a scratch study folder
-//! from made-up data, and feeds its real output to those readers. A runtime
-//! change that the readers do not follow fails here.
-//!
-//! The failure it guards against most is a progress page that shows a skill
-//! as confirmed when the learner record says it is not.
-//!
-//! It never touches the learner's own home or study folders: the runtime runs
-//! with a scratch home and a scratch study folder.
-
 #![cfg(unix)]
 
 use std::collections::BTreeSet;
@@ -37,8 +22,6 @@ fn repo_root() -> PathBuf {
         .expect("the repository root")
 }
 
-/// Build the runtime from this checkout, as `cargo build` at the root does.
-/// `MAGNESIUM_TEST_BINARY` names a runtime already built instead.
 fn runtime_binary() -> PathBuf {
     if let Some(binary) = std::env::var_os("MAGNESIUM_TEST_BINARY").filter(|v| !v.is_empty()) {
         return PathBuf::from(binary);
@@ -54,7 +37,6 @@ fn runtime_binary() -> PathBuf {
     root.join("target/release/magnesium")
 }
 
-/// A scratch home and study folder, and the runtime run inside them.
 struct Scratch {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -78,7 +60,6 @@ impl Scratch {
         }
     }
 
-    /// The runtime with nothing of the caller's environment but PATH and TZ.
     fn command(&self) -> Command {
         let mut command = Command::new(&self.binary);
         command.env_clear();
@@ -105,8 +86,6 @@ impl Scratch {
         vars
     }
 
-    /// A program the window can run as `magnesium`: the same runtime, in the
-    /// same scratch home.
     fn wrapper(&self) -> PathBuf {
         let wrapper = self.root.join("magnesium");
         let mut script = String::from("#!/bin/sh\nexec env -i");
@@ -139,7 +118,6 @@ impl Scratch {
             .unwrap_or_else(|e| panic!("magnesium {args:?} printed no JSON ({e}): {output:?}"))
     }
 
-    /// One call to a tool of the runtime, as the tutor makes it.
     fn tool(&self, name: &str, request: Value) -> Value {
         let value = self.run(
             &[
@@ -163,8 +141,6 @@ impl Scratch {
         value
     }
 
-    /// A learner message, through the hook Claude Code runs. Returns the id
-    /// of the event it recorded.
     fn prompt(&self, id: &str, text: &str) -> String {
         let input = json!({"session_id": THREAD, "cwd": self.folder, "hook_event_name": "UserPromptSubmit",
             "prompt_id": id, "prompt": text});
@@ -212,8 +188,6 @@ fn day(today: NaiveDate, offset: i64) -> String {
     shifted.unwrap().to_string()
 }
 
-/// Each row of the Gaps table the runtime wrote, as (tag, status), read here
-/// with no help from the window's own reader.
 fn written_rows(gap_log: &str) -> Vec<(String, String)> {
     let start = gap_log.find("## Gaps").expect("a Gaps section");
     let end = gap_log[start + 3..]
@@ -271,9 +245,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
 
     scratch.run(&["init", "--json"], None);
 
-    // A plan with its test in 14 days, the course's tags, and a gap log in
-    // the tutor's older hand-written form: one row closed, one part-way and
-    // due, one failed and repaired again.
     scratch.write(
         "Study/midterm-1/plan.md",
         &format!(
@@ -301,16 +272,12 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         ),
     );
 
-    // Loading a paper stage makes the runtime bring the log in and write its
-    // Gaps table from the learner record.
     let loaded = scratch.tool(
         "context",
         json!({"action": "instructions", "host": "claude", "stage": "papers_loop"}),
     );
     assert_eq!(loaded["gap_logs"]["imported"], json!([GAP_LOG]), "{loaded}");
 
-    // A lesson with its goal's steps, a wrong first try (a quick check) and
-    // an answer given with a hint.
     let started = scratch.step(json!({"schema": "learner-model/v2", "action": "update", "request_id": "start",
         "session": {"operation": "start", "client_ref": "s", "goal": "Read Vmax from a Lineweaver-Burk plot"}}));
     let session = started["references"]["s"]
@@ -341,21 +308,16 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         "a quick check was made: {answered}"
     );
 
-    // The window runs this runtime, in the same scratch home.
     std::env::set_var(mg_core::runtime::PROGRAM_ENV, scratch.wrapper());
     let store = Store::at(scratch.root.join("window"));
     let digest = scratch.run(&["digest"], None);
     let plan = &digest["plans"][0];
     assert_eq!(plan["gap_log_from"], "record", "{plan}");
 
-    // The progress page against the Gaps table the runtime wrote. The window
-    // takes its rows from `magnesium progress`, and the two must agree.
     let written = written_rows(&scratch.read(GAP_LOG));
     assert_eq!(written.len(), 3, "{written:?}");
     let progress = study::progress(&scratch.folder, None);
     assert_eq!(progress.message, None, "{progress:#?}");
-    // Today's counts reach the page as the runtime counts them, and the
-    // window takes this runtime: its digest meets the window's needs.
     let counts = progress.today.as_ref().expect("today's counts");
     assert_eq!(counts.day, study::today().to_string(), "{counts:?}");
     assert!(mg_core::runtime::fits_window(&scratch.wrapper()));
@@ -385,9 +347,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         closed,
         "confirmed must be exactly the closed rows"
     );
-    // Every row not closed is in progress. So are the two skills from the
-    // chat lesson: the quick check the wrong answer made, and the skill
-    // answered with a hint, which has no proof.
     let chat = BTreeSet::from([
         "reciprocal of the intercept".to_owned(),
         "units of a rate".to_owned(),
@@ -426,8 +385,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         ("17/30", Some(4), Some(6))
     );
 
-    // Quick checks: the runtime works out their passes, and its command says
-    // them, so the window shows the check the wrong answer made.
     assert!(!progress.checks_unknown);
     let check = progress
         .in_progress
@@ -437,13 +394,9 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert!(!check.due, "a check made today is due tomorrow: {check:?}");
     assert_eq!(check.next_day, Some(d(1)));
 
-    // Answers given with help are listed apart.
     assert_eq!(progress.helped_count, 1, "{progress:#?}");
     assert_eq!(progress.helped, vec!["units of a rate".to_owned()]);
 
-    // The lesson's marks are the runtime's rows, typed: the wrong first try,
-    // and the right one given a hint, which is not cold. Nothing is added to
-    // them, so the lesson can say only what the record says.
     let marks = mg_core::runtime::marks(&scratch.folder).expect("the runtime has attempts");
     assert_eq!(marks.len(), 2, "{marks:#?}");
     let wrong = marks
@@ -467,11 +420,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_ne!(wrong.id, helped.id);
     assert!(!wrong.id.is_empty() && wrong.at.starts_with(&today.format("%Y-%m-%d").to_string()));
 
-    // The proofs and the level are the runtime's: three proofs for each
-    // skill of the plan, the untested one included, earned by the passes
-    // that count. The two skills from chat are in no plan: they are listed,
-    // and count in no level, so starting something new cannot lower it.
-    // 4 of 12 is level 1 + 4·9/12 = 4.
     let earned: usize = written.iter().map(|(_, status)| passes_of(status)).sum();
     assert!(!progress.level_unknown);
     assert!(progress.proofs.levelled);
@@ -485,15 +433,12 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     );
     assert_eq!(progress.proofs.level, 4);
 
-    // The study days are the days with a marked answer, as the record has them.
     assert_eq!(
         study::answered_days(&[scratch.folder.to_string_lossy().into_owned()]),
         Some(BTreeSet::from([today]))
     );
-    // A row whose next proof is due today is marked, and a closed one never is.
     assert!(progress.confirmed.iter().all(|row| !row.due));
 
-    // The library's card says the same without opening the folder.
     let card = study::card(&scratch.folder, &store);
     assert_eq!(card.proofs, progress.proofs, "{card:#?}");
     assert_eq!(card.due, 1);
@@ -502,7 +447,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         Some("midterm-1")
     );
 
-    // The course page.
     let home = study::home(&scratch.folder, &store);
     assert_eq!(
         home.checks_due,
@@ -518,7 +462,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         Some("Ask for Vmax from intercept 0.25")
     );
 
-    // The rail.
     let rail = study::rail(&scratch.folder);
     assert_eq!(
         rail.goal.as_deref(),
@@ -537,8 +480,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
             ("Check the units".to_owned(), "todo".to_owned()),
         ]
     );
-    // The same lesson, by its conversation, with no task open: the
-    // checkpoint names none.
     let lesson = mg_core::runtime::lesson(&scratch.folder, Some(THREAD))
         .expect("the runtime says")
         .expect("the conversation has a lesson");
@@ -550,8 +491,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         Some(None)
     );
 
-    // A hand edit that closes a row the record has not closed. The window
-    // takes its rows from the record, so the edit changes nothing on screen.
     let text = scratch.read(GAP_LOG);
     let vmax = text
         .lines()
@@ -569,7 +508,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     );
     assert_eq!(progress.message, None);
 
-    // The runtime writes the table again, and the page comes back.
     let reloaded = scratch.tool(
         "context",
         json!({"action": "instructions", "host": "claude", "stage": "papers"}),
@@ -582,10 +520,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert_eq!(progress.message, None);
     assert_eq!(names(&progress.confirmed), closed);
 
-    // A right answer given alone and cold earns its skill's first day, and
-    // the lesson's mark says so from the runtime's count. The runtime takes a
-    // second answer on the same skill that day as not cold, so it earns none
-    // and its mark says nothing of the days.
     for (id, question, cold) in [
         ("p-2", "Units of Km", true),
         ("p-3", "Units of Vmax", false),
@@ -605,8 +539,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         .map(|m| m.pass)
         .collect();
     assert_eq!(alone, [Some(1), None], "{marks:#?}");
-    // The pass carries the first day its skill's next can count: not today,
-    // which already has an answer on it.
     let tomorrow = chrono::Local::now()
         .date_naive()
         .succ_opt()
@@ -629,7 +561,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         .iter()
         .filter(|m| m.label != "units of a concentration")
         .all(|m| m.pass.is_none()));
-    // The skill's row names its newest answer, so the page can say its mark.
     let progress = study::progress(&scratch.folder, None);
     let row = progress
         .in_progress

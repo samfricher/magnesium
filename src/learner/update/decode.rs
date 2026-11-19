@@ -4,8 +4,6 @@ pub(crate) fn field_error(
     detail: impl std::fmt::Display,
     host: &HostContext,
 ) -> LearnerError {
-    // Unknown JSON keys are request-controlled too. Keep recovery bounded even
-    // when a malicious key is much longer than any legitimate protocol path.
     let path = if path.len() > 512 {
         const SUFFIX: &str = " [path truncated]";
         let mut end = 512 - SUFFIX.len();
@@ -22,8 +20,6 @@ pub(crate) fn field_error(
     if crate::adapter::HostKind::parse(&host.host_kind).is_ok() {
         arguments["host"] = json!(host.host_kind);
     }
-    // Tutors reach for an update field when the learner asks to pause; point
-    // them at the control action and the workflow that serves its recipe.
     let instruction = if path == "control" {
         arguments["stage"] = json!("consolidate_and_resume");
         "Controls are their own action, not an update field: {\"schema\":\"learner-model/v2\",\"action\":\"control\",\"request_id\":<new>,\"control\":\"pause\"|\"stop\"|\"recording_off\"|\"recording_on\",\"turn_ref\":<the prompt hook's current event>}. It stops this conversation; session.pause then stops the lesson in every conversation."
@@ -35,8 +31,6 @@ pub(crate) fn field_error(
     );
     failure
 }
-/// Prefix actual deserializer paths, never Serde's error wording. Operations
-/// use this after selecting their typed payload, avoiding Serde tag buffering.
 pub(crate) fn decode_at<T: serde::de::DeserializeOwned>(
     payload: &Value,
     prefix: &str,
@@ -54,8 +48,6 @@ pub(crate) fn decode_at<T: serde::de::DeserializeOwned>(
         field_error(&path, error.inner(), host)
     })
 }
-/// Ordinary fields and each selected operation payload are typed once. The
-/// generic request is the same protocol shape, not an alternate schema model.
 pub(crate) fn decode_update_request(payload: &Value, host: &HostContext) -> Result<UpdateRequest> {
     let envelope: UpdateRequest<Value, Value, Value> = decode_at(payload, "", host)?;
     let session = envelope

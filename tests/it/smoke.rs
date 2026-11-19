@@ -17,8 +17,6 @@ fn native_binary_reports_version_without_touching_personal_state() {
         .expect("run magnesium binary");
 
     assert!(output.status.success());
-    // A build given a commit, as the Mac download's is, prints it as build
-    // metadata after the version.
     let expected = match option_env!("MAGNESIUM_BUILD_COMMIT").map(str::trim) {
         Some(commit) if !commit.is_empty() => {
             format!("magnesium {}+{commit}\n", env!("CARGO_PKG_VERSION"))
@@ -162,7 +160,6 @@ fn update_tag_lookup_picks_the_newest_release_and_skips_suffixed_tags() {
         }
     }
 
-    // Built at run time, so the release step's search for the old version never rewrites them.
     let tag = |minor: u32, patch: u32, suffix: &str| format!("v0.{minor}.{patch}{suffix}");
     let clone = environment.root.join("release-clone");
     fs::create_dir(&clone).expect("create clone folder");
@@ -287,7 +284,6 @@ fn code(markdown: &str) -> Vec<String> {
 #[cfg(unix)]
 fn isolated(directory: &Path, program: &str) -> Command {
     let mut command = Command::new(program);
-    // Git exports GIT_DIR to hooks, so an inherited one would send these writes to the developer's repository.
     for (name, _) in std::env::vars_os() {
         if name
             .to_string_lossy()

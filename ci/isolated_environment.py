@@ -1,8 +1,3 @@
-"""Private, credential-free environments for disposable native Magnesium checks.
-
-These checks exercise the core executable, not an installed assistant account.
-"""
-
 from __future__ import annotations
 
 import os
@@ -13,12 +8,7 @@ from typing import Mapping
 def isolated_environment(
     root: str | Path, source: Mapping[str, str] | None = None
 ) -> dict[str, str]:
-    """Create directories and return an allowlisted native-child environment.
 
-    No provider credentials, inherited host identities, runtime overrides or
-    capability grants are copied. Platform variables needed to launch an
-    absolute executable on Windows are the only inherited values.
-    """
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     source = os.environ if source is None else source

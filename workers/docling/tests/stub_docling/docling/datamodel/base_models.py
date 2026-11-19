@@ -1,5 +1,3 @@
-"""Stub base models mirroring the pinned docling API surface."""
-
 from enum import Enum
 
 

@@ -1,4 +1,3 @@
-//! Typed decoder paths must not weaken decoding or lose independent raw capture.
 use super::*;
 use serde_json::{Value, json};
 struct Fixture {

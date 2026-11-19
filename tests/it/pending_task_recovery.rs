@@ -1,5 +1,3 @@
-//! Local deterministic reproduction of the two rejected live 487142f calls.
-//! These subprocess tests do not run a tutoring model or infer delivery.
 use crate::support::{TestEnvironment, mcp::McpClient, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -113,7 +111,6 @@ fn reproduce_and_repair(mcp: bool) {
             .join("state.sqlite"),
     )
     .unwrap();
-    // Separate synthetic earlier input exercises the no-bulk-attachment boundary.
     connection.execute("INSERT INTO learning_events(event_id,host_kind,host_thread_id,external_event_key,speaker,kind,origin,text,metadata_json,captured_at_ms,processing) VALUES('unrelated-algebra','claude','earlier-thread','earlier','learner','message','host_observed','I confuse b with x.','{}',0,'pending')",[]).unwrap();
     let learner_text = original[0]["native_capture"]["text"].as_str().unwrap();
     let notice = v2::context(&v2::prompt(
@@ -248,7 +245,6 @@ fn reproduce_and_repair(mcp: bool) {
     assert_eq!(v2::count(&environment, "learner_memories"), 0);
     assert_eq!(v2::count(&environment, "observations"), 0);
 
-    // An actual recorded proposal can later back a task; it still does not prove delivery.
     let proposal=tools.call("learning_step",json!({"schema":"learner-model/v2","action":"update","request_id":"record-proposal","reported_events":[{"external_event_key":"halves-proposal","speaker":"tutor","kind":"task_proposal","text":original[0]["checkpoint"]["pending_task"]["prompt"],"metadata":{"delivery":"proposed"}}]}));
     assert_eq!(proposal["update_status"], "committed", "{proposal}");
     let proposal_id = &proposal["captured_event_ids"][0];

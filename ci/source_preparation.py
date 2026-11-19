@@ -1,4 +1,3 @@
-"""Strict test-only source setup. Semantic and permission oracles never retry."""
 from __future__ import annotations
 from contextlib import closing
 import asyncio
@@ -71,7 +70,6 @@ def fixture_ready(packet, state, status, path, kind, expected_hash, *, advanced=
 
 
 async def call_once(client,name,arguments,record,*,deadline,clock=time.monotonic):
-    """A final semantic/content/policy oracle gets one bounded recorded call."""
     observation={"tool":name,"arguments":dict(arguments)}
     try:
         remaining=deadline-clock()
@@ -94,7 +92,6 @@ async def call_once(client,name,arguments,record,*,deadline,clock=time.monotonic
 
 
 async def prepare_source_fixture(client, workspace, path, kind, expected_hash, record, *, seconds=5, attempts=32, clock=time.monotonic, deadline=None, require_hit=True):
-    """One document deadline/cap; preserve every request and read-only state."""
     deadline = clock() + seconds if deadline is None else deadline
     anchor_kind = "page" if kind == "pdf" else "line"
     async def call(name,arguments):
@@ -102,7 +99,6 @@ async def prepare_source_fixture(client, workspace, path, kind, expected_hash, r
     try:
         for _ in range(attempts):
             searched = await call("search_sources", {"query": path, "path_prefix": path, "limit": 50})
-            # Reject wrong hits and malformed state before another API request.
             validate_packet(searched)
             validate_hits(searched,path,kind,expected_hash)
             before = read_state(workspace, path)

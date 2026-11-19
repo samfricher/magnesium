@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the frozen synthetic pack and emit only tutor-visible case inputs.
 
-The operator passes tutor_prompts (not this entire manifest) to whatever
-captures the installed-host run. This validates fixture identity, never teaching.
-"""
 import argparse
 import hashlib
 import json
@@ -18,7 +14,6 @@ def digest(path):
 
 
 def policy_digest():
-    """One hash over the tutor's instruction files, in the order their manifest lists them."""
     bundle = ROOT / 'src/workspace/learning'
     manifest = (bundle / 'manifest.json').read_bytes()
     hasher = hashlib.sha256(manifest)
@@ -54,8 +49,6 @@ def prepare(pack):
             if previous and previous[0] != case['prompt']:
                 raise ValueError('paired cases must retain the same surface prompt')
             previous.append(case['prompt'])
-        # Deliberate projection: no evaluator dictionary, expected states,
-        # acceptable actions, forbidden claims or pair labels enter prompts.
         first = f"I want to learn to {case['goal'][0].lower() + case['goal'][1:]}. Use the synthetic sources in this folder. {case['learner_history']} {case['prompt']}"
         cases.append({'id': identity, 'tutor_prompts': [first, *followups], 'source': case['source']})
     if any(len(group) != 2 for group in pairs.values()):

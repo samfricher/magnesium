@@ -1,4 +1,3 @@
-//! The decoded read protocol. Each action accepts only its own fields.
 use super::pages::Cursor;
 use crate::learner::{
     model::SchemaVersion,
@@ -8,8 +7,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use unicode_normalization::UnicodeNormalization;
-// Each action's payload is declared once. The two actual wire decoders and
-// shared internal dispatch enum are generated from that ownership list.
 pub(super) trait ReadProtocol: Sized {
     fn decode(raw: &serde_json::Value) -> Result<Self, String>;
 }
@@ -48,7 +45,6 @@ macro_rules! read_actions {
         }
         #[cfg(test)]
         impl super::Tool {
-            /// Tests name only the action; this picks the native tool that owns it.
             pub(super) fn for_action(action:&str)->Self {
                 match action { $( $cwire=>Self::Context, )* _=>Self::Memory }
             }
@@ -76,9 +72,10 @@ read_actions! {
     memory {Search("search",PrepareRequest),Browse("browse",BrowseRequest),Topics("topics",TopicsRequest),Read("read",ReadRequest),History("history",HistoryRequest),Reviews("reviews",ReviewsRequest),Observations("observations",ObservationsRequest)}
     shared {PendingWork("pending_work",PendingWorkRequest)}
 }
-/// A complete executable tool call, serialized from the same action types as
-/// the strict native tool boundary. Explanatory advice belongs outside this type.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(
+    description = "A complete executable tool call, serialized from the same action types as\nthe strict native tool boundary. Explanatory advice belongs outside this type."
+)]
 #[serde(tag = "tool", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NextCall {
     Memory { arguments: Box<MemoryRequest> },
@@ -328,8 +325,9 @@ pub struct ReadRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = 65536))]
     pub max_bytes: Option<usize>,
-    /// Selected complete records, returned in order with an executable next_call
-    /// when the packet budget requires another batch. Revisions stay with refs.
+    #[schemars(
+        description = "Selected complete records, returned in order with an executable next_call\nwhen the packet budget requires another batch. Revisions stay with refs."
+    )]
     #[schemars(length(min = 1, max = 32))]
     pub refs: Vec<ReadRef>,
 }

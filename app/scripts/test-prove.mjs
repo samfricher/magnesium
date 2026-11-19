@@ -1,8 +1,3 @@
-// Which checks scripts/prove.sh picks for a change. A part left out that the change could affect is a pass that
-// means nothing, so each kind of file is checked against the parts it must bring.
-//
-//   node scripts/test-prove.mjs
-
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
@@ -52,8 +47,6 @@ if (all !== ALL) {
   console.error(`prove --all picks "${all}"`);
 }
 
-// The rule rests on what the sources read from outside their own folders. Hold it to them, so a new such read
-// that the rule would not cover fails here and not as a check quietly left out.
 const root = join(dirname(prove), "..", "..");
 const rust = (folder) =>
   existsSync(join(root, folder))
@@ -61,8 +54,6 @@ const rust = (folder) =>
         .filter((name) => name.endsWith(".rs"))
         .map((name) => join(folder, name))
     : [];
-// 1. The runtime: every file its sources carry (include_str!) or its tests read from the repository must be one
-//    whose change brings the runtime's checks.
 for (const file of [...rust("src"), ...rust("tests"), "build.rs"]) {
   const text = readFileSync(join(root, file), "utf8");
   const read = [
@@ -77,8 +68,6 @@ for (const file of [...rust("src"), ...rust("tests"), "build.rs"]) {
     }
   }
 }
-// 2. The window: only the core's unit tests (crates/core/src) may read the pages, since a page-only change runs
-//    those and not the core's other tests or the shell's.
 for (const file of [...rust("app/crates/core/tests"), ...rust("app/src-tauri")].filter((name) => !name.includes("/target/"))) {
   const text = readFileSync(join(root, file), "utf8");
   const pages = file.startsWith("app/src-tauri") ? /"\.\.\/(?:\.\.\/)?src[\/"]/ : /"\.\.\/\.\.\/src[\/"]/;

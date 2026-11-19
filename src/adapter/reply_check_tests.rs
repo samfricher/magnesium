@@ -1,5 +1,3 @@
-//! The Claude lesson prompt notice: its teaching reminder, the feedback on
-//! the previous reply, and how its clauses fit the hook's byte limit.
 use super::*;
 use serde_json::json;
 
@@ -243,7 +241,6 @@ fn claude_prompt_notice_without_a_native_ticket_stays_within_512_bytes() {
     let (root, store, _) = super::tests::fixture();
     let host = HostIdentity::claude("no-ticket").unwrap();
     leave_unbound_work(&store);
-    // A prompt over the event size limit gets no native ticket.
     let text = "x".repeat(crate::learner::limits::EVENT_BYTES + 1);
     let notice = host_user_prompt_submit(&root, &host, Some("big"), None, &text)
         .unwrap()
@@ -270,7 +267,6 @@ fn notice_clauses_give_way_in_order_and_required_ones_stay() {
         fit_to(full),
         format!("state{STATE_ADVICE} lesson task confused feedback")
     );
-    // The state line loses its advice before any clause gives way.
     assert_eq!(fit_to(full - 1), "state lesson task confused feedback");
     assert_eq!(fit_to(35), "state lesson task confused feedback");
     assert_eq!(fit_to(34), "state lesson confused feedback");
@@ -316,20 +312,15 @@ fn a_reply_from_the_window_tool_is_kept_once_and_answers_its_prompt() {
     claude_prompt(&root, &host, "one");
     let long = "word ".repeat(300);
     host_reply(&root, &context, &long).unwrap();
-    // A repeated call with the same words keeps one reply.
     host_reply(&root, &context, &long).unwrap();
-    // The end-of-turn hook sees the same words, or none, and keeps nothing more.
     claude_stop(&root, &host, "one", long.trim()).unwrap();
     assert_eq!(deliveries(&store, &host).len(), 1);
     let learner_key = native_capture::event_key(&host.stored_turn_id("one").unwrap());
     assert_eq!(deliveries(&store, &host)[0].0, reply_key(&learner_key, 1));
     assert_eq!(answered_key(&reply_key(&learner_key, 2)), learner_key);
-    // The reply check pairs it with the prompt it answers.
     let second = claude_prompt(&root, &host, "two");
     assert!(second.contains(" Previous reply: 300 words."), "{second}");
 
-    // Text written besides the reply is kept as well, so nothing is lost.
-    // The reply's id comes back, for a checkpoint to name the task it set.
     let id = host_reply(&root, &context, "Right. Now: what is c?")
         .unwrap()
         .expect("the reply was kept");
@@ -342,7 +333,6 @@ fn a_reply_from_the_window_tool_is_kept_once_and_answers_its_prompt() {
         )
         .unwrap();
     assert_eq!(kept_text, "Right. Now: what is c?");
-    // The same reply again is not kept twice, and has no new id.
     assert_eq!(
         host_reply(&root, &context, "Right. Now: what is c?").unwrap(),
         None
@@ -378,7 +368,6 @@ fn a_learning_step_after_the_reply_is_known_as_the_turns_last_write() {
     assert!(!replied_this_turn(&root, &host).unwrap(), "no reply yet");
     host_reply(&root, &context, "Right. Now: what is c?").unwrap();
     assert!(replied_this_turn(&root, &host).unwrap());
-    // The next learner message starts a turn with no reply.
     claude_prompt(&root, &host, "two");
     assert!(!replied_this_turn(&root, &host).unwrap());
     drop(store);
@@ -397,7 +386,6 @@ fn a_refused_save_after_the_reply_gets_one_retry() {
         refused_save_after_reply(&root, &host).unwrap(),
         "the retry refused too: the turn ends"
     );
-    // A new turn starts with its own retry.
     claude_prompt(&root, &host, "two");
     assert!(!refused_save_after_reply(&root, &host).unwrap());
     drop(store);

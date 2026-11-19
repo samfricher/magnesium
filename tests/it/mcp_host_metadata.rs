@@ -1,5 +1,3 @@
-//! Exercise real MCP envelopes: which conversation a tool call belongs to comes
-//! only from the server's own launch, never from the call itself.
 use crate::support::{
     TestEnvironment,
     mcp::{McpClient, write_message},
@@ -223,8 +221,6 @@ fn call_metadata_is_not_a_native_identity_without_the_session_environment() {
     c.close_cleanly();
 }
 
-/// A plugin copy from another release can reach this runtime, so the recovery
-/// must say what refreshes it.
 #[test]
 fn incompatible_plugin_version_gives_a_recovery_that_names_the_refresh() {
     let e = TestEnvironment::from_fixture("basic").unwrap();

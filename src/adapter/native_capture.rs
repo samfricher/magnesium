@@ -1,9 +1,3 @@
-//! Bounded native-start provenance. Inactive learner text stays in the host's
-//! existing message, never in a Magnesium file. The host carries a short MAC tag
-//! and echoes the exact bytes only when explicitly starting learning. The tag
-//! binds the workspace, conversation, turn marker and text digest; everything
-//! but the text is recomputed or read back from the marker, so the model only
-//! copies 32 hexadecimal characters.
 use crate::{
     learner::{HostContext, RawEvent},
     workspace::Workspace,
@@ -18,17 +12,12 @@ use std::{
     path::{Path, PathBuf},
 };
 const DOMAIN: &[u8] = b"magnesium/native-initial-capture/v2\0";
-/// Long enough for a tutor to load instructions and read sources before its
-/// first `learning_step`. The next learner message replaces the marker, so a
-/// ticket still certifies only the latest turn.
 pub(crate) const TTL_MS: i64 = 30 * 60 * 1000;
-/// Left-truncated HMAC-SHA256 tag (RFC 2104 section 5): 128 bits.
 const TAG_BYTES: usize = 16;
 const MAX_MARKERS: usize = 128;
 const DIRECTORY: &str = "cache/native-capture";
 type Signature = Hmac<Sha256>;
 fn failure() -> String {
-    // One message for every cause: callers learn nothing about which check failed.
     "invalid_native_capture: use the current unexpired native ticket and exact learner text, or explicit model-reported fallback. Copy the whole ticket character for character from this conversation's latest Magnesium prompt notice; it is long hexadecimal, so do not retype or shorten it".into()
 }
 fn digest(bytes: &[u8]) -> [u8; 32] {
@@ -122,8 +111,6 @@ fn lock(workspace: &Workspace, dir: &Path) -> Result<fs::File, String> {
         }
     }
 }
-/// Normal initialization creates only a private random provenance key. This is
-/// not a provider/account credential and grants no model or network access.
 pub(crate) fn initialize(workspace: &Workspace) -> Result<(), String> {
     let dir = directory(workspace)?;
     let _guard = lock(workspace, &dir)?;
@@ -175,7 +162,6 @@ fn prune(workspace: &Workspace, dir: &Path, now: i64) -> Result<usize, String> {
     }
     Ok(live)
 }
-/// Stable native external key: identical wording on different turns stays distinct.
 pub(crate) fn event_key(native_turn: &str) -> String {
     format!("native:{}", hex(&digest(native_turn.as_bytes())))
 }
@@ -191,27 +177,6 @@ pub(crate) fn invalidate(workspace: &Workspace, host: &HostContext) -> Result<()
         Err(e) => Err(e.to_string()),
     }
 }
-/// Claude's desktop app sends pasted text between `<pasted_content id="…">`
-/// and `</pasted_content id="…">` lines. The hook receives them, but the model
-/// is told the learner never sees the ids, so a tutor echoes the learner's
-/// text without the tags. Claude learner text is therefore certified and stored
-/// without matched tag lines (a closing line repeats its opening line's id),
-/// blank lines before the first line, or whitespace after the last, so the
-/// hook's text and the echo agree; the first line keeps its indentation.
-/// Every matched pair is removed in one pass, so applying this twice changes
-/// nothing. Other hosts' text stays exact.
-///
-/// A message that opens with one of Magnesium's own commands, such as the
-/// study window's `/magnesium:learn <goal>`, is certified as the words after
-/// the command. The hook sees the whole line, but the tutor sees the command
-/// expanded into its skill, and echoes either the whole line or the goal
-/// alone; both now give the same text. What is kept is still exactly what the
-/// learner typed after the command. A command with nothing after it is kept
-/// whole.
-///
-/// A message the study window sent as talk opens with [`TALK_LEAD`] on its own
-/// line. The lead is the window's words, not the learner's, so it is left
-/// out too; [`intent`] keeps what it said.
 pub(crate) fn learner_text<'a>(host: &HostContext, text: &'a str) -> Cow<'a, str> {
     if host.host_kind != "claude" {
         return Cow::Borrowed(text);
@@ -222,14 +187,8 @@ pub(crate) fn learner_text<'a>(host: &HostContext, text: &'a str) -> Cow<'a, str
         Cow::Owned(text) => Cow::Owned(without_magnesium_command(&text).to_owned()),
     }
 }
-/// The line the study window puts before a message the learner sent as talk:
-/// a question, a change to the plan, anything but an answer to the task. The
-/// tutor reads it as plain words. The runtime reads it as the host saying the
-/// message is not an answer, and refuses an attempt on it (issue 65). Text
-/// that only claims to be talk can only keep a message from being marked.
 pub(crate) const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
 
-/// The message after a leading [`TALK_LEAD`] line, or None when it has none.
 fn without_talk_lead(text: &str) -> Option<&str> {
     let rest = text.trim_start().strip_prefix(TALK_LEAD)?;
     let words = rest.trim_start_matches([' ', '\t']);
@@ -240,15 +199,10 @@ fn without_talk_lead(text: &str) -> Option<&str> {
     Some(trim_blank_lines(words))
 }
 
-/// How the host says a Claude learner message was sent: talk when it opens
-/// with [`TALK_LEAD`]. Other hosts say nothing this way.
 pub(crate) fn intent(host: &HostContext, text: &str) -> Option<crate::learner::MessageIntent> {
     (host.host_kind == "claude" && without_talk_lead(text).is_some())
         .then_some(crate::learner::MessageIntent::Talk)
 }
-/// The words after a leading `/magnesium:<skill>` command, or the text as it
-/// is. Applying it twice changes nothing more, unless the learner typed the
-/// command twice.
 fn without_magnesium_command(text: &str) -> &str {
     let Some(rest) = text.strip_prefix("/magnesium:") else {
         return text;
@@ -306,8 +260,6 @@ fn paste_tag_id<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
     valid.then_some(id)
 }
-/// Caller must first enforce native workspace binding and recording controls.
-/// The ticket certifies `learner_text(host, text)`.
 pub(crate) fn issue(
     workspace: &Workspace,
     host: &HostContext,
@@ -347,8 +299,6 @@ pub(crate) fn issue(
     let mac = signature(workspace, host, &marker, &text)?;
     Ok(hex(&mac.finalize().into_bytes()[..TAG_BYTES]))
 }
-/// MAC over everything the ticket certifies. The text digest exists only
-/// inside this computation, never in a file.
 fn signature(
     workspace: &Workspace,
     host: &HostContext,
@@ -363,9 +313,6 @@ fn signature(
     mac.update(&digest(text.as_bytes()));
     Ok(mac)
 }
-/// Verification yields only the exact observed learner event, as
-/// `learner_text`. It certifies no interpretation, task completion,
-/// independent success, or model judgment.
 pub(crate) fn verify(
     workspace: &Workspace,
     host: &HostContext,
@@ -379,7 +326,6 @@ pub(crate) fn verify(
         return Err(failure());
     }
     let tag = unhex(ticket)?;
-    // The current marker names the only turn this conversation can start from.
     let marker = read_exact_file(
         &marker_path(&workspace.control().join(DIRECTORY), host),
         workspace,

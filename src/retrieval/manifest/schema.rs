@@ -13,14 +13,11 @@ use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use super::{ManifestError, io_error, reject_managed_symlink, sqlite};
 use crate::retrieval::coordinator::OperationCancellation;
 
-/// SQLite `application_id` of the source cache: ASCII "MGSI", Magnesium source index.
 pub(crate) const INDEX_APPLICATION_ID: i64 = 0x4d47_5349;
 pub(crate) const INDEX_SCHEMA_VERSION: i64 = 10;
 pub(crate) const INDEX_INITIALIZATION_BUDGET: Duration = Duration::from_secs(2);
 pub(crate) const INDEX_DIAGNOSTIC_BUDGET: Duration = Duration::from_secs(5);
 
-// Fresh caches are provisioned directly at today's schema. This derived cache
-// has no historical readers or migrations; incompatible files remain untouched.
 pub(crate) const INDEX_SCHEMA: &str = r#"
 CREATE TABLE source_index_metadata (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -139,9 +136,6 @@ CREATE VIRTUAL TABLE source_search_ranked USING fts5(
 );
 "#;
 
-/// Ordinary readers do not create, migrate, or inspect the contents of a cache.
-/// Read-only opening also prevents an incompatible file's journal recovery or
-/// close-time WAL checkpoint from modifying it before ownership is established.
 pub(crate) fn open_index(path: &Path) -> Result<Connection, ManifestError> {
     open_index_with_budget(
         path,
@@ -162,8 +156,6 @@ pub(crate) fn open_index_with_budget(
     Ok(connection)
 }
 
-/// Writers establish ownership on a read-only connection before opening a
-/// writable handle. Recheck identity on that handle to reject a replaced cache.
 pub(crate) fn open_index_for_write(path: &Path) -> Result<Connection, ManifestError> {
     let budget = IndexBudget::new(
         INDEX_INITIALIZATION_BUDGET,
@@ -177,9 +169,6 @@ pub(crate) fn open_index_for_write(path: &Path) -> Result<Connection, ManifestEr
     Ok(connection)
 }
 
-/// Called only by explicit workspace initialization and reconciliation's
-/// initialization owner. The immediate transaction arbitrates concurrent first
-/// opens; identity and emptiness are checked again while holding its write lock.
 pub(crate) fn initialize_index(
     path: &Path,
     duration: Duration,
@@ -193,8 +182,6 @@ pub(crate) fn initialize_index(
         .map_err(|source| io_error("inspect source index", path, source))?
     {
         let checked = connect(path, OpenFlags::SQLITE_OPEN_READ_ONLY, &budget, true)?;
-        // Identity and emptiness must describe one snapshot: another creator
-        // can publish the schema between two otherwise independent reads.
         let snapshot = checked
             .unchecked_transaction()
             .map_err(|source| sqlite(path, "begin source-index ownership snapshot", source))?;
@@ -234,10 +221,6 @@ pub(crate) fn initialize_index(
             .commit()
             .map_err(|source| sqlite(path, "commit source-index initialization", source))?;
         if fresh {
-            // Another initializer can briefly hold a read or writer lock
-            // after observing the committed final schema. Journal-mode
-            // changes report BUSY immediately in that case, so retry only
-            // within this initialization's existing deadline/cancellation.
             loop {
                 budget.check(path)?;
                 match connection.pragma_update(None, "journal_mode", "WAL") {
@@ -268,10 +251,6 @@ pub(crate) fn initialize_index(
     Ok(connection)
 }
 
-/// Every writer takes the index write lock here. SQLite's busy timeout cannot
-/// poll a request token, so the wait runs in short slices that observe
-/// cancellation, including a search's own deadline. A search that finds the
-/// writer busy past its budget therefore defers instead of waiting longer.
 pub(crate) fn begin_write<'c>(
     connection: &'c Connection,
     index_path: &Path,
@@ -312,8 +291,6 @@ pub(crate) fn begin_write<'c>(
     result
 }
 
-/// Expensive diagnostics are explicit and bounded, never hidden in queries.
-/// Corruption is an error with a manual cache-rebuild instruction, not no hits.
 pub(crate) fn validate_index_integrity(
     path: &Path,
     duration: Duration,
@@ -371,13 +348,6 @@ fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// SQLite's read-only WAL connections can update shared-memory read marks.
-/// Reject unowned/incompatible main-file headers before SQLite sees the path,
-/// so foreign databases and their sidecars remain byte-preserved. Our creator
-/// commits the final identity before enabling WAL. An old cache with a newer
-/// identity only in WAL must be checkpointed by its owner or rebuilt explicitly.
-/// This bounded preflight is not an integrity check; SQLite still validates the
-/// actual connection's identity, and initialization checks the schema under lock.
 fn validate_header_ownership(
     path: &Path,
     allow_empty: bool,
@@ -420,9 +390,6 @@ fn validate_header_ownership(
         if !has_sidecars(path)? {
             return Ok(());
         }
-        // A concurrent initializer may be publishing the final header while
-        // its rollback journal exists. Wait/recheck under our explicit budget;
-        // never let SQLite recover, truncate or adopt an unowned artifact.
         let remaining = budget.deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(incompatible(
@@ -434,7 +401,6 @@ fn validate_header_ownership(
     }
 }
 
-/// Fixed-size ownership read, independent of source-cache row count.
 #[cfg(not(unix))]
 fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
     let mut file = File::open(path)?;
@@ -443,13 +409,6 @@ fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
     Ok(header)
 }
 
-/// POSIX advisory locks belong to the process and inode, and closing any
-/// descriptor for the inode releases all of them, including the SHARED lock
-/// SQLite holds for this process's live connections. SQLite's unix VFS defers
-/// closes of its own descriptors for that reason, but cannot defer ours. A
-/// descriptor opened here is therefore never closed or duplicated: one handle
-/// per inode lives for the process, so a replaced file adds one entry and the
-/// old entry keeps serving connections still open on the old inode.
 #[cfg(unix)]
 fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
     use std::collections::HashMap;
@@ -472,9 +431,6 @@ fn read_header(path: &Path) -> std::io::Result<Vec<u8>> {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         Arc::clone(entry.insert(Arc::new(opened)))
                     }
-                    // The path was replaced by an inode already held. Closing
-                    // this duplicate would release that inode's locks, so it
-                    // is leaked instead.
                     std::collections::hash_map::Entry::Occupied(entry) => {
                         std::mem::forget(opened);
                         Arc::clone(entry.get())
@@ -549,8 +505,6 @@ fn connect(
             }),
         )
         .map_err(|source| sqlite(path, "install source-index budget handler", source))?;
-    // Connection-local only: no persistent journal or database settings before
-    // identity validation. A foreign database is never opened for writing.
     connection
         .pragma_update(None, "foreign_keys", "ON")
         .map_err(|source| sqlite(path, "enable source-index foreign keys", source))?;

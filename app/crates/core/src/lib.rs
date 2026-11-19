@@ -1,24 +1,3 @@
-//! Everything Magnesium's window does that is not drawing.
-//!
-//! - [`agent`] is the one interface to a coding agent, and [`claude`] is its
-//!   first implementation.
-//! - [`runtime`] runs the `magnesium` program and reads what it prints, and
-//!   [`install`] puts the app's own copy of it on this Mac.
-//! - [`study`] turns that into what the library, the course page and the
-//!   progress page show.
-//! - [`activity`] keeps the days the learner studied, and [`find`] looks for
-//!   study folders set up in a terminal.
-//! - [`material`] copies course material the learner adds into the study
-//!   folder and words what search can and cannot read of it.
-//! - [`plan`] reads the open folder's study plan and says what a turn
-//!   changed in it.
-//! - [`workspace`] lists a folder's sessions and the library's workspaces,
-//!   from the window's own store.
-//! - [`manager`] holds one open study folder and its one conversation.
-//!
-//! No teaching rule lives here. The runtime and its plugin hold them all, so
-//! a lesson behaves the same in this window and in a terminal.
-
 pub mod activity;
 pub mod agent;
 pub mod asks;

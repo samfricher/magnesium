@@ -1,44 +1,20 @@
-// A layer: what a key summons over the surface, and Esc puts away. Every layer
-// is this one thing, so one habit covers all of them: a line to type in, a
-// list under it, and the keys at its foot.
-//
-// The line either filters the list ("filter"), or is said to the tutor when
-// Return is pressed with words on it ("say", the plan's layer). A list with
-// nothing to type (settings) has no line.
-//
-// A layer is a native modal dialog (dialog guide): the window behind it is
-// inert, focus stays in it, Esc closes it, and focus goes back to where it
-// was. The line is a combobox over a listbox (menu and dialog guides): the
-// row ↑ and ↓ choose is the line's active option, so a screen reader says it
-// while the focus stays on the line.
-
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type Choice = { label: string; chosen: boolean; pick: () => void; face?: string };
 
 export type Row = {
   id: string;
-  /** What the row shows. A string is drawn as it is. */
   label: ReactNode;
-  /** The words the line filters on. */
   text: string;
-  /** "thing": the learner's own material, in the reading face. "do": the window's verbs, in its own face. "note": words that do nothing. "head": a group's name. */
   kind?: "thing" | "do" | "file" | "note" | "head";
-  /** A mark before the row: the state of a plan item. */
   mark?: string;
-  /** Quiet words after the row: a key, a date, what changed. */
   hint?: ReactNode;
-  /** The row was changed by the tutor in this sitting. */
   changed?: boolean;
   run?: () => void;
-  /** ⌘↩ */
   alt?: () => void;
-  /** ⌘⌫ */
   remove?: () => void;
-  /** A setting's choices, changed with ← and →. */
   choices?: Choice[];
   drive?: string;
-  /** Shown only once the line holds words that find it, as a setting's values are. */
   onlyFound?: boolean;
 };
 
@@ -47,14 +23,10 @@ type Props = {
   mode: "filter" | "say" | "none";
   placeholder?: string;
   rows: Row[];
-  /** Offered last when the line holds words: say them to the tutor. */
   fallback?: (text: string) => Row | null;
-  /** In "say" mode: Return with words on the line. */
   onSay?: (text: string) => void;
-  /** Rows can be chosen by their number, 1 to 9. */
   numbered?: boolean;
   keys: string;
-  /** Something drawn above the list, such as the paste field or a source. */
   wide?: boolean;
   onClose: () => void;
   children?: ReactNode;
@@ -68,7 +40,6 @@ function matches(row: Row, words: string[]): boolean {
   return words.every((word) => text.includes(word));
 }
 
-/** Whether a key press belongs to an input method still composing: WebKit can report it with isComposing false, but keyCode 229. */
 const composing = (event: React.KeyboardEvent) => event.nativeEvent.isComposing || event.keyCode === 229;
 
 export function Layer(props: Props) {
@@ -81,7 +52,6 @@ export function Layer(props: Props) {
   const listId = `${id}-rows`;
   const rowId = (index: number) => `${id}-row-${index}`;
 
-  // Opened as a modal as it is drawn, and closed before it is taken away, so focus goes back to where it was.
   useLayoutEffect(() => {
     const dialog = box.current;
     if (dialog && !dialog.open) {
@@ -122,7 +92,6 @@ export function Layer(props: Props) {
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    // Return and Esc that confirm or cancel an input method's composition are its own.
     if (composing(event)) return;
     const row = selected >= 0 ? rows[selected] : null;
     if (event.key === "Escape") {
@@ -165,7 +134,6 @@ export function Layer(props: Props) {
     }
   };
 
-  /** A press outside the layer's box, on its backdrop, closes it. The pointer's place is tested: the dialog is also the target of a press on its own edge. */
   const onBackdrop = (event: React.MouseEvent<HTMLDialogElement>) => {
     if (event.target !== event.currentTarget) return;
     const r = event.currentTarget.getBoundingClientRect();

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Gate regression tests without Docling, models, or user source material."""
 import contextlib
 import hashlib
 import importlib.util
@@ -296,7 +295,6 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(result["status"], "FAIL")
             self.assertTrue(all(document["native"]["status"] == "FAIL" for document in result["documents"]))
             self.assertTrue(all(document["native"]["transport"]["returncode"] is not None for document in result["documents"]))
-            # The timeout child would sleep for a minute, so a return code proves the gate reaped it.
             self.assertTrue(clients)
             self.assertTrue(all(client.proc.returncode is not None for client in clients))
 

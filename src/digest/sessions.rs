@@ -1,4 +1,3 @@
-//! The plan's Sessions section: if-then lines that say when the learner practises.
 use super::{Unreadable, section};
 use chrono::{Datelike, NaiveDate, NaiveTime, Weekday, WeekdaySet};
 
@@ -20,17 +19,13 @@ const WEEKDAYS: WeekdaySet = WeekdaySet::from_array([
 ]);
 const WEEKEND: WeekdaySet = WeekdaySet::from_array([Weekday::Sat, Weekday::Sun]);
 
-/// What the plan's Sessions section gives: the start times of the sessions that
-/// fall today, and a note for each line it could not read.
 pub(super) struct PlannedSessions {
     pub(super) today: Vec<String>,
     pub(super) unreadable: Vec<Unreadable>,
 }
 
-/// One line of the Sessions section, as the digest classifies it.
 enum Line {
     Blank,
-    /// A line that holds no session: a backup, "none planned" or the template's own.
     Other,
     Session(WeekdaySet, NaiveTime),
     Unreadable(&'static str),
@@ -91,8 +86,6 @@ fn classify(line: &str) -> Line {
     }
 }
 
-/// The text with each HTML comment taken out. The comment's line breaks stay,
-/// so a line keeps its number in the file.
 fn without_comments(text: &str) -> String {
     let mut kept = String::new();
     let mut rest = text;
@@ -107,7 +100,6 @@ fn without_comments(text: &str) -> String {
     kept + rest
 }
 
-/// The text as Markdown shows it: comments and fenced code are blank lines.
 fn rendered(text: &str) -> String {
     let text = without_comments(text);
     let mut fence = None;
@@ -133,7 +125,6 @@ fn rendered(text: &str) -> String {
         .collect()
 }
 
-/// `line` is lowercase, with its list marker and emphasis marks taken off.
 fn planned_session(line: &str) -> Result<(WeekdaySet, NaiveTime), &'static str> {
     let cue = ["if it is ", "if it's ", "if it\u{2019}s "]
         .iter()

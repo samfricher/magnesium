@@ -1,4 +1,3 @@
-//! Writer-to-reader composition at the supported encoded packet ceiling.
 use super::*;
 use rusqlite::{params, types::ValueRef};
 use serde_json::{Value, json};
@@ -159,7 +158,6 @@ impl Fixture {
     }
 
     fn follow(&self, call: &Value, bound: bool) -> Value {
-        // Execute the serialized arguments unchanged through the advertised tool.
         let typed: read::NextCall = serde_json::from_value(call.clone()).unwrap();
         assert_eq!(serde_json::to_value(typed).unwrap(), *call);
         assert_eq!(call["tool"], "memory");
@@ -224,8 +222,6 @@ fn extreme_note(n: usize) -> String {
     note
 }
 
-/// Include every table and FTS shadow table. The sole permitted read side effect
-/// is the optional context receipt, which is asserted independently.
 fn canonical_state(conn: &rusqlite::Connection) -> Value {
     let tables = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name!='context_receipts' ORDER BY name").unwrap().query_map([],|r|r.get::<_,String>(0)).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
     let mut result = serde_json::Map::new();
@@ -311,8 +307,6 @@ fn checkpoint_basis_bounds_later_revisions_flags_retirement_and_wide_counters() 
     let f = Fixture::new();
     let ids = f.memories(&vec![None; REFERENCES], true);
     let wide = i64::MAX - 4;
-    // Seed only counter widths, not checkpoint/text/admission. Every record and
-    // checkpoint is authored by the real writer, as are all later mutations.
     f.store
         .conn
         .execute("UPDATE learner_memories SET revision=?1", [wide])
@@ -481,7 +475,6 @@ fn checkpoint_two_host_connections_compare_and_swap_then_reconcile_without_overw
             assert_eq!(revision,2);
             let event = store.capture(&host,&[RawEvent { external_event_key: format!("work-{n}"), speaker: Speaker::Learner, kind: "message".into(), text: format!("Original concurrent work {n}: λ²"), metadata: None, occurred_at_ms: Some(100+n as i64) }],"host_observed",false).unwrap().remove(0);
             let payload = json!({"schema":SCHEMA,"action":"update","request_id":format!("checkpoint-cas-{n}"),"reported_events":[{"external_event_key":format!("extra-{n}"),"speaker":"learner","kind":"message","text":format!("Separately captured input {n}")}],"session":{"operation":"use","session_id":session,"expected_revision":revision},"checkpoint":{"current_problem":format!("Problem {n}"),"working_diagnosis":format!("Diagnosis {n}"),"next_action":format!("Intended task {n}"),"plan_text":null,"memory_refs":[],"pending_task":null},"observations":[{"client_ref":"work","kind":"learner_work","description":format!("Concurrent interpretation {n}"),"events":[{"event_id":event,"role":"learner_response"}]}],"memory_edits":[{"operation":"create","client_ref":"memory","record":{"title":format!("Concurrent memory {n}"),"scope":"algebra","summary":"Provisional interpretation","state_text":format!("Work {n} retains its original qualifications"),"current_basis":[{"new_observation":"work"}]},"reason":"Observed work","change_basis":[{"new_observation":"work"}]}],"event_dispositions":[{"event_id":event,"outcome":"processed"}]});
-            // Both hosts hold revision 2 before either may attempt publication.
             barrier.wait();
             let result = store.update(&host,payload.clone());
             (n,host,event,payload,result)

@@ -1,6 +1,3 @@
-//! A paper is found and opened from the study root, which can be a parent of
-//! the folder the window opened.
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
@@ -21,7 +18,6 @@ fn a_paper_opens_from_a_folder_inside_the_study_root() {
     fs::write(papers.join("Paper B.pdf"), b"%PDF-1.4").unwrap();
     fs::write(papers.join("Paper B key.pdf"), b"%PDF-1.4").unwrap();
 
-    // A stand-in for `magnesium digest`, which reports the study root.
     let program = dir.path().join("magnesium");
     fs::write(
         &program,
@@ -47,7 +43,6 @@ fn a_paper_opens_from_a_folder_inside_the_study_root() {
         papers.join("Paper B.pdf").canonicalize().unwrap()
     );
 
-    // The answer key stays closed, and nothing outside the root opens.
     let key = Paper {
         path: "Study/exam/papers/Paper B key.pdf".into(),
         ..paper.clone()

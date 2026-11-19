@@ -1,4 +1,3 @@
-//! Fixed-metadata diagnostics; never persist learner text in failure logs.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components, write_private_atomic};
 use serde_json::{Value, json};

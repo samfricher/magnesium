@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Fixed 12-document native/optional Docling fidelity gate.
 
-Native status and exact physical-anchor inspection are independent of lexical
-retrieval. Every document and failed response is retained in the result file.
-Unavailable optional conversion is NOT_RUN, never a measured fidelity pass.
-No installed assistant account, provider discovery, or model inference.
-"""
 from __future__ import annotations
 import argparse
 import asyncio
@@ -88,7 +82,6 @@ def blocks_covering(blocks, kind, anchor):
 
 
 def check_anchors(entry, blocks):
-    """Exact quotations in their own anchored blocks; no page joining/normalization."""
     missing = []
     for anchor in entry.get("anchors", []):
         wanted = anchor.get("text")
@@ -100,7 +93,6 @@ def check_anchors(entry, blocks):
 
 
 def source_reference(sample_path, entry, anchor=None):
-    """Bind authored locations to fixture bytes; search candidates are not proof."""
     reference = {"path": entry["file"], "content_sha256": sha_of(sample_path)}
     if entry["native"]["support"] == "unsupported":
         return reference
@@ -179,8 +171,6 @@ async def native_baseline(env, workspace, manifest, *, config=None, client_facto
                         raise ValueError("readable native sample has no independently authored anchors")
                     first = anchors[0] if anchors else expectation["anchor"]
                     reference = source_reference(path, entry, first)
-                    # Genuine scoped preparation precedes status; its lexical
-                    # matches do not contribute to either fidelity oracle.
                     await prepare_source_fixture(client, workspace, entry["file"], "pdf" if entry["kind"] == "pdf" else "text",
                                                   reference["content_sha256"], record, require_hit=support == "readable",
                                                   deadline=deadline, attempts=config.preparation_attempts, clock=clock)
@@ -231,7 +221,6 @@ async def native_baseline(env, workspace, manifest, *, config=None, client_facto
             records.append({"file": entry["file"], "kind": entry["kind"], "status": "FAIL",
                             "errors": [f"native initialization/cleanup failed: {error}"],
                             "responses": [], "transport": client.diagnostics() if client else {}})
-        # A failed child lifetime cannot qualify an otherwise passing run.
         if records:
             records[-1]["status"] = "FAIL"
             records[-1].setdefault("errors", []).append(f"native lifetime failed: {error}")
@@ -241,7 +230,7 @@ async def native_baseline(env, workspace, manifest, *, config=None, client_facto
 def try_docling():
     started = time.monotonic()
     try:
-        import docling  # noqa: F401
+        import docling
     except ImportError as error:
         return None, f"docling is not installed ({error})", 0.0
     from importlib import metadata
@@ -269,7 +258,7 @@ def package_size_mb():
 def peak_rss_mb():
     try:
         import resource
-    except ImportError:  # Windows has no resource module.
+    except ImportError:
         return None
     divider = 1024 * 1024 if sys.platform == "darwin" else 1024
     return resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / divider

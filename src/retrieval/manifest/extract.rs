@@ -105,8 +105,6 @@ pub(crate) fn extract_source_with_hooks(
     cancellation: Option<&crate::retrieval::OperationCancellation>,
     after_open: &mut impl FnMut(&Path) -> Result<(), ManifestError>,
 ) -> Result<Vec<SourceCandidate>, ManifestError> {
-    // Pending and already-indexed records can survive bounded reconciliation.
-    // Their cached status never overrides the current shared source policy.
     if crate::retrieval::source_relative_path_is_excluded(workspace_root, relative_path)? {
         return Err(ManifestError::Invalid(format!(
             "{} is excluded by current source policy",
@@ -159,8 +157,6 @@ pub(crate) fn extract_source_with_hooks(
 
     let fallback_cancellation = crate::retrieval::OperationCancellation::none();
     let cancellation = cancellation.unwrap_or(&fallback_cancellation);
-    // Authorization/open-boundary failures are not extracted-content outcomes.
-    // In particular a symlink swap must fail before reading or publishing.
     let source_file = open_workspace_source(workspace_root, relative_path, after_open)?;
     cancellation.check()?;
     let extracted = prepare_source_content(
@@ -173,7 +169,6 @@ pub(crate) fn extract_source_with_hooks(
     );
     let (outcome, converter) = match extracted {
         Ok(extracted) => extracted,
-        // Resource limits are incomplete work, never a defective source.
         Err(
             error @ (ManifestError::Cancelled
             | ManifestError::BudgetExhausted
@@ -247,8 +242,6 @@ fn prepare_source_content(
     let fallback_read_cancellation = crate::retrieval::OperationCancellation::none();
     let read_cancellation = cancellation.unwrap_or(&fallback_read_cancellation);
     if let Some(cancellation) = cancellation {
-        // Re-check after the (possibly slow) open hook and before any
-        // extraction work begins.
         cancellation.check()?;
     }
     match source.source_kind.as_str() {
@@ -303,8 +296,6 @@ fn prepare_source_content(
                 }
                 let pages = custom(&bytes);
                 if let Some(cancellation) = cancellation {
-                    // The custom extractor does not poll cancellation itself;
-                    // observe it before any candidate is stored.
                     cancellation.check()?;
                 }
                 pages
@@ -369,14 +360,6 @@ fn prepare_source_content(
                     .seek(SeekFrom::Start(0))
                     .map_err(|source| io_error("rewind pdf snapshot", &snapshot_path, source))?;
                 let native = extract_pdf_from_file(snapshot_file, cancellation);
-                // #208: a text layer with no readable page is the exact case
-                // an optional local converter exists for (scanned pages,
-                // complex layout). The worker runs only under explicit
-                // opt-in; any worker failure preserves this native result
-                // and the last valid index generation. Worker-assisted
-                // generations record converter provenance beside the
-                // derived index (see publication); the fixed
-                // 12-document gate and the packaged worker itself remain.
                 let worker = super::convert::worker_config_from_env();
                 match try_worker_for_blank_pdf(
                     source,
@@ -400,8 +383,6 @@ fn prepare_source_content(
     }
 }
 
-/// Classification only. Conversion never changes manifests or projections;
-/// every outcome is published later against the captured source revision.
 #[derive(Debug)]
 pub(super) enum PdfOutcome {
     Sensitive(SensitivityClass),
@@ -409,8 +390,6 @@ pub(super) enum PdfOutcome {
     Drafts(Vec<ChunkDraft>),
 }
 
-/// Map native PDF text-layer pages to page-anchored drafts, preserving
-/// the existing sensitivity exclusion.
 fn native_pages_to_drafts(pages: Vec<String>) -> Result<PdfOutcome, ManifestError> {
     if let Some(sensitivity) = pages
         .iter()
@@ -430,12 +409,6 @@ fn native_pages_to_drafts(pages: Vec<String>) -> Result<PdfOutcome, ManifestErro
     ))
 }
 
-/// Attempt optional worker conversion for a PDF whose native text layer
-/// is entirely blank (scanned pages, complex layout). Returns `None`
-/// whenever the native result stands: readable pages, no opt-in, no
-/// worker, worker failure, or a `text_unavailable` conversion. The
-/// native result and the last valid index generation are always
-/// preserved; cancellation propagates like the native path.
 pub(super) fn try_worker_for_blank_pdf(
     source: &CurrentSource,
     native: &Result<Vec<String>, ManifestError>,
@@ -481,11 +454,6 @@ pub(super) fn try_worker_for_blank_pdf(
     {
         return Ok(Some((PdfOutcome::Sensitive(sensitivity), None)));
     }
-    // Each converted block becomes one page chunk at its start page: page
-    // blocks keep their physical file index and section blocks fall back to
-    // their start page. The block's end anchor, anchor kind and warning are
-    // not stored. Provenance travels beside the drafts so the derived index
-    // records which converter produced this generation.
     let provenance = extraction.provenance();
     Ok(Some((
         PdfOutcome::Drafts(

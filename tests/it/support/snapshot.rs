@@ -1,5 +1,3 @@
-//! Read-only, order-independent schema and content snapshots for test-selected tables.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 

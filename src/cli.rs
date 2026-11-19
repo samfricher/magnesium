@@ -45,11 +45,6 @@ const PUBLIC_COMMANDS: [(&str, &str); 13] = [
     ),
 ];
 
-/// The version `magnesium --version` prints. A build given a commit in
-/// `MAGNESIUM_BUILD_COMMIT`, as the Mac download's is, adds it as semver
-/// build metadata: `0.3.0+<commit>`. Magnesium's window compares it with its
-/// own commit to tell its copy of the program from another, even between
-/// releases. An ordinary build prints the version alone.
 fn version_text(commit: Option<&str>) -> String {
     let version = env!("CARGO_PKG_VERSION");
     match commit.map(str::trim) {
@@ -66,7 +61,6 @@ fn version_text(commit: Option<&str>) -> String {
 }
 
 pub(crate) fn command() -> ClapCommand {
-    // Leaked once: clap keeps the version as a static string.
     let version: &'static str =
         Box::leak(version_text(option_env!("MAGNESIUM_BUILD_COMMIT")).into_boxed_str());
     let public = PUBLIC_COMMANDS.into_iter().fold(
@@ -243,7 +237,6 @@ pub(crate) fn command() -> ClapCommand {
                                 .value_name("HOST_KIND")
                                 .help("Host whose plugin runs this hook, because its event JSON carries no kind field; only claude is supported"),
                         )
-                        // The retired events still parse; see hooks::RETIRED_EVENTS.
                         .arg(Arg::new("event").required(true).value_parser([
                             "session-start",
                             "user-prompt-submit",
@@ -268,7 +261,6 @@ mod tests {
             super::version_text(Some("0123abc\n")),
             format!("{version}+0123abc")
         );
-        // Not a semver identifier, so it is not printed as one.
         assert_eq!(super::version_text(Some("abc def")), version);
         assert_eq!(super::version_text(Some("abc+def")), version);
     }

@@ -1,14 +1,3 @@
-//! The `magnesium` program on this Mac.
-//!
-//! The Mac download carries the program inside the app, built from the same
-//! commit as the window. On first open the window installs it, so the window,
-//! the agent's hooks and a terminal all run one copy. A different copy that is
-//! already installed is replaced only after the learner agrees, because a
-//! newer program upgrades each study folder's record when it opens the folder.
-//!
-//! The window run from source carries no program, and uses the one installed,
-//! as before.
-
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -22,27 +11,18 @@ use crate::paths;
 use crate::runtime;
 use crate::store::Store;
 
-/// Set this to name the program inside the app in place of the one beside the
-/// window's own binary. For tests.
 pub const BUNDLED_ENV: &str = "MAGNESIUM_APP_BUNDLED";
-/// Set this to install a new copy somewhere other than `~/.local/bin`. For
-/// tests.
 pub const TARGET_ENV: &str = "MAGNESIUM_APP_INSTALL_TO";
 
-/// A `magnesium` program and what `--version` printed for it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Program {
-    /// Where it is, with the home folder written as `~`.
     pub shown_path: String,
     #[serde(skip)]
     pub path: PathBuf,
-    /// The version, with the commit the download's build adds after a `+`,
-    /// such as `0.3.0+1a2b3c…`. Empty when the program did not answer.
     pub version: String,
 }
 
 impl Program {
-    /// The version without the commit, such as `0.3.0`.
     pub fn number(&self) -> &str {
         self.version.split('+').next().unwrap_or_default()
     }
@@ -51,30 +31,19 @@ impl Program {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeState {
-    /// The program is installed, and it is the app's own copy or the app
-    /// carries none.
     Ready,
-    /// No program is installed and the app carries none to install.
     Missing,
-    /// Another copy is installed. The window asks before replacing it.
     Different,
-    /// The learner chose to keep another copy.
     Kept,
-    /// The installed copy is older than this window needs. No lesson starts
-    /// until it is replaced, and it cannot be kept.
     TooOld,
-    /// The app's copy could not be installed, or does not run.
     Failed,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeSetup {
     pub state: RuntimeState,
-    /// The copy lessons run: the installed one.
     pub installed: Option<Program>,
-    /// The copy inside the app. None for the window run from source.
     pub bundled: Option<Program>,
-    /// True when the window installed its copy just now.
     pub installed_now: bool,
     pub message: Option<String>,
 }
@@ -87,8 +56,6 @@ fn shown(path: &Path) -> String {
     }
 }
 
-/// The program inside the app: beside the window's own binary, in
-/// `Magnesium.app/Contents/MacOS`.
 pub fn bundled_path() -> Option<PathBuf> {
     if let Some(named) = env::var_os(BUNDLED_ENV).filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(named)).filter(|p| p.is_file());
@@ -98,9 +65,6 @@ pub fn bundled_path() -> Option<PathBuf> {
     beside.is_file().then_some(beside)
 }
 
-/// Where a new copy goes when none is installed: `~/.local/bin`, where the
-/// install guide suggests and where Anthropic's installer puts `claude`. So
-/// a terminal that finds `claude` finds `magnesium` too.
 pub fn default_target() -> PathBuf {
     if let Some(named) = env::var_os(TARGET_ENV).filter(|v| !v.is_empty()) {
         return PathBuf::from(named);
@@ -108,8 +72,6 @@ pub fn default_target() -> PathBuf {
     paths::home().join(".local/bin/magnesium")
 }
 
-/// Ask a program for its version. A program that does not answer as
-/// `magnesium <version>` gives an empty version.
 pub fn identify(path: &Path) -> Program {
     let mut command = paths::light_command(path);
     command.arg("--version");
@@ -130,7 +92,6 @@ pub fn identify(path: &Path) -> Program {
     }
 }
 
-/// What is installed and what the app carries, without changing anything.
 fn look(store: &Store) -> RuntimeSetup {
     let installed = runtime::program().map(|path| identify(&path));
     let bundled = bundled_path().map(|path| identify(&path));
@@ -174,9 +135,6 @@ fn look(store: &Store) -> RuntimeSetup {
     setup
 }
 
-/// Refuse an installed program that is older than this window needs, in
-/// place of using it or offering to keep it. The number it reports decides,
-/// not its version: a build from an older commit can carry the same version.
 fn refuse_too_old(setup: &mut RuntimeSetup) {
     let usable = matches!(
         setup.state,
@@ -214,8 +172,6 @@ fn refuse_too_old(setup: &mut RuntimeSetup) {
     setup.message = Some(format!("{this} {fix}"));
 }
 
-/// The install guide, for a window that carries no program of its own. It is
-/// written for a coding agent to follow.
 pub const INSTALL_GUIDE: &str = "the install guide, docs/install.md in the Magnesium repository";
 
 fn kept_message(installed: &Program) -> String {
@@ -225,8 +181,6 @@ fn kept_message(installed: &Program) -> String {
     )
 }
 
-/// What is installed, after installing the app's copy if there was none. A
-/// first copy needs no question: nothing is replaced.
 pub fn check(store: &Store) -> RuntimeSetup {
     let setup = look(store);
     match (&setup.state, &setup.bundled) {
@@ -238,8 +192,6 @@ pub fn check(store: &Store) -> RuntimeSetup {
     }
 }
 
-/// Replace the installed copy with the app's own, in the same place, so one
-/// copy stays on this Mac. The learner agreed to this.
 pub fn replace(store: &Store) -> RuntimeSetup {
     let setup = look(store);
     let (Some(bundled), Some(installed)) = (&setup.bundled, &setup.installed) else {
@@ -253,7 +205,6 @@ pub fn replace(store: &Store) -> RuntimeSetup {
     finish(store, &bundled, &target)
 }
 
-/// Keep the installed copy. The window does not ask again for this version.
 pub fn keep(store: &Store) -> RuntimeSetup {
     let setup = look(store);
     if setup.state != RuntimeState::Different {
@@ -269,8 +220,6 @@ fn finish(store: &Store, bundled: &Program, target: &Path) -> RuntimeSetup {
     match install(&bundled.path, target, &bundled.version) {
         Ok(()) => {
             let mut setup = look(store);
-            // The window found a copy after all, but not this one: another
-            // folder on the PATH comes first.
             if setup.state != RuntimeState::Ready {
                 setup.state = RuntimeState::Failed;
                 setup.message = Some(format!(
@@ -295,13 +244,6 @@ fn finish(store: &Store, bundled: &Program, target: &Path) -> RuntimeSetup {
     }
 }
 
-/// Write the program to `target`, whole, and check that the copy runs.
-///
-/// The bytes are written to a new file, not copied: a copy keeps the file's
-/// extended attributes, and with them the download flag that macOS sets on a
-/// downloaded app. macOS can then refuse to run the copy when the agent's
-/// hooks call it. The new file replaces the old one in one step, so a program
-/// that is running is never changed under it.
 pub fn install(source: &Path, target: &Path, expected: &str) -> Result<(), String> {
     let folder = target.parent().ok_or("it has no folder")?;
     fs::create_dir_all(folder).map_err(|e| format!("{e}."))?;
@@ -318,11 +260,6 @@ pub fn install(source: &Path, target: &Path, expected: &str) -> Result<(), Strin
         }
         let mut file = options.open(&part)?;
         file.write_all(&bytes)?;
-        // The lint at the root of the repository sends every flush through
-        // a helper of the runtime's, so that the runtime's tests can skip
-        // it. The window links none of the runtime's code, and this flush is
-        // the point: the program must be whole on disk before it takes the
-        // place of the one installed.
         #[allow(clippy::disallowed_methods)]
         file.sync_all()
     })();
@@ -346,7 +283,6 @@ pub fn install(source: &Path, target: &Path, expected: &str) -> Result<(), Strin
     Ok(())
 }
 
-/// Remove macOS's download flag, if the file has one.
 fn clear_download_flag(path: &Path) {
     if !cfg!(target_os = "macos") {
         return;

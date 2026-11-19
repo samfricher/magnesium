@@ -1,8 +1,3 @@
-//! Admission for immutable whole records using the actual read packet serializer.
-//!
-//! Field limits bound decoded input. This owner additionally checks its encoded
-//! read envelope, including JSON escaping, canonical references, trace receipts,
-//! and full-width counters. Raw event text retains its separate ranged read path.
 use super::{
     pages::{
         Admission, Builder, CursorScope, Dependencies, Item, Packet, PageCoverage, PageItem,
@@ -14,8 +9,6 @@ use super::{
 use crate::learner::{LearnerError, Result, limits, model::SchemaVersion};
 use rusqlite::{Connection, params};
 
-/// Workspace identity is immutable. All other changing mandatory scalar fields
-/// reserve their supported maximum encoded width; no unrelated byte cap exists.
 fn envelope(conn: &Connection, action: &str) -> std::result::Result<Packet, String> {
     let mut state = records::workspace_state(conn)?;
     state.memory_generation = i64::MAX;
@@ -30,7 +23,6 @@ fn envelope(conn: &Connection, action: &str) -> std::result::Result<Packet, Stri
         format!("trace-{}", "f".repeat(64)),
         false,
     );
-    // A recorded trace has its full ID, unlike either unsuccessful status.
     packet.trace_status = "recorded";
     Ok(packet)
 }
@@ -82,7 +74,6 @@ pub(crate) fn validate_memory_envelopes(
     });
     let mut packet = envelope(conn, "history").map_err(data_error)?;
     let mut current = records::current_ref(&memory);
-    // A future revision or retirement must not make an older snapshot unreadable.
     current.revision = i64::MAX;
     current.lifecycle = Lifecycle::Retired;
     packet.current_ref = Some(current);
@@ -99,8 +90,6 @@ pub(crate) fn validate_memory_envelopes(
         },
     );
     let mut builder = Builder::new(packet, limits::PACKET_BYTES);
-    // Reserve a real executable history continuation, even for the first change:
-    // later revisions can put this immutable snapshot on an intermediate page.
     match builder.try_push(
         PageItem {
             after: PageKey::Number(revision),
@@ -140,8 +129,6 @@ fn observation_fits(
     if !single_observation_fits(conn, observation)? {
         return Ok(false);
     }
-    // An accepted observation must remain discoverable in the canonical browse
-    // as well as by known ID. Reserve the real intermediate-page continuation.
     let request = Request::Observations(ObservationsRequest {
         schema: SchemaVersion::V2,
         max_bytes: Some(limits::PACKET_BYTES),
@@ -183,17 +170,12 @@ fn observation_fits(
     ))
 }
 
-/// Relationship previews can grow after an observation is committed. They are
-/// optional; an executable support call preserves access without cutting prose.
 pub(super) fn fit_observation_preview(
     conn: &Connection,
     observation: &mut Observation,
 ) -> std::result::Result<(), String> {
     while !observation_fits(conn, observation)? {
         if observation.current_memory_refs.pop().is_none() {
-            // Existing stores predate this conservative write envelope. Once
-            // optional refs are exhausted, the actual read Builder decides what
-            // fits; synthetic future metadata must not break a valid old read.
             return Ok(());
         }
         defer_memory_refs(observation);
@@ -208,7 +190,6 @@ pub(crate) fn validate_observation_envelope(
 ) -> Result<()> {
     let mut observation = records::observation(conn, id).map_err(data_error)?;
     observation.current_memory_refs.clear();
-    // Reserve the actual typed support call for any future memory associations.
     defer_memory_refs(&mut observation);
     if !observation_fits(conn, &observation).map_err(data_error)? {
         return Err(too_large(field, "observation"));

@@ -1,15 +1,7 @@
-//! Refresh the installed Claude Code plugin copy for this runtime and print
-//! the steps that update the runtime itself. Magnesium is built from source, so this
-//! command never fetches or runs anything over the network.
-//!
-//! Learner stores belong to individual workspaces. Updating the installation
-//! never opens, migrates, imports, or deletes learner databases.
-
 use std::process::ExitCode;
 
 use crate::workspace::GlobalPaths;
 
-/// The update steps of docs/install.md. Magnesium cannot rebuild itself.
 const SOURCE_UPDATE_STEPS: &str = "Magnesium is built from source. To update it (docs/install.md, \"Update\"):
   1. In your clone of the Magnesium repository, run `git fetch --tags`, find the newest release tag with `git tag --no-column --sort=-v:refname | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+' | head -1`, and run `git checkout <newest-tag>`. A detached HEAD is expected. Check that `git tag --no-column --points-at HEAD --sort=-v:refname | grep -Ex 'v[0-9]+\\.[0-9]+\\.[0-9]+' | head -1` prints the tag that the lookup printed. Empty output means the commit has no release tag.
   2. Run `cargo build --locked --release`.

@@ -1,41 +1,4 @@
 #!/usr/bin/env python3
-"""Magnesium local document-conversion worker (LEARN-208).
-
-Optional, separately packaged Docling worker speaking the native
-`MAGNESIUM_DOCS_V1` framed protocol over stdio (see
-`src/retrieval/manifest/convert.rs`). The native runtime opens the
-authorized source itself and hands this worker a read-only snapshot
-path; the worker accepts no model-supplied paths or URL fetches and
-performs no network enrichment.
-
-Contract:
-- stdin: one frame `MAGNESIUM_DOCS_V1 <len>\\n<json>` with
-  `{version, source_kind, source_sha256, snapshot_path, anchor_start,
-  anchor_end}`.
-- stdout: one frame `MAGNESIUM_DOCS_V1 <len>\\n<json>` with
-  `{version, method, method_version, source_sha256, blocks, warnings,
-  coverage, missing?, reason?}`. Blocks carry `anchor_kind`
-  (`page`|`section`), 1-based `anchor_start`/`anchor_end`, `text`, and
-  an optional `warning` for uncertain reading order, formulas, or table
-  relationships. Physical page indices are file-page indices; printed
-  page numbers are never substituted.
-- Any failure exits nonzero with a bounded stderr line; the native
-  side preserves the original and the last valid index generation.
-
-Conversion uses the pinned local Docling pipeline (CPU, remote
-enrichment disabled). OCR stays off unless `MAGNESIUM_DOCS_WORKER_OCR=1`
-and local OCR models are installed; without OCR, scanned pages report
-`text_unavailable` honestly instead of guessing. Extracted text and
-confidence values are derived data, never facts about a learner and
-never proof of mathematical correctness.
-
-Docling API surface targets docling-slim 2.126.0 /
-docling-core 2.96.0 (see requirements.txt in
-this directory).
-Executed conversion is NOT_RUN where Docling is not installed; the
-framing, validation, and mapping paths are covered by
-workers/docling/tests/ with a stubbed docling module.
-"""
 
 import hashlib
 import json
@@ -52,7 +15,6 @@ MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_BLOCKS = 512
 
-# Labels that never become conversion blocks on their own.
 SKIP_LABELS = frozenset(
     {
         "page_header",
@@ -62,7 +24,6 @@ SKIP_LABELS = frozenset(
         "empty_value",
     }
 )
-# Labels whose text needs an explicit uncertainty warning.
 WARN_LABELS = frozenset({"table", "formula"})
 
 
@@ -158,7 +119,7 @@ def package_versions():
 def convert_with_docling(snapshot, kind, start, end):
     try:
         from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.settings import PageRange  # noqa: F401 (re-export check)
+        from docling.datamodel.settings import PageRange
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.datamodel.pipeline_options import PdfPipelineOptions
     except ImportError as error:
@@ -176,7 +137,6 @@ def convert_with_docling(snapshot, kind, start, end):
     except Exception as error:
         fail("docling conversion failed: %s" % error)
     raw_status = getattr(result, "status", "")
-    # ConversionStatus is a str-mixin Enum, so str() would give "ConversionStatus.X".
     status = str(getattr(raw_status, "value", raw_status)).lower()
     if "failure" in status and "partial" not in status:
         errors = getattr(result, "errors", [])
@@ -235,8 +195,6 @@ def document_to_blocks(document, start, end):
             anchor_start = max(start, pages[0])
             anchor_end = min(end, pages[-1])
         else:
-            # Section-anchored content (DOCX/PPTX/EPUB flow): link to the
-            # requested range start so no block floats without an anchor.
             anchor_kind = "section"
             anchor_start = start
             anchor_end = end
@@ -288,8 +246,6 @@ def main():
         coverage = "text_unavailable"
         payload_reason = "conversion produced no text for the requested range"
     elif truncated or "partial" in status:
-        # Truncation is partial, never complete: the unconverted remainder
-        # stays visible as missing ranges instead of vanishing.
         coverage = "partial"
         payload_reason = ""
         if truncated:

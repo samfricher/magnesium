@@ -23,8 +23,6 @@ fn malformed_pdf_reports_text_unavailable_with_original_option() {
     let mut client = McpClient::spawn(&environment, true);
     client.initialize();
 
-    // Reconciliation/extraction of the malformed file may itself report a
-    // tool error; that outcome is fine — the assertion target is `sources`.
     let _ = client.request(
         100,
         "tools/call",
@@ -49,7 +47,6 @@ fn malformed_pdf_reports_text_unavailable_with_original_option() {
     let serialized = serde_json::to_string(&inspected).expect("serialize");
     assert!(!serialized.contains("no relevant content"), "{inspected}");
 
-    // External citations are labelled, never fetched, and carry no bytes.
     let external = client.call_value(
         102,
         "sources",

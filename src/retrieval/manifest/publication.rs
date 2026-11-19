@@ -1,5 +1,3 @@
-//! The only extraction publication owner: prepare without side effects, then
-//! compare one source revision before atomically publishing its entire outcome.
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
@@ -53,15 +51,11 @@ impl PreparedExtraction {
     }
 }
 
-/// Navigation detection, canonical IDs, ranking bodies and every JSON field
-/// are prepared before acquiring the source-cache writer lock.
 pub(super) fn prepare_extraction(
     source: &CurrentSource,
     extracted: Vec<ChunkDraft>,
     converter: Option<&ConverterProvenance>,
 ) -> Result<PreparedExtraction, ManifestError> {
-    // An identical piece at the same anchor (for example a long run of one
-    // repeated byte) gets the same candidate ID and adds nothing to search.
     let mut seen = HashSet::new();
     let extracted = extracted
         .into_iter()
@@ -276,8 +270,6 @@ pub(super) fn publish_extraction(
     transaction
         .commit()
         .map_err(|error| sqlite(index_path, "commit guarded source publication", error))?;
-    // A valid committed cache state is complete even when caller cancellation
-    // arrives afterwards. Never report rollback after commit or undo the state.
     #[cfg(test)]
     crate::request::test_checkpoint("source_publication_after_commit");
     Ok(published)

@@ -1,4 +1,3 @@
-//! Local v2 invariants replace the former numbered assessment/group graph.
 use crate::support::{TestEnvironment, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -21,7 +20,6 @@ fn update(environment: &TestEnvironment, request: Value) -> Value {
     receipt
 }
 
-/// One captured event, one observation, one memory and one review suggestion.
 fn seed_learner_state(environment: &TestEnvironment) {
     let started = v2::start(environment, "claude", THREAD);
     let session = started["references"]["session"].as_str().unwrap();

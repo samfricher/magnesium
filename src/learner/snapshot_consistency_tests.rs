@@ -1,4 +1,3 @@
-//! Independent contract review cases using the public reader over real SQLite.
 use super::*;
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
@@ -213,8 +212,6 @@ fn expensive_literal_scan_cancels_explicitly_and_restores_connection() {
         "Expensive literal scan must disclose interruption: {:?}",
         result.warnings
     );
-    // A plain count(*) runs in a handful of steps, under the handler's
-    // interval; this one visits every row, so a handler left behind stops it.
     assert_eq!(
         c.query_row(
             "SELECT count(*) FROM learner_memories WHERE summary LIKE '%needle%'",

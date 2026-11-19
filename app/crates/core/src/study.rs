@@ -1,16 +1,3 @@
-//! What the library, the course page and the progress page show, built from
-//! the runtime's digest and the learner's own plan files.
-//!
-//! Progress counts one thing: an answer the learner reproduced alone on a
-//! later day. Each such answer is one proof, and three prove a skill. Minutes,
-//! sessions and answers given with help are never counted, so nothing here
-//! reads them into a total. The days the learner studied are kept apart, in
-//! `activity`, and no proof depends on them.
-//!
-//! The runtime decides every proof and the level (`magnesium progress`). The
-//! window draws them. With an earlier runtime that has no such command, the
-//! window reads the gap log as before and shows no level.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,7 +17,6 @@ pub struct Exam {
     pub target: String,
     pub title: String,
     pub date: Option<String>,
-    /// The date as "Tue 17 Nov".
     pub day: Option<String>,
     pub days_left: Option<i64>,
 }
@@ -39,10 +25,7 @@ pub struct Exam {
 pub struct Last {
     pub days_ago: Option<i64>,
     pub goal: String,
-    /// The line the learner saved when they pressed Stop in the window. None
-    /// when they have studied since, in a terminal or anywhere else.
     pub stopped_at: Option<String>,
-    /// What the tutor's last checkpoint says comes next.
     pub next_action: Option<String>,
 }
 
@@ -50,8 +33,6 @@ pub struct Last {
 pub struct Paper {
     pub target: String,
     pub name: String,
-    /// The paper's path inside the study root, which can be a parent of the
-    /// folder the window opened.
     pub path: String,
     pub minutes: Option<u32>,
     pub sat: bool,
@@ -60,18 +41,11 @@ pub struct Paper {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeState {
-    /// A folder with a record or a plan.
     Ready,
-    /// A folder set up for Magnesium with nothing in it yet.
     Empty,
-    /// A folder Magnesium has not been set up in.
     NotSetUp,
-    /// The `magnesium` program is missing.
     NoRuntime,
-    /// An earlier Magnesium set this folder up. The window asks once before
-    /// it upgrades the folder.
     NeedsUpgrade,
-    /// The runtime could not read the folder.
     Unreadable,
 }
 
@@ -83,30 +57,13 @@ pub struct Home {
     pub message: Option<String>,
     pub exam: Option<Exam>,
     pub last: Option<Last>,
-    /// None when the window cannot tell how many are due (see `peek`).
     pub checks_due: Option<u32>,
-    /// How many quick checks "just the checks" would pose now. None when the
-    /// runtime cannot run a sitting of checks alone, as one older than it
-    /// cannot: the window then offers none.
     pub checks_alone: Option<u32>,
     pub redos_due: u32,
-    /// What the learner's next message here opens with, when it begins a
-    /// sitting: None when it carries one on, the opener is off, or nothing
-    /// is due (see `peek::opening`).
     pub opening: Option<peek::Opening>,
-    /// The question of the quick check the next sitting poses first, as the
-    /// record stores it, without its key. Only while the next message begins
-    /// a sitting that opens with checks, so it is the check that sitting
-    /// takes first. None when the record stores no question for it.
     pub first_check: Option<String>,
-    /// The record's ID for that check, to tell it from another once one is
-    /// posed. Opaque: it names neither the skill nor the question.
     pub first_check_id: Option<String>,
-    /// The record's ID for the quick check a reply of the current sitting has
-    /// posed and no answer has settled, or None.
     pub posed_check: Option<String>,
-    /// Skills not proven yet whose next pass can be earned today, as the
-    /// record has them. None when the runtime cannot say.
     pub can_count_today: Option<u32>,
     pub first_redo: Option<String>,
     pub papers: Vec<Paper>,
@@ -115,27 +72,16 @@ pub struct Home {
     pub block_minutes: u32,
 }
 
-/// How many checks a sitting of checks alone would pose, from what
-/// `magnesium progress --json` printed; None from a runtime that has none.
 pub fn checks_alone(progress: &Value) -> Option<u32> {
     progress["due"]["checks_alone"]
         .as_u64()
         .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
 }
 
-/// The question of the first quick check a sitting begun now would pose, from
-/// what `magnesium progress --json` printed. The runtime prints the question
-/// alone; anything else beside it is dropped here too, so a key never reaches
-/// the page that draws it before the tutor poses it.
 pub fn first_check(progress: &Value) -> Option<String> {
     text(&progress["first_check"]["question"])
 }
 
-/// How many skills not proven can earn a pass today: the record names today,
-/// or a day before it, as the first day their next pass can count. A skill
-/// never answered has no such day and is not counted. A skill in two plans is
-/// listed under each, and counted once. None from a record with no skills
-/// listed, as an earlier runtime prints.
 pub fn can_count_today(progress: &Value, today: NaiveDate) -> Option<u32> {
     let plans = progress["plans"].as_array();
     let other = progress["other"]["skills"].as_array();
@@ -187,8 +133,6 @@ fn exam_of(plan: &Value) -> Option<Exam> {
     })
 }
 
-/// The plan whose date is nearest and not past. A plan with no date is a
-/// topic, not an exam, and is chosen only when no dated plan is left.
 pub(crate) fn nearest_plan(plans: &[Value]) -> Option<&Value> {
     plans
         .iter()
@@ -198,7 +142,6 @@ pub(crate) fn nearest_plan(plans: &[Value]) -> Option<&Value> {
         .or_else(|| plans.last())
 }
 
-/// The root the runtime resolved for this folder, which may be a parent.
 pub(crate) fn root_of(digest: &Value, folder: &Path) -> PathBuf {
     text(&digest["study_folder"])
         .map(PathBuf::from)
@@ -206,19 +149,14 @@ pub(crate) fn root_of(digest: &Value, folder: &Path) -> PathBuf {
         .unwrap_or_else(|| folder.to_path_buf())
 }
 
-/// Whether the runtime says an earlier version set the folder up. Reading the
-/// record then would upgrade it, so the digest holds no record.
 fn upgrade_needed(digest: &Value) -> bool {
     digest["upgrade_needed"].as_bool() == Some(true)
 }
 
-/// Whether the folder needs an upgrade before a lesson can start in it.
 pub fn needs_upgrade(folder: &Path) -> bool {
     runtime::digest(folder).is_ok_and(|digest| upgrade_needed(&digest))
 }
 
-/// The study root for a folder: the folder itself, or the parent the runtime
-/// resolved it to.
 pub fn root(folder: &Path) -> PathBuf {
     runtime::digest(folder)
         .map(|digest| root_of(&digest, folder))
@@ -237,7 +175,6 @@ const KEY_WORDS: [&str; 9] = [
     "soln",
 ];
 
-/// Whether a file is an answer key by its name. The window never opens one.
 pub fn looks_like_a_key(path: &Path) -> bool {
     let name = path
         .file_name()
@@ -298,12 +235,6 @@ fn papers(root: &Path, target: &str, log: &GapLog) -> Vec<Paper> {
     papers
 }
 
-/// Whether the gap log on disk says what the learner record says. A runtime
-/// that writes the Gaps table itself marks the plan `gap_log_from: record`
-/// and counts the record's unfixed and due rows. The table can still differ:
-/// a hand edit is kept until the runtime next writes it. Then the file must
-/// not be shown, or a row could read as confirmed that the record has not
-/// confirmed. An older runtime gives no counts, and its file is the record.
 fn matches_record(plan: &Value, log: &GapLog, today: NaiveDate) -> bool {
     if plan["gap_log_from"].as_str() != Some("record") {
         return true;
@@ -328,12 +259,9 @@ pub fn home(folder: &Path, store: &Store) -> Home {
     read_folder(folder, store).home
 }
 
-/// A folder as the runtime describes it: the course page, and what its two
-/// read-only commands printed, so that no page asks for them twice.
 struct Folder {
     home: Home,
     digest: Option<Value>,
-    /// What `magnesium progress` printed. None with an earlier runtime.
     record: Option<Value>,
 }
 
@@ -397,7 +325,6 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
     };
     if digest["active"].as_bool() != Some(true) {
         home.state = HomeState::NotSetUp;
-        // `magnesium init` writes only inside `.magnesium/`.
         home.message = Some(
             "This space isn’t set up for Magnesium yet. Setting it up adds a hidden folder for the record of your answers and leaves your own files as they are."
                 .into(),
@@ -437,8 +364,6 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
                 .collect();
             (!parts.is_empty()).then(|| parts.join(" "))
         });
-    // The runtime counts what is due. An earlier runtime leaves the window
-    // to look for the quick checks itself, and it cannot always tell.
     home.checks_alone = record.as_ref().and_then(checks_alone);
     home.checks_due = match &record {
         Some(record) => Some(record["due"]["checks"].as_u64().unwrap_or(0) as u32),
@@ -465,9 +390,7 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
         .as_ref()
         .and_then(|record| can_count_today(record, today()));
 
-    // The most recently changed lesson is where the learner stopped.
     home.last = sessions.first().and_then(|session| {
-        // A stop line saved before the lesson last changed is out of date.
         let stopped_day = remembered
             .stopped_ms
             .and_then(chrono::DateTime::from_timestamp_millis)
@@ -499,34 +422,21 @@ fn fill_home(read: &mut Folder, folder: &Path, store: &Store) {
     read.record = record;
 }
 
-/// How far the proof has come in one course. One proof is one answer the
-/// learner gave right, alone and cold, on its own day, and three prove a
-/// skill. The runtime works every number here out, the level too. All are 0
-/// when the runtime cannot say.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Proofs {
-    /// Proofs that count now.
     pub earned: u32,
-    /// Three for each skill of the course.
     pub total: u32,
-    /// Skills with all three proofs.
     pub proven: u32,
     pub skills: u32,
-    /// 1 to 10. It moves only when a proof is earned.
     pub level: u32,
-    /// Proofs still to earn before the next level. 0 at the top level.
     pub to_next: u32,
-    /// Whether the course has a level. A folder with no plan has none: its
-    /// skills are counted, as proven and in progress, and no level is given.
     pub levelled: bool,
 }
 
 impl Proofs {
-    /// The numbers under `progress` in what `magnesium progress` printed.
     fn from_record(progress: &Value) -> Option<Self> {
         let number = |name: &str| progress[name].as_u64().map(|n| n as u32);
         if progress.get("level").is_none() {
-            // Skills in no plan: counts, and no level.
             return Some(Self {
                 proven: number("proven")?,
                 skills: number("skills")?,
@@ -545,26 +455,19 @@ impl Proofs {
     }
 }
 
-/// One study folder in the library, read without opening it.
 #[derive(Clone, Debug, Serialize)]
 pub struct Card {
     pub folder: String,
     pub name: String,
     pub state: HomeState,
     pub exam: Option<Exam>,
-    /// What the learner last worked on.
     pub goal: Option<String>,
     pub days_ago: Option<i64>,
     pub proofs: Proofs,
-    /// Paper redos and quick checks due today or earlier.
     pub due: u32,
-    /// A timed paper whose clock is running.
     pub sitting: Option<PaperSitting>,
 }
 
-/// What the library shows for one folder. It runs the runtime's two
-/// read-only commands once each and reads the plan files. It never starts an
-/// agent and never changes the folder.
 pub fn card(folder: &Path, store: &Store) -> Card {
     let read = read_folder(folder, store);
     let home = &read.home;
@@ -589,8 +492,6 @@ pub fn card(folder: &Path, store: &Store) -> Card {
     card
 }
 
-/// The days on which the tutor marked an answer, in any of these folders, as
-/// each folder's record says. None when no folder's runtime can say.
 pub fn answered_days(folders: &[String]) -> Option<BTreeSet<NaiveDate>> {
     let records: Vec<Option<Value>> = std::thread::scope(|scope| {
         let readers: Vec<_> = folders
@@ -615,8 +516,6 @@ pub fn answered_days(folders: &[String]) -> Option<BTreeSet<NaiveDate>> {
     )
 }
 
-/// Where a card goes in the library: a running paper first, then the nearest
-/// exam that is not past, then the order the folders were last opened in.
 fn shelf_order(card: &Card, opened: usize) -> (bool, i64, usize) {
     let days = card
         .exam
@@ -627,8 +526,6 @@ fn shelf_order(card: &Card, opened: usize) -> (bool, i64, usize) {
     (card.sitting.is_none(), days, opened)
 }
 
-/// Every folder in the library, most urgent first. Each folder is read on
-/// its own thread, so the library takes as long as its slowest folder.
 pub fn library(folders: &[String], store: &Store) -> Vec<Card> {
     let mut cards: Vec<(usize, Card)> = std::thread::scope(|scope| {
         let readers: Vec<_> = folders
@@ -645,30 +542,16 @@ pub fn library(folders: &[String], store: &Store) -> Vec<Card> {
     cards.into_iter().map(|(_, card)| card).collect()
 }
 
-/// One row of proof. `dots` holds three marks: 2 is a pass that counts, 1 is a
-/// pass made before a later failure, 0 is a pass still to make.
 #[derive(Clone, Debug, Serialize)]
 pub struct Row {
     pub dots: [u8; 3],
     pub name: String,
     pub what: String,
     pub note: String,
-    /// Whether the record asks for it today: a quick check or a redo on it
-    /// is due, and a proof can be earned today.
     pub due: bool,
-    /// The first day the next proof can be earned, as "2026-11-12". The
-    /// runtime names one for every skill not proven, except one waiting for
-    /// its repair or never answered. For a skill with no check or redo it
-    /// is never before today.
     pub next_day: Option<String>,
-    /// The runtime says the skill waits for its repair before it can count
-    /// again: a lost mark on a paper not yet repaired. A skill with no next
-    /// day is not always one of these.
     pub needs_repair: bool,
-    /// The record's id for the newest answer marked on this skill, as the
-    /// runtime groups answers by skill. None when the runtime does not say.
     pub last_answer: Option<String>,
-    /// Sort key: the day the next proof is due.
     #[serde(skip)]
     order: Option<NaiveDate>,
 }
@@ -681,42 +564,26 @@ pub struct Progress {
     pub in_progress: Vec<Row>,
     pub untested: Vec<Row>,
     pub scores: Vec<gaplog::Score>,
-    /// Answers given with help. They are listed and never counted.
     pub helped: Vec<String>,
     pub helped_count: usize,
     pub unreadable: usize,
-    /// The quick checks are left out because the window cannot tell their
-    /// passes (see `peek`).
     pub checks_unknown: bool,
     pub proofs: Proofs,
-    /// The runtime could not say how far the course is proved, so no level
-    /// is shown: it is an earlier version, or it has not read this plan's
-    /// gap log into the record yet.
     pub level_unknown: bool,
-    /// What the learner did today in this folder. None when the runtime
-    /// cannot say: it is an earlier version, or the folder needs an upgrade.
     pub today: Option<Today>,
     pub message: Option<String>,
 }
 
-/// What the learner did today in one study folder, as the runtime counts it
-/// from the record.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Today {
-    /// The day these counts are for, as "2026-11-11".
     pub day: String,
-    /// Answers the tutor marked today.
     pub answered: u32,
-    /// Skills answered for the first time today.
     pub started: u32,
-    /// Proofs earned today. The runtime calls them passes.
     pub proofs: u32,
-    /// Quick checks and redos that come due tomorrow.
     pub due_tomorrow: u32,
 }
 
 impl Today {
-    /// `today` and `today_counts` in what `magnesium progress` printed.
     fn from_record(record: &Value) -> Option<Self> {
         let counts = record.get("today_counts")?;
         let number = |name: &str| counts[name].as_u64().map(|n| n as u32);
@@ -748,7 +615,6 @@ fn due_note(next: Option<NaiveDate>, today: NaiveDate, otherwise: &str) -> Strin
     }
 }
 
-/// The day the next proof can be earned, for a skill that is not proven yet.
 fn next_day(closed: bool, next: Option<NaiveDate>) -> Option<String> {
     next.filter(|_| !closed)
         .map(|date| date.format("%Y-%m-%d").to_string())
@@ -817,8 +683,6 @@ fn check_row(check: &Check, today: NaiveDate) -> Row {
     }
 }
 
-/// The rows of proof for one plan, and the skills of its folder that are in
-/// no plan.
 #[derive(Default)]
 struct Board {
     confirmed: Vec<Row>,
@@ -827,7 +691,6 @@ struct Board {
     scores: Vec<gaplog::Score>,
     unreadable: usize,
     checks_unknown: bool,
-    /// The runtime's numbers. None when it could not give them.
     proofs: Option<Proofs>,
 }
 
@@ -845,7 +708,6 @@ impl Board {
     }
 }
 
-/// Which list a row goes in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Place {
     Confirmed,
@@ -857,9 +719,6 @@ fn day_of(value: &Value) -> Option<NaiveDate> {
     value.as_str().and_then(crate::activity::parse)
 }
 
-/// One skill as `magnesium progress` printed it, as a row. `covers` is what
-/// the course's graph says the skill covers, shown for a skill with nothing
-/// else to say.
 fn skill_row(skill: &Value, covers: Option<&str>, today: NaiveDate) -> (Place, Row) {
     let passes = skill["passes"].as_u64().unwrap_or(0).min(3) as u8;
     let earlier = skill["earlier_passes"].as_u64().unwrap_or(0).min(3) as u8;
@@ -873,8 +732,6 @@ fn skill_row(skill: &Value, covers: Option<&str>, today: NaiveDate) -> (Place, R
         (Some(wrong), Some(restarted)) => format!("{wrong} · {restarted}"),
         (Some(wrong), None) => wrong,
         (None, Some(restarted)) => restarted,
-        // A skill that was never got wrong says where it was answered, or
-        // what it covers.
         (None, None) => text(&skill["why"])
             .or_else(|| covers.map(str::to_owned))
             .unwrap_or_default(),
@@ -926,9 +783,6 @@ fn skill_rows(
         .collect()
 }
 
-/// The rows as the runtime's record gives them: the plan's skills, then the
-/// skills in no plan. None when the record cannot speak for this plan,
-/// because its gap log is still a file the runtime has not read in.
 fn record_board(
     record: &Value,
     root: &Path,
@@ -954,7 +808,6 @@ fn record_board(
                 .map(|(tag, covers)| (tag.trim().to_ascii_lowercase(), covers))
                 .filter(|(_, covers)| !covers.is_empty())
                 .collect();
-            // The papers' scores are the tutor's own table in the gap log.
             board.scores = gap_log(root, &exam.target).scores;
             board.place(skill_rows(&plan["skills"], &covers, today));
             &plan["progress"]
@@ -966,11 +819,6 @@ fn record_board(
     Some(board)
 }
 
-/// Read the rows of proof. The runtime's record gives them when it can. With
-/// an earlier runtime, or a plan whose gap log the runtime has not read in,
-/// they come from the gap log on disk, and no level is given. An error is the
-/// sentence to show in place of the rows: the gap log on disk does not say
-/// what the learner record says.
 fn board(
     root: &Path,
     plan: Option<&Value>,
@@ -1029,9 +877,6 @@ fn board(
                 }),
         );
     }
-    // Skills in no plan belong to the folder, not to one exam. The record
-    // gives them when there is one. An earlier runtime leaves the window to
-    // look for the quick checks itself.
     match record {
         Some(record) => rows.extend(skill_rows(
             &record["other"]["skills"],
@@ -1116,7 +961,6 @@ pub fn progress(folder: &Path, target: Option<&str>) -> Progress {
     progress
 }
 
-/// What the rail shows beside a lesson.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Rail {
     pub goal: Option<String>,
@@ -1151,7 +995,6 @@ mod tests {
             checks_alone(&serde_json::json!({"due": {"checks": 5, "checks_alone": 3}})),
             Some(3)
         );
-        // An older runtime counts the checks but cannot pose them alone.
         assert_eq!(
             checks_alone(&serde_json::json!({"due": {"checks": 5}})),
             None
@@ -1165,7 +1008,6 @@ mod tests {
             Some("What is b?".into())
         );
         assert_eq!(first_check(&json!({"first_check": null})), None);
-        // An earlier runtime prints none.
         assert_eq!(first_check(&json!({"due": {"checks": 1}})), None);
     }
 
@@ -1186,7 +1028,6 @@ mod tests {
             "other": {"skills": [{"skill": "loose", "proven": false, "next_on": "2026-11-17"}]},
         });
         assert_eq!(can_count_today(&printed, today), Some(3));
-        // The same skill in two plans is one skill.
         let twice = json!({
             "plans": [
                 {"plan": "a", "skills": [{"skill": "pooled variance", "proven": false, "next_on": "2026-11-17"}]},
@@ -1228,8 +1069,6 @@ mod tests {
         assert_eq!(dots(3, 2), [2, 2, 2]);
     }
 
-    /// What `magnesium progress` prints for a course with one plan: four
-    /// skills in it, and a quick check from chat that is in no plan.
     fn record() -> Value {
         json!({
             "active": true,
@@ -1250,7 +1089,6 @@ mod tests {
                      "why": "midterm-1#4 open, waiting for its repair", "due": false, "next_on": null, "last_pass_on": null,
                      "restarted_on": null, "needs_repair": true, "what_went_wrong": "read n from the wrong axis",
                      "rows": ["midterm-1#4"], "quick_check": false},
-                    // Never got wrong: answered right, alone and cold, on two days.
                     {"skill": "units", "passes": 2, "earlier_passes": 0, "proven": false, "reading": "sound",
                      "why": "cold in Paper A Q2", "due": false, "next_on": null, "last_pass_on": "2026-11-09",
                      "restarted_on": null, "needs_repair": false, "what_went_wrong": "", "rows": [], "quick_check": false},
@@ -1294,7 +1132,6 @@ mod tests {
                 due_tomorrow: 3,
             })
         );
-        // A count it cannot read gives none, not a zero that is not true.
         printed["today_counts"]["answered"] = json!("six");
         assert_eq!(Today::from_record(&printed), None);
     }
@@ -1316,15 +1153,12 @@ mod tests {
         let board = record_board(&record(), dir.path(), Some(&exam("midterm-1")), today).unwrap();
         let names = |rows: &[Row]| rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>();
 
-        // The level is the runtime's, over every skill of the plan.
         let proofs = board.proofs.unwrap();
         assert_eq!((proofs.level, proofs.earned, proofs.total), (4, 6, 15));
         assert_eq!((proofs.proven, proofs.skills, proofs.to_next), (1, 5, 1));
 
         assert_eq!(names(&board.confirmed), ["km"]);
         assert_eq!(board.confirmed[0].note, "confirmed Fri 6 Nov");
-        // What is due comes first. A skill never got wrong is in progress
-        // once it has a proof, and a quick check from chat is here too.
         assert_eq!(
             names(&board.in_progress),
             ["slope", "sign of b", "hill", "units"]
@@ -1370,7 +1204,6 @@ mod tests {
         let proofs = board.proofs.unwrap();
         assert!(!proofs.levelled, "{proofs:?}");
         assert_eq!((proofs.skills, proofs.proven, proofs.total), (1, 0, 0));
-        // A runtime from before #48 gave the skills in no plan a level.
         let board = record_board(&self::record(), dir.path(), None, today).unwrap();
         assert_eq!(board.proofs.unwrap().level, 4);
     }
@@ -1380,12 +1213,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
         let record = record();
-        // The record cannot speak for this plan, or for one it does not list.
         assert!(record_board(&record, dir.path(), Some(&exam("final")), today).is_none());
         assert!(record_board(&record, dir.path(), Some(&exam("other")), today).is_none());
 
-        // The gap log on disk is read instead. No level is given, and the
-        // skills in no plan still come from the record.
         let study = dir.path().join("Study/final");
         fs::create_dir_all(&study).unwrap();
         fs::write(
@@ -1434,8 +1264,6 @@ mod tests {
         ];
         cards.sort_by_key(|(opened, card)| shelf_order(card, *opened));
         let order: Vec<usize> = cards.iter().map(|(opened, _)| *opened).collect();
-        // The paper, the exam in 3 days, the one in 20, then no exam and a
-        // past exam in the order they were opened.
         assert_eq!(order, [4, 3, 0, 1, 2]);
     }
 
@@ -1479,15 +1307,12 @@ mod tests {
     fn only_the_runtime_says_a_skill_waits_for_its_repair() {
         let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
         let skill = |needs: bool, next: Option<&str>| serde_json::json!({"skill": "pooled standard error", "passes": 0, "needs_repair": needs, "next_on": next});
-        // Waiting for its repair: no day, and the runtime says so.
         let (_, waits) = skill_row(&skill(true, None), None, today);
         assert!(waits.needs_repair);
         assert_eq!(waits.next_day, None);
-        // No day, and nothing to repair: not one that waits.
         let (_, dateless) = skill_row(&skill(false, None), None, today);
         assert!(!dateless.needs_repair);
         assert_eq!(dateless.next_day, None);
-        // A gap log's row: repaired with no redo date yet is not waiting; unrepaired is.
         let gap = |repaired: bool| Gap {
             paper: "Diagnostic".into(),
             question: "Q3".into(),

@@ -1,8 +1,3 @@
-//! `magnesium attempts`: every answer the tutor marked, one row each.
-//!
-//! Read-only. The rows come from the learner store's `attempts` table, which
-//! the runtime fills from the attempts on recorded observations, in chat and
-//! on practice papers.
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 use chrono::{Local, TimeZone};
@@ -10,7 +5,6 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::process::ExitCode;
 
-/// Every attempt, oldest first.
 pub(crate) fn list(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
     let mut statement = conn.prepare(
         "SELECT attempt_id,answered_at_ms,question,paper,paper_question,mark,marks,out_of,
@@ -65,7 +59,6 @@ fn number(value: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// One line per attempt, for a person reading the terminal.
 fn render(attempts: &[Value]) -> String {
     if attempts.is_empty() {
         return "No answers recorded yet.\n".into();

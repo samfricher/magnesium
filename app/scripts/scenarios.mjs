@@ -1,32 +1,3 @@
-// Play the evidence contract's five scenarios in the real window, through
-// the harness (src/harness.ts), and photograph each step. Builds nothing.
-//
-//   node scripts/scenarios.mjs <app-binary> <out-dir> [--live]
-//
-// <app-binary> is the window's program, such as
-// target/release/bundle/macos/Magnesium.app/Contents/MacOS/magnesium-window.
-// It works in a scratch course made by scripts/scratch-course.sh, under the
-// system's temporary folder, with a scratch window home: none of your study
-// folders, settings or agent sessions are touched. Lessons run on Magnesium
-// (the direct engine) with the stand-in model (crates/core/tests/
-// stand_in_model.py), which starts no model and reaches no network. With
-// --live they run on the real `claude` on your PATH, on your subscription.
-//
-// It writes to <out-dir>:
-//   <stem>-dark.png, <stem>-light.png  each step, in both schemes, with the
-//                    contract's stems: s1-cold-first, s1-cold, s2-start,
-//                    s2-answer, s3-before, s3-after, s4-offplan, s4-return,
-//                    s5-week, s5-week-next
-//   perf.json        startup of each opening, and input latency mid-lesson
-//   attempts.json    the runtime's `attempts --json`, before and after
-//   plan-before.json, plan-after.json   core.plan() around scenario 3
-//   transcript.md    every message sent, with its intent, and every reply
-//   run.json         what each step did, and any problem
-// It needs only what a concept that follows the contract gives it: ready(),
-// data-drive="start" and data-drive="composer" (or "answer" and "talk", for a
-// concept that takes them in different places), and every action reachable
-// from there. It exits 1 when a step failed, after doing every step it can.
-
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,15 +21,10 @@ if (!existsSync(binary)) {
 const out = resolve(outArg);
 mkdirSync(out, { recursive: true });
 
-// A reply from the real model takes far longer than the stand-in's.
 const TURN_MS = live ? 300_000 : 60_000;
 const OPEN_MS = 60_000;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-// The words the learner types, from the brief's scenarios.
-// The stand-in model poses a standard-error question and marks this right.
-// The real tutor's first question differs from run to run, so the live
-// answer is a genuine attempt that fits any first question on sampling.
 const ANSWER = live
   ? "I think an average varies less than a single value does: its spread is the spread of one value divided by √n."
   : "The standard error is s/√n = 10/√25 = 2 minutes.";
@@ -72,8 +38,6 @@ const problem = (what) => {
   console.error(`scenarios: ${what}`);
 };
 const save = () => writeFileSync(join(out, "run.json"), JSON.stringify(run, null, 2));
-
-// --- The scratch course -------------------------------------------------------
 
 const scratch = mkdtempSync(join(tmpdir(), "mg-scenarios-"));
 run.scratch = scratch;
@@ -100,11 +64,8 @@ function attempts() {
 }
 const attemptsBefore = attempts();
 
-// --- The window ---------------------------------------------------------------
-
 const launches = {};
 
-/** Start the window. `home` is its scratch home; `folder` opens a study folder at once, or none for the library. */
 async function launch(name, { home = windowHome, folder = null } = {}) {
   const driveDir = join(out, "drive", name);
   rmSync(driveDir, { recursive: true, force: true });
@@ -128,7 +89,6 @@ async function launch(name, { home = windowHome, folder = null } = {}) {
   const exited = new Promise((done) => child.on("exit", (code) => done(code)));
   const window = { name, child, exited, driveDir, perfFile, op: (op, options) => drive(driveDir, op, options) };
   launches[name] = window;
-  // Ready: the first screen has its real content.
   const start = Date.now();
   for (;;) {
     const answer = await window.op({ op: "ready" }, { timeoutMs: 5_000 });
@@ -151,7 +111,6 @@ async function step(window, label, op) {
   return answer;
 }
 
-/** Photograph the window in both schemes, as <stem>-dark.png and <stem>-light.png. */
 async function shoot(window, stem) {
   for (const scheme of ["dark", "light"]) {
     await window.op({ op: "scheme", scheme });
@@ -168,11 +127,6 @@ async function shoot(window, stem) {
   save();
 }
 
-/**
- * Type and send with Return, as the learner does. A concept with a field of
- * its own for answers or for talk names it by `role` ("answer", "talk"); the
- * window's one line for both is "composer".
- */
 async function say(window, label, words, role) {
   const placed = await window.op({ op: "focus", target: role, by: "drive" });
   if (placed.ok) run.steps.push({ label: `${label}: focus ${role}` });
@@ -216,10 +170,7 @@ const keepStartup = (window) => {
   }
 };
 
-// --- The scenarios ------------------------------------------------------------
-
 try {
-  // The very first open on a new Mac: nothing set up yet.
   const firstHome = join(scratch, "window-first");
   mkdirSync(firstHome, { recursive: true });
   const first = await launch("first", { home: firstHome });
@@ -227,13 +178,10 @@ try {
   keepStartup(first);
   await quit(first);
 
-  // 1. Open the app cold, with three courses in the library.
   const main = await launch("main");
   keepStartup(main);
   await shoot(main, "s1-cold");
 
-  // 2. Start a lesson: the single action the first screen offers, then
-  // answer the tutor's first task.
   await step(main, "s2: start", { op: "click", target: "start", by: "drive" });
   await step(main, "s2: the first words", { op: "wait_idle", timeout_ms: TURN_MS, quiet_ms: 2500 });
   await shoot(main, "s2-start");
@@ -243,14 +191,11 @@ try {
   const latency = await step(main, "perf: input latency", { op: "perf" });
   if (latency.ok) perf.input = { samples: latency.samples, median_ms: latency.median_ms, p95_ms: latency.p95_ms, max_ms: latency.max_ms };
 
-  // 3. Mid-lesson, change the plan, and watch it change.
   await readPlan(main, "plan-before.json");
   await say(main, "s3: change the plan", CHANGE, "talk");
   await step(main, "s3: the reply begins", { op: "wait_reply", timeout_ms: TURN_MS });
   await shoot(main, "s3-before");
   await step(main, "s3: the reply ends", { op: "wait_idle", timeout_ms: TURN_MS });
-  // The message names no new date, and a real tutor may rightly ask for one.
-  // If the exam has not moved, give the date it asked for, a week later.
   const moved = await window_plan(main);
   const before = JSON.parse(readFileSync(join(out, "plan-before.json"), "utf8"));
   if (before.exam_date && moved && moved.exam_date === before.exam_date) {
@@ -264,7 +209,6 @@ try {
   await shoot(main, "s3-after");
   await readPlan(main, "plan-after.json");
 
-  // 4. Something off the plan, then back.
   await say(main, "s4: off the plan", OFF_PLAN, "talk");
   await step(main, "s4: answered", { op: "wait_idle", timeout_ms: TURN_MS });
   await shoot(main, "s4-offplan");
@@ -274,7 +218,6 @@ try {
   await keepTranscript(main, "Scenarios 2 to 4");
   await quit(main);
 
-  // 5. A week away: every recorded time moves seven days back.
   execFileSync("sh", [join(APP, "scripts/scratch-course.sh"), scratch, "--days-ago", "7"], { stdio: "ignore" });
   const week = await launch("week");
   keepStartup(week);
@@ -288,8 +231,6 @@ try {
   problem(`stopped: ${error?.stack ?? error}`);
   for (const window of Object.values(launches)) if (window.child.exitCode === null) window.child.kill("SIGKILL");
 }
-
-// --- What was found ------------------------------------------------------------
 
 writeFileSync(join(out, "perf.json"), JSON.stringify(perf, null, 2));
 writeFileSync(join(out, "attempts.json"), JSON.stringify({ before: attemptsBefore, after: attempts() }, null, 2));

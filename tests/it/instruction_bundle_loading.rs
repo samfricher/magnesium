@@ -283,12 +283,7 @@ fn cli_and_mcp_serve_the_same_approved_bundle_without_mutation() {
     );
     let mut mcp = McpClient::spawn(&environment, true);
     mcp.initialize();
-    // A request after notifications/initialized serializes after that
-    // handshake notification on the server transport.
     mcp.request(2, "tools/list", json!({}));
-    // MCP startup initializes its host and may update workspace metadata. Take
-    // the action-level baseline only after startup so this proves that the
-    // context request itself is read-only.
     let mcp_events_before = event_count(&database);
     let mcp_state_before = DatabaseSnapshot::capture(&database, CURRENT_TABLES)
         .expect("snapshot learner records after MCP startup");

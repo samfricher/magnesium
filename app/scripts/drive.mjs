@@ -1,15 +1,3 @@
-// Send one instruction to a window started with MAGNESIUM_APP_DRIVE=<dir>,
-// wait for its answer, and print it. No dependencies.
-//
-//   node scripts/drive.mjs <dir> '{"op":"click","target":"start"}'
-//   node scripts/drive.mjs <dir> '{"op":"wait_idle","timeout_ms":120000}'
-//
-// Exits 0 when the answer says ok, 1 when it does not, 2 when no answer came
-// in time (the op's timeout_ms or ms, plus 30 s; 60 s otherwise).
-//
-// Every op and data-drive name is in scripts/harness.md. Also importable:
-//   import { drive } from "./drive.mjs"; await drive(dir, {op: "text"});
-
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +12,6 @@ function highest(dir) {
     .reduce((max, match) => Math.max(max, Number(match[1])), 0);
 }
 
-/** Send `op` to the window driven from `dir`; resolves to its answer, or {ok:false, error, timed_out:true}. */
 export async function drive(dir, op, { timeoutMs } = {}) {
   const inbox = join(dir, "in");
   const outbox = join(dir, "out");
@@ -42,7 +29,6 @@ export async function drive(dir, op, { timeoutMs } = {}) {
       try {
         return JSON.parse(readFileSync(answer, "utf8"));
       } catch {
-        // Not whole yet.
       }
     }
     await sleep(50);

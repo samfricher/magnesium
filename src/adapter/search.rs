@@ -46,7 +46,6 @@ pub(crate) fn handle_search(cwd: &Path, request: &SearchRequest) -> Result<Value
     )
 }
 
-/// Search previews stay small; `sources` opens the exact bounded anchor.
 fn source_snippet(body: &str, query: &str) -> String {
     let terms: Vec<_> = query
         .split_whitespace()

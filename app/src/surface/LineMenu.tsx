@@ -1,22 +1,13 @@
-// A short menu opened by one of the line's words. More floats over the line; Stuck opens as a row of its own
-// in the line, above the words, so it does not cover the question the learner is stuck on.
-// Its rows are data, so a tool joins the line by joining a list of rows.
-
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 export type LineRow = {
-  /** The row's harness name, and its React key. */
   id: string;
   label: string;
-  /** The key that does the same from anywhere, as the window names it. */
   keys?: string;
-  /** Said at the row's end instead of a key: what the row leads to, such as the model the session is on. */
   detail?: string;
-  /** The row opens something further rather than acting. */
   leads?: boolean;
   disabled?: boolean;
-  /** Rows of one group sit together; a rule parts one group from the next. */
   group: string;
   run: () => void;
 };
@@ -24,18 +15,13 @@ export type LineRow = {
 type Props = {
   label: string;
   rows: LineRow[];
-  /** The word that opened the menu: a press on it is its own, not a press elsewhere. */
   opener: RefObject<HTMLElement>;
-  /** The menu closed; `back` when the keyboard should go back to the line. */
   onClose: (back: boolean) => void;
-  /** Drawn as a row in the line's own flow, not floating over the page. */
   inline?: boolean;
 };
 
 export function LineMenu({ label, rows, opener, onClose, inline = false }: Props) {
   const menu = useRef<HTMLDivElement>(null);
-  // Over the line, unless the line sits too high on the page for the menu to fit above it. Under a session's
-  // first line, which has the next thing's name above it and the page's empty ground below.
   const [below, setBelow] = useState(false);
   const close = useRef(onClose);
   close.current = onClose;
@@ -45,7 +31,6 @@ export function LineMenu({ label, rows, opener, onClose, inline = false }: Props
     const line = el?.closest(".line");
     if (!el || !line) return;
     if (inline) {
-      // The row made the line taller: the whole line stays in view, not only the row the keyboard goes to.
       el.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus({ preventScroll: true });
       line.scrollIntoView({ block: "nearest" });
       return;
@@ -55,7 +40,6 @@ export function LineMenu({ label, rows, opener, onClose, inline = false }: Props
     el.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus();
   }, []);
 
-  // Esc closes it wherever the keyboard is; a press or the keyboard going elsewhere closes it too.
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;

@@ -114,8 +114,6 @@ fn canonical_source_keys_survive_incremental_refresh_rebuild_order_and_vacuum() 
     let keys = candidate_keys(&Connection::open(fixture.index()).unwrap());
     let projections = projection_snapshot(&Connection::open(fixture.index()).unwrap());
 
-    // Changed extraction order must reuse existing canonical keys even
-    // after both FTS rows have been deleted by incremental invalidation.
     let mut connection = Connection::open(fixture.index()).unwrap();
     let source = connection
             .query_row(
@@ -141,8 +139,6 @@ fn canonical_source_keys_survive_incremental_refresh_rebuild_order_and_vacuum() 
     assert_eq!(projection_snapshot(&connection), projections);
     drop(connection);
 
-    // A real source edit allocates only the changed public identity;
-    // restoring the source revives the prior number rather than replacing it.
     fixture.write(
         "chapter7.md",
         text.replace("Cover notes", "Changed cover notes")
@@ -159,8 +155,6 @@ fn canonical_source_keys_survive_incremental_refresh_rebuild_order_and_vacuum() 
         fixture.search(request("\"normal approximation\"")).hits,
         before
     );
-    // Deleting a source invalidates only that source's canonical numbers.
-    // Reintroducing the same source must never attach another source's text.
     fs::remove_file(fixture.root.join("chapter7.md")).unwrap();
     let remaining = fixture.search(request("\"normal approximation\"")).hits;
     assert_eq!(remaining.len(), 1);
@@ -219,8 +213,6 @@ fn canonical_source_keys_survive_incremental_refresh_rebuild_order_and_vacuum() 
              WHERE candidate.status = 'current' ORDER BY candidate_no DESC;",
         )
         .unwrap();
-    // Rebuild ranking in the opposite order from original matching,
-    // deriving its navigation-stripped body from canonical candidates.
     for row in &rows {
         let bodies = rows
             .iter()
@@ -261,8 +253,6 @@ fn canonical_source_keys_survive_incremental_refresh_rebuild_order_and_vacuum() 
 
 #[test]
 fn missing_ranking_projection_falls_back_to_original_identity_and_signals() {
-    // NULL IN (an empty set) is false in SQLite, so a COALESCE membership
-    // predicate cannot reliably distinguish an absent ranking projection.
     for other_ranked_match in [false, true] {
         let fixture = Fixture::new("missing-ranking-key");
         fixture.write("ordinary.md", b"normal approximation ordinary body\n");
@@ -739,7 +729,6 @@ fn export_marker_revokes_cached_sources_without_reconciliation() {
     );
     assert_eq!(fs::read(fixture.root.join("course.md")).unwrap(), course);
 
-    // A revoked top hit must not consume the caller's result limit.
     let mut one = request("isolationfixture");
     one.limit = 1;
     let after = search_workspace_sources(
@@ -773,8 +762,6 @@ fn hand_authored_rankings_cover_identifiers_paths_phrases_prefixes_and_terms() {
         b"The parse_course_code helper is listed in the API reference.\n",
     );
 
-    // Code files are split as plain text now. The identifier tier still
-    // ranks the function pieces an index built by an earlier version holds.
     fixture.search(request("parse_course_code"));
     fixture.store_earlier_code_pieces(
         "src/parser.py",
@@ -895,8 +882,6 @@ fn document_phrase_and_full_tokens_outrank_incidental_page_numbers() {
 #[test]
 fn relevance_orders_identical_match_flags_even_with_later_filename() {
     let fixture = Fixture::new("relevance-tiebreak");
-    // Both documents satisfy the phrase and full-token tiers; a.md is
-    // alphabetically first but its match is diluted by irrelevant text.
     let diluted = format!("normal approximation {}", "irrelevant ".repeat(200));
     fixture.write("a.md", diluted.as_bytes());
     fixture.write(
@@ -933,8 +918,6 @@ fn repeated_navigation_lines_do_not_outrank_body_supported_matches() {
     let fixture = Fixture::new("navigation-ranking");
     fixture.write("chapter7.md", chapter7_navigation_fixture().as_bytes());
 
-    // Every chunk carries the same "chapter map" navigation line, so the
-    // original FTS index matches all of them for this phrase.
     let phrase = fixture.search(request("\"normal approximation\""));
     assert!(
         phrase.hits.len() > 1,
@@ -1308,8 +1291,6 @@ fn manually_rebuilding_search_is_semantically_equivalent_and_canonical_neutral()
     let before = fixture.semantic_results("rebuild");
     let canonical_before = fixture.canonical_value();
 
-    // Follow the explicit recovery instruction: preserve the complete
-    // cache artifact set together, rather than adopting orphan sidecars.
     let preserved = fixture
         .root
         .join(crate::workspace::CONTROL_DIR)
@@ -1345,10 +1326,6 @@ fn malformed_match_syntax_is_rejected_before_index_creation() {
 
 #[test]
 fn uncancelled_search_over_a_matching_corpus_is_not_reported_as_cancelled() {
-    // Regression: the SQLite progress handler inverted its polarity, so
-    // every noncancelled FTS scan that reached the 1,000-VM interval was
-    // aborted and relabeled `Cancelled`. A matching corpus of this size
-    // reaches the interval; the ordinary path must return hits.
     let fixture = Fixture::new("uncancelled-corpus");
     for index in 0..40 {
         fixture.write(
@@ -1356,10 +1333,6 @@ fn uncancelled_search_over_a_matching_corpus_is_not_reported_as_cancelled() {
             format!("# Retrieval notes {index}\n\nretrieval practice entry {index}\n").as_bytes(),
         );
     }
-    // Corpus preparation has its own bounded setup budget. Under a loaded
-    // aggregate, the ordinary one-second cold-index budget can legitimately
-    // return a partial corpus (e.g. nine hits), which does not exercise the
-    // SQL progress-handler polarity regression this test is meant to guard.
     prepare_source_query_with_allowlist_and_cancellation(
         &fixture.root,
         &fixture.index(),
@@ -1374,8 +1347,6 @@ fn uncancelled_search_over_a_matching_corpus_is_not_reported_as_cancelled() {
         &OperationCancellation::none(),
     )
     .expect("prepare the complete matching fixture");
-    // IndexingOnDemand describes work performed, not incomplete contents.
-    // Check the persisted fixture itself before exercising the SQL handler.
     let coverage = crate::retrieval::manifest::manifest_coverage(&fixture.index()).unwrap();
     assert!(!coverage.scan_active);
     assert_eq!((coverage.pending, coverage.stale), (0, 0));
@@ -1426,8 +1397,6 @@ fn fixture_with_unextractable_sources(name: &str) -> Fixture {
     fixture
 }
 
-/// A page without a media box makes the parser panic. The extractor
-/// reports that as a per-document failure, like a PDF over the page limit.
 fn pdf_that_panics_the_parser() -> Vec<u8> {
     use pdf_extract::{Document, Object, dictionary};
     let mut document = Document::with_version("1.5");
@@ -1677,7 +1646,6 @@ struct Fixture {
     root: PathBuf,
 }
 
-/// One function piece of a Python file, as an earlier index stored it.
 struct EarlierCodePiece {
     name: &'static str,
     lines: (u32, u32),
@@ -1730,8 +1698,6 @@ impl Fixture {
             .expect("search fixture")
     }
 
-    /// Replace the indexed pieces of `path` with code pieces of the shape
-    /// earlier versions cut from code files, as an index built then holds.
     fn store_earlier_code_pieces(&self, path: &str, pieces: Vec<EarlierCodePiece>) {
         use crate::retrieval::chunking::{
             ChunkDraft, ChunkKind, SourceImport, SymbolDefinition, SymbolReference,

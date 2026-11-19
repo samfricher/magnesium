@@ -1,5 +1,3 @@
-//! One owner for control admission, canonical recovery, and local fail-closed fallback.
-//! Read snapshots run outside this owner; only their optional trace side effect is gated.
 use super::sha256_hex;
 use super::{ControlRequest, control_safety::Guard, native_capture};
 use crate::{
@@ -9,8 +7,6 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::Path;
 
-/// Admission errors reach the caller as text, so they carry the whole shape
-/// instead of one missing field per retry.
 const CONTROL_SHAPE: &str = r#"Send {"schema":"learner-model/v2","action":"control","request_id":"<new>","control":"pause"|"stop"|"recording_off"|"recording_on","turn_ref":"<current event from the Magnesium prompt notice>"}; without a current event, replace turn_ref with "reported_event":{"external_event_key":"<new>","speaker":"learner","kind":"message","text":"<the learner's exact words>"}"#;
 const NATIVE_SESSION_SHAPE: &str = r#""session":{"operation":"start","client_ref":"<name>","goal":"<goal>"} or "session":{"operation":"resume","session_id":"<id>","expected_revision":<revision>}"#;
 
@@ -67,7 +63,6 @@ enum CaptureAdmission {
     RequiresSafetyMetadataRecovery,
     SubsequentCallsInThisConnectionOnly,
 }
-/// Typed outcomes keep historical success separate from newly authorized recovery.
 enum ControlResult {
     Applied {
         receipt: Value,
@@ -160,9 +155,6 @@ impl ControlResult {
         }
     }
 }
-/// A control stops only the calling conversation, matching its fail-closed
-/// protection. Tutors often stop there, so after a committed pause or stop say
-/// where the lesson is still recording; this read is guidance, not a guarantee.
 fn note_lesson_active_elsewhere(
     store: &LearnerStore,
     host: &crate::learner::HostContext,
@@ -208,7 +200,6 @@ impl LocalSuppression {
         self.entries.insert(key, token.clone());
         token
     }
-    // Never clear a newer overlapping failure with an older recovery result.
     pub(super) fn clear_if(&mut self, key: &str, observed: Option<&SuppressionToken>) {
         if let (Some(current), Some(observed)) = (self.entries.get(key), observed)
             && std::sync::Arc::ptr_eq(current, observed)
@@ -267,8 +258,6 @@ enum UpdateOperation {
     CaptureAndUpdate,
 }
 impl UpdateOperation {
-    /// Decode only bounded admission identity here. The store's typed decoder
-    /// validates the entire semantic request after independent permitted capture.
     fn from_envelope(request: &Value) -> Self {
         if matches!(
             serde_json::from_value::<crate::learner::UpdateMode>(request["mode"].clone()),
@@ -303,7 +292,6 @@ struct ControlAttempt {
     latched: Result<(), String>,
     local_before: Option<SuppressionToken>,
 }
-/// The control gate is keyed by workspace plus trusted native host/thread identity.
 pub(crate) struct Admission<'a> {
     workspace: &'a Workspace,
     host: &'a HostContext,
@@ -365,7 +353,6 @@ impl<'a> Admission<'a> {
         let mut guard = match Guard::acquire(self.workspace, self.host) {
             Ok(guard) => guard,
             Err(error) => {
-                // Without the cross-process gate only subsequent local calls are covered.
                 if action.stopping() {
                     suppression_for(action)
                         .lock()
@@ -505,8 +492,6 @@ impl<'a> Admission<'a> {
         match store.update_with_native_capture(host, request, native.as_ref()) {
             Ok(value) => {
                 if native.is_some() {
-                    // The transactional consumed-event guard also prevents replay if
-                    // best-effort transient marker cleanup fails.
                     let _ = native_capture::invalidate(self.workspace, host);
                 }
                 if resuming {
@@ -540,7 +525,6 @@ impl<'a> Admission<'a> {
             blocked,
         })
     }
-    /// The callback runs under the host gate only after the caller closes its snapshot.
     pub(crate) fn trace<T>(&self, store: &LearnerStore, finish: impl FnOnce(bool) -> T) -> T {
         let guard = self.capture_guard();
         let allowed = guard.as_ref().is_ok_and(|g| g.blocked.is_none())
@@ -615,9 +599,6 @@ pub(super) fn control_storage_failure(
     control_storage_failure_with_token(operation, request, key, &super::tool_host(), error)
         .map(|(result, _)| result.into_value())
 }
-/// A tool-only current learner report can stop this running host even if the
-/// database cannot open. A native event reference alone is not re-certified
-/// without reading its current native capture; source/memory text cannot help.
 fn control_storage_failure_with_token(
     operation: &str,
     request: &serde_json::Value,
@@ -652,8 +633,6 @@ fn control_storage_failure_with_token(
     ))
 }
 
-/// Validating a wire request is bounded and needs neither routing nor storage.
-/// The scheduler and the admission owner use the same actual input contract.
 pub(crate) fn valid_control_input(request: &Value) -> bool {
     serde_json::from_value::<ControlRequest>(request.clone())
         .is_ok_and(|request| validated_input(&request).is_ok())
@@ -713,8 +692,6 @@ fn validated_input(req: &ControlRequest) -> Result<ControlInput<'_>, ControlInpu
     }
 }
 
-/// Only a genuine database failure can authorize deny-only storage recovery.
-/// Invalid input never reaches the admission gate or any safety-state mutation.
 #[derive(Debug)]
 pub(super) enum ControlEventError {
     Input(crate::learner::LearnerError),

@@ -1,7 +1,3 @@
-//! One resumable state machine coordinates scoped discovery, manifest reconciliation,
-//! and explicitly selected lazy extraction. The persisted cursor is rebuildable
-//! source-index state; it never grants authority to write canonical learner data.
-
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::io;
@@ -31,9 +27,6 @@ const INITIAL_CURSOR_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CoordinatorBudget {
-    /// Hard per-call limit on newly classified paths and their metadata work.
-    /// Re-enumerated `ReadDir` entries remain under the cooperative deadline
-    /// because `ReadDir` has no portable durable offset.
     pub(crate) max_metadata_entries: usize,
     pub(crate) max_duration: Duration,
     pub(crate) max_on_demand: usize,
@@ -50,11 +43,6 @@ impl Default for CoordinatorBudget {
 }
 
 impl CoordinatorBudget {
-    /// One `search_sources` call. It may index up to 32 files while time
-    /// remains. Once nothing is waiting to be indexed and no recheck is in
-    /// progress, it may also recheck up to 1,024 entries, so a typical folder
-    /// finishes a full recheck in one call and keeps reporting complete
-    /// coverage between rechecks.
     pub(crate) fn for_search(index_path: &Path) -> Self {
         let max_metadata_entries =
             if super::manifest::status::indexed_with_nothing_pending(index_path) {
@@ -70,9 +58,6 @@ impl CoordinatorBudget {
     }
 }
 
-/// Extractions a call may start whenever its deadline allows. Past these, a
-/// call starts another extraction only in the first half of its duration, so
-/// indexing more files per call still returns within the budget.
 const GUARANTEED_ON_DEMAND: usize = 4;
 
 fn may_start_on_demand(used: usize, cutoff: Instant) -> bool {
@@ -87,10 +72,6 @@ pub(crate) enum IndexCoverage {
     IndexingOnDemand,
 }
 
-/// Outcome of the bounded reconciliation pass. `DeferredConcurrentUpdate`
-/// means another writer held the reconciliation cursor past the shared run
-/// budget; callers may search the already-indexed, currently authorized
-/// snapshot and must not report it as complete or indexing on demand.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReconciliationOutcome {
     Reconciled,
@@ -112,8 +93,6 @@ impl ReconciliationOutcome {
     }
 }
 
-/// Shared per-request budget for one or more bounded reconciliation passes.
-/// A retry continues with whatever remains; it never resets the counters.
 struct RunBudget<'a> {
     deadline: Instant,
     extraction_cutoff: Instant,
@@ -204,9 +183,6 @@ pub(crate) struct CoordinatorMetrics {
     pub(crate) bytes_read: u64,
     #[cfg(test)]
     pub(crate) reconciliation_attempts: usize,
-    /// On-demand extraction slots consumed by the whole run, including
-    /// retries. Distinct from `indexed_on_demand`, which counts only sources
-    /// that actually needed extraction.
     pub(crate) on_demand_used: usize,
     pub(crate) indexed_on_demand: usize,
 }
@@ -228,7 +204,6 @@ impl OperationCancellation {
 pub(crate) struct CoordinatorReport {
     pub(crate) generation: i64,
     pub(crate) reconciliation: ReconciliationOutcome,
-    /// Production callers work out coverage after their own extractions.
     #[cfg(test)]
     pub(crate) coverage: IndexCoverage,
     #[cfg(test)]
@@ -236,8 +211,6 @@ pub(crate) struct CoordinatorReport {
     pub(crate) metrics: CoordinatorMetrics,
 }
 
-/// The complete preparation result consumed by search. Phase work counters
-/// stay inside the coordinator and cannot affect ranking or query policy.
 pub(crate) struct PreparedSourceQuery {
     pub(crate) generation: i64,
     pub(crate) reconciliation: ReconciliationOutcome,
@@ -389,9 +362,6 @@ fn coordinate_source_query_with_policy(
             &mut run,
         ) {
             Ok(report) => return Ok(report),
-            // One bounded retry against the reloaded cursor; the shared run
-            // budget is not reset and stale cursor advancement is never
-            // applied on top of the new state.
             Err(ManifestError::ReconciliationConflict) if attempt == 1 && run.can_retry() => {
                 attempt = 2;
             }
@@ -403,9 +373,6 @@ fn coordinate_source_query_with_policy(
     }
 }
 
-/// Prepare every source this query may index before ranking begins. Selected
-/// paths and fallback paths share one extraction-slot cap; a deferred pass
-/// serves only the last committed snapshot.
 pub(crate) fn prepare_source_query_with_allowlist_and_cancellation(
     workspace_root: &Path,
     index_path: &Path,
@@ -456,11 +423,6 @@ fn prepare_source_query_with_policy(
     allowed_source_paths: Option<&BTreeSet<PathBuf>>,
     cancellation: &OperationCancellation,
 ) -> Result<PreparedSourceQuery, ManifestError> {
-    // The same cooperative deadline covers reconciliation, selected-source
-    // extraction and the fallback phase after the coordinator returns.
-    // A zero duration requests a deferred reconciliation snapshot. Keep that
-    // soft-budget contract: no extraction starts, but the call can return its
-    // saved cursor instead of reporting caller cancellation.
     let deadline = Instant::now() + budget.max_duration;
     let extraction_cutoff = deadline - budget.max_duration / 2;
     let preparation_cancellation = if budget.max_duration.is_zero() {
@@ -495,8 +457,6 @@ fn prepare_source_query_with_policy(
             .saturating_sub(report.metrics.on_demand_used);
         let mut pending = Vec::new();
         for relative in pending_source_paths(index_path, query_scope, remaining)? {
-            // A marker can revoke pending work before the bounded scan
-            // reaches its row. Skipped paths are not extraction attempts.
             if !super::source_relative_path_is_excluded(workspace_root, &relative)? {
                 pending.push(relative);
             }
@@ -544,11 +504,6 @@ fn deferred_budget_preparation(index_path: &Path) -> Result<PreparedSourceQuery,
     })
 }
 
-/// A file whose extraction failed and was recorded as `failed` contributes no
-/// candidates but does not end the search; the other files still answer it.
-/// Searches and catch-up also index pending sources in the same path order, so
-/// another writer may publish a source first; that newer state stands. Explicit
-/// source requests report both outcomes instead.
 pub(crate) fn extract_for_search(
     workspace_root: &Path,
     index_path: &Path,
@@ -565,9 +520,6 @@ pub(crate) fn extract_for_search(
     }
 }
 
-/// A started extraction consumes its slot even if it fails or cancellation
-/// arrives mid-file. The returned count remains inspectable in tests; the
-/// durable manifest keeps unfinished files pending for the next request.
 fn run_fallback_extractions(
     pending: &[PathBuf],
     cancellation: &OperationCancellation,
@@ -618,7 +570,6 @@ fn coordinate_one_pass(
     #[cfg(test)]
     cursor_load_hook(workspace_root, index_path, attempt);
 
-    // An explicit source selection never advances the workspace scan.
     let preserve_cursor = allowed_source_paths.is_some();
 
     let mut batch = QueryBatch::default();
@@ -692,8 +643,6 @@ fn coordinate_one_pass(
         let frame_index = cursor.directories.len() - 1;
         let frame = cursor.directories[frame_index].clone();
         let relative = decode_native_path(&frame.relative_path).map_err(ManifestError::Invalid)?;
-        // A saved directory may have become a symlink, an ignored or nested
-        // repository directory, or similar since it was queued.
         if !relative.as_os_str().is_empty() {
             match classify_scoped_path(workspace_root, &relative, rules) {
                 Ok(Some(ClassifiedPath::Directory)) => {}
@@ -708,7 +657,6 @@ fn coordinate_one_pass(
                     cursor.directories.pop();
                     continue;
                 }
-                // Reported as unreadable by the listing below.
                 Err(ManifestError::Io { source, .. })
                     if source.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
@@ -843,11 +791,8 @@ fn coordinate_one_pass(
         let Some((status, size)) = source_status_and_size(index_path, &relative)? else {
             continue;
         };
-        // A search leaves a failed source alone, as the fallback does; an
-        // explicit request retries it.
         let unindexed =
             status == "pending" || (status == "failed" && allowed_source_paths.is_some());
-        // Only tests read the candidates of an already indexed source.
         let load_indexed = cfg!(test) && status == "indexed";
         if !unindexed && !load_indexed {
             continue;
@@ -894,9 +839,6 @@ fn coordinate_one_pass(
     })
 }
 
-/// Truthful bounded result for a reconciliation that stayed conflicted past
-/// the shared run budget: no candidates from the failed pass, coverage from
-/// the snapshot the caller can actually search, and an explicit diagnostic.
 fn deferred_reconciliation_report(
     index_path: &Path,
     attempt: usize,
@@ -951,10 +893,6 @@ fn index_coverage(
     })
 }
 
-/// Deterministic test synchronization: a hook observed immediately after the
-/// persisted cursor is loaded and before any discovery work. Tests install a
-/// one-shot gate to force overlapping passes without sleeps. The hook is
-/// matched by index path, so unrelated concurrent tests never observe it.
 #[cfg(test)]
 pub(crate) type CursorLoadHook = dyn Fn(&Path, &Path, usize) + Send + Sync;
 
@@ -1004,8 +942,6 @@ fn cursor_load_hook(workspace_root: &Path, index_path: &Path, attempt: usize) {
     }
 }
 
-/// A gate that opens permanently once `expected` waiters have arrived.
-/// Retries pass through without blocking.
 #[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct OnceGate {

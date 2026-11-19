@@ -1,9 +1,5 @@
-//! Pure bounded admission for batch-local definitions and mutation targets.
 use super::*;
 
-/// One typed walk establishes unambiguous commands before the semantic writer
-/// lock. Support references are deliberately outside these definition/target
-/// namespaces: one event or observation may support several descriptions.
 pub(super) fn validate_batch_keys(r: &UpdateRequest, host: &HostContext) -> Result<()> {
     if r.observations.len() > limits::OBSERVATIONS_PER_BATCH
         || r.memory_edits.len() > limits::MEMORY_EDITS_PER_BATCH
@@ -135,8 +131,6 @@ fn local_name<'a>(
             ),
             host,
         );
-        // Preserve the established size-error classification while returning
-        // the same indexed repair guidance as other batch-key diagnostics.
         error.code = "field_too_large".into();
         return Err(error);
     }

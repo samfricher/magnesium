@@ -1,4 +1,3 @@
-//! Suggested reviews are bounded reads of current memory, never ability events.
 use crate::support::{TestEnvironment, mcp::McpClient, v2::*};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -108,8 +107,6 @@ fn read_error(f: &Fixture, mut request: Value) -> String {
         .to_owned()
 }
 
-// Snapshot every canonical table touched by the writer, excluding only the
-// explicitly allowed context receipt. JSON encoding preserves NULL and types.
 fn learner_state(f: &Fixture) -> Value {
     let c = connection(f);
     let mut result = serde_json::Map::new();

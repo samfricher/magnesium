@@ -1,4 +1,3 @@
-//! Run the shipped recovery recipes at the actual CLI and MCP boundaries.
 use crate::support::{TestEnvironment, mcp::McpClient, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};

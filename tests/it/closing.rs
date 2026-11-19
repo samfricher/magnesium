@@ -1,7 +1,3 @@
-//! A sitting ends with at most two lines from the record: the passes earned
-//! today, and when each skill answered today can count next. Claude Code in
-//! a terminal shows them once, from the Stop hook, under the reply that
-//! ended the sitting.
 use crate::support::mcp::McpClient;
 use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
 use serde_json::{Value, json};
@@ -9,7 +5,6 @@ use serde_json::{Value, json};
 const RIGHT: &str = "roots of a factored quadratic";
 const WRONG: &str = "sign of b in the quadratic formula";
 
-/// The learner's message, and the record's event for it once a lesson is on.
 fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
     let input = json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"UserPromptSubmit","prompt_id":prompt_id,"prompt":text});
     let notice = v2::context(&run_hook_with_host_flag(
@@ -25,7 +20,6 @@ fn prompt(e: &TestEnvironment, prompt_id: &str, text: &str) -> String {
         .unwrap_or_default()
 }
 
-/// What the Stop hook printed for a turn.
 fn stop(e: &TestEnvironment, prompt_id: &str) -> Value {
     let input = json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":prompt_id,"stop_hook_active":false,"last_assistant_message":"Good place to stop."});
     let output = run_hook_with_host_flag(e, &e.workspace, "stop", input, "claude");
@@ -71,18 +65,15 @@ fn a_sitting_the_learner_ends_shows_its_two_lines_once_under_the_reply() {
     let event = prompt(&e, "p-3", "b is 7");
     answer(&e, "wrong", &event, WRONG, "wrong");
 
-    // Before the end, every turn's Stop hook says nothing to the learner.
     assert_eq!(stop(&e, "p-3"), json!({}));
     let lines = json!([
         format!("Earned today: a pass on {RIGHT}."),
-        // Both names do not fit on one line: the first is cut at a word.
         "Can count from tomorrow: roots of a factored… and 1 more.".to_owned(),
     ]);
     let read = closing_json(&e);
     assert_eq!(read["closing"]["lines"], lines, "{read}");
     assert!(read["sitting"]["ended_ms"].is_null(), "{read}");
 
-    // The learner stops; the tutor ends the sitting before its reply.
     prompt(&e, "p-4", "that's enough for today");
     let ended = step(
         &e,
@@ -90,7 +81,6 @@ fn a_sitting_the_learner_ends_shows_its_two_lines_once_under_the_reply() {
     );
     assert_eq!(ended["sitting_ended"], true, "{ended}");
     assert_eq!(ended["closing_shown"], true, "{ended}");
-    // The tutor is told the learner sees the lines, not what they say.
     let note = ended["note"].as_str().unwrap();
     assert!(note.contains("Set no task"), "{note}");
     assert!(!note.contains(RIGHT), "{note}");
@@ -107,12 +97,9 @@ fn a_sitting_the_learner_ends_shows_its_two_lines_once_under_the_reply() {
             .join("\n"),
         "{shown}"
     );
-    // Once: the next turn's Stop hook is quiet again, and the learner's
-    // message carried the sitting on.
     prompt(&e, "p-5", "one more thing");
     assert_eq!(stop(&e, "p-5"), json!({}));
     assert!(closing_json(&e)["sitting"]["ended_ms"].is_null());
-    // The text form prints the same lines.
     let text = e.command().arg("closing").output().unwrap();
     assert_eq!(
         String::from_utf8(text.stdout).unwrap(),
@@ -163,7 +150,6 @@ fn a_stop_the_learner_asks_for_ends_the_sitting_too() {
     );
 }
 
-/// What the Stop hook printed for a turn of another conversation.
 fn stop_in(e: &TestEnvironment, conversation: &str, prompt_id: &str) -> Value {
     let input = json!({"session_id":conversation,"cwd":e.workspace,"hook_event_name":"Stop","prompt_id":prompt_id,"stop_hook_active":false,"last_assistant_message":"Fine."});
     let output = run_hook_with_host_flag(e, &e.workspace, "stop", input, "claude");
@@ -186,12 +172,8 @@ fn an_end_no_stop_hook_showed_is_set_aside_by_the_next_message() {
     v2::start(&e, "claude", "conv");
     let event = prompt(&e, "p-2", "x is 2 or 5");
     answer(&e, "right", &event, RIGHT, "right");
-    // The learner stops; the tutor ends the sitting, then the learner
-    // presses Esc during the goodbye: Claude Code runs no Stop hook.
     prompt(&e, "p-3", "that's it for today");
     assert_eq!(end(&e)["sitting_ended"], true);
-    // "Actually, one more": the next turn is an ordinary one, and its Stop
-    // hook shows nothing of the earlier end.
     prompt(&e, "p-4", "actually, one more question");
     assert_eq!(stop(&e, "p-4"), json!({}));
     assert!(closing_json(&e)["sitting"]["ended_ms"].is_null());
@@ -207,10 +189,8 @@ fn a_sitting_ended_twice_shows_its_lines_each_time_and_only_where_it_ended() {
     answer(&e, "right", &event, RIGHT, "right");
     prompt(&e, "p-3", "done for today");
     end(&e);
-    // Another conversation's Stop hook in the same folder says nothing.
     assert_eq!(stop_in(&e, "conv-b", "b-1"), json!({}));
     assert!(stop(&e, "p-3")["systemMessage"].is_string());
-    // The learner carries on, answers again, and stops again.
     let event = prompt(&e, "p-4", "b is 7");
     answer(&e, "wrong", &event, WRONG, "wrong");
     assert_eq!(stop(&e, "p-4"), json!({}));
@@ -228,10 +208,6 @@ fn a_sitting_ended_twice_shows_its_lines_each_time_and_only_where_it_ended() {
 
 #[test]
 fn an_end_made_during_a_turn_waits_for_that_turns_stop_hook() {
-    // A sitting can end inside the turn, after the prompt hook (the tutor's
-    // end_sitting, or the runtime's own end once the last quick check of a
-    // checks-only sitting is answered): the prompt hook that sets an
-    // unshown end aside ran before it, so the end reaches its Stop hook.
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     prompt(&e, "p-1", "teach me");
@@ -266,8 +242,6 @@ fn magnesium_closing_changes_nothing_in_a_store_from_before_the_end_table() {
     );
 }
 
-/// After /clear, Claude Code keeps the tool server it started, with the old
-/// conversation's id: its end_sitting is refused, as every other write is.
 #[test]
 fn a_cleared_conversation_cannot_end_the_sitting() {
     let e = TestEnvironment::from_fixture("basic").unwrap();

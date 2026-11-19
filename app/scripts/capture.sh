@@ -1,12 +1,4 @@
 #!/bin/sh
-# Photograph one process's window, without its shadow.
-#
-#   scripts/capture.sh <pid> <out.png>
-#
-# Finds the largest on-screen window of that process (layer 0) with a small
-# Swift helper, compiled once into target/winid from scripts/winid.swift,
-# then captures it with `screencapture -o -l <id>`. The Mac asks once for
-# screen recording permission for the terminal that runs this.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PID=${1:?usage: capture.sh <pid> <out.png>}
@@ -19,7 +11,6 @@ if [ ! -x "$HELPER" ] || [ "$ROOT/scripts/winid.swift" -nt "$HELPER" ]; then
     exit 1
   }
 fi
-# "id x y width height owner", one line per on-screen window; the largest is the window.
 WINDOWS=$("$HELPER" "$PID")
 set -- $(printf '%s\n' "$WINDOWS" | awk '{ area = $4 * $5; if (area > best) { best = area; line = $1 " " $2 " " $3 " " $4 " " $5 } } END { if (line) print line }')
 if [ $# -lt 5 ]; then
@@ -28,10 +19,6 @@ if [ $# -lt 5 ]; then
 fi
 ID=$1 X=$2 Y=$3 W=$4 H=$5
 screencapture -o -x -l "$ID" "$OUT"
-# The Mac draws its input-source bubble beside a focused field as a child
-# window, and a capture of the window takes in any child that reaches past its
-# edge. Cut the photograph back to the window: the capture spans every
-# on-screen window of the process that overlaps it.
 PW=$(sips -g pixelWidth "$OUT" | awk '/pixelWidth/ { print $2 }')
 PH=$(sips -g pixelHeight "$OUT" | awk '/pixelHeight/ { print $2 }')
 CROP=$(printf '%s\n' "$WINDOWS" | awk -v x="$X" -v y="$Y" -v w="$W" -v h="$H" -v pw="$PW" -v ph="$PH" '

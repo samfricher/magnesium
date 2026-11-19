@@ -220,8 +220,6 @@ fn assert_exact_source(response: &Value, kind: SourceKind, path: &str, hash: &st
 }
 
 fn check_filename_matrix(kind: SourceKind, warm: bool) {
-    // Each filename gets study folders of its own, so the filenames run side
-    // by side.
     let first_call_rows: usize = std::thread::scope(|scope| {
         let checks = filename_cases(kind.extension())
             .into_iter()
@@ -243,8 +241,6 @@ fn check_filename_matrix(kind: SourceKind, warm: bool) {
     );
 }
 
-/// Every request shape for one filename. Returns how many of them had to
-/// succeed on their first call.
 fn check_filename(kind: SourceKind, warm: bool, path: &str) -> usize {
     let mut first_call_rows = 0;
     let requests = ["inspect", "status"]
@@ -278,9 +274,6 @@ fn check_filename(kind: SourceKind, warm: bool, path: &str) -> usize {
                 request["content_sha256"] = json!(hash);
             }
             let id = 100 + position as u64 * 3;
-            // A cold, hash-bound inspect of this one filename must succeed
-            // on its first call; the rest of the matrix tolerates deferred
-            // preparation because it is load-sensitive.
             let succeeds_on_first_call = !warm
                 && matches!(kind, SourceKind::Text)
                 && path == "lesson\"draft.txt"
@@ -524,8 +517,6 @@ fn scan_cursor(environment: &TestEnvironment) -> Option<(i64, String)> {
     ).optional().unwrap()
 }
 
-/// After each search the server indexes newly discovered sources in the
-/// background. Waiting for it lets a manifest snapshot isolate one request.
 fn wait_for_background_indexing(environment: &TestEnvironment) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
@@ -583,8 +574,6 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
     fs::remove_file(environment.workspace.join("keeper.txt")).unwrap();
     let corpus = environment.workspace.join("corpus");
     fs::create_dir(&corpus).unwrap();
-    // More entries than one search rechecks once the index is current, so the
-    // unrestricted scan is still active when the exact preparation runs.
     for index in 0..1100 {
         fs::write(
             corpus.join(format!("metadata-{index:04}.txt")),
@@ -620,9 +609,6 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
         manifest_before,
         "selected preparation changed unrelated manifest state"
     );
-    // A search that runs out of time leaves the scan for the next search to
-    // continue with a smaller step, so how many searches the scan needs
-    // depends on how fast the disk is.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut attempt = 0;
     loop {

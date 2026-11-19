@@ -186,8 +186,6 @@ fn a_slow_or_helped_pass_is_conditional_and_goes_nowhere() {
 fn a_reading_follows_its_gap_row_and_its_key_need() {
     let day = NaiveDate::from_ymd_opt(2026, 11, 12);
     let passed = [attempt("chain-rule", true, true, false)];
-    // An open row on power-rule: it reads open, and chain-rule, which has it
-    // in key_need, reads conditional even with its own cold pass.
     let read = readings(&[row("midterm-1", 1, "power-rule", 0, None)], &passed);
     assert_eq!(
         read["power-rule"],
@@ -203,20 +201,17 @@ fn a_reading_follows_its_gap_row_and_its_key_need() {
             "needs power-rule, which is open".into()
         )
     );
-    // The row passes once: conditional.
     let read = readings(&[row("midterm-1", 1, "power-rule", 1, day)], &passed);
     assert_eq!(
         read["power-rule"],
         (Reading::Conditional, "midterm-1#1 at 1 of 3".into())
     );
     assert_eq!(read["chain-rule"].0, Reading::Sound);
-    // Closed: sound.
     let read = readings(&[row("midterm-1", 1, "power-rule", 3, None)], &[]);
     assert_eq!(
         read["power-rule"],
         (Reading::Sound, "midterm-1#1 closed".into())
     );
-    // A row in another plan changes nothing here.
     let read = readings(&[row("final", 1, "power-rule", 0, None)], &[]);
     assert_eq!(read["power-rule"].0, Reading::Untested);
 }

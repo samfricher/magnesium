@@ -1,9 +1,3 @@
-//! The papers skill's LaTeX build, run as the tutor runs it: the templates
-//! copied into `Study/<target>/papers/src/`, then `bash build.sh`.
-//!
-//! These tests need tectonic, which the tutor installs only when the learner
-//! agrees. Without it on PATH they say so and pass.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -14,18 +8,9 @@ use crate::support::{TestEnvironment, repo_root, v2};
 
 const TEMPLATES: &str = "claude-plugin/skills/papers/templates";
 
-/// The notation a tutor adds for a complexity course, as in the paper whose
-/// two lines ran off the page.
 const NOTATION: &str =
     "\\newcommand{\\lang}[1]{\\textsc{#1}}\n\\newcommand{\\enc}[1]{\\langle #1\\rangle}\n";
 
-/// Lines 5 and 11 are the display from that paper, once in a question and
-/// once in a solution. Lines 14 to 16 put a phrase too wide for a narrow box
-/// at the right of the text, so it runs off the page. The box on line 18 is
-/// never placed on a page, so nothing can tell where its line would end. The
-/// rule is 60pt wider than the text, so it ends 12pt from the page's edge,
-/// where a printer cuts it off. It is the last paragraph, which TeX sets only
-/// after the body's last line.
 const CUT: &str = r"\paperheader{Cut}{Medium}{50}{20}{none}
 
 \question{1}{A reduction}
@@ -47,8 +32,6 @@ The language again:
 \noindent\rule{\dimexpr\textwidth+60pt\relax}{0.4pt}
 ";
 
-/// Lines too wide for a narrow box at the left of the page: TeX's overrun is
-/// measured from the box's edge, and neither line comes near the margin.
 const MINI: &str = r"\paperheader{Mini}{Medium}{20}{10}{none}
 \question{1}{Two columns}\pts{5}
 \begin{minipage}[t]{0.3\textwidth}
@@ -63,8 +46,6 @@ Right column.
 \end{tabular}
 ";
 
-/// The same display rewritten as the papers skill says, and a rule 30pt past
-/// the text, which stays on the page.
 const FITS: &str = r"\paperheader{Fits}{Medium}{50}{20}{none}
 
 \question{1}{A reduction}
@@ -90,8 +71,6 @@ fn tectonic_on_path() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-/// A study folder's `papers/src/` with the template build and preamble, the
-/// preamble with the course notation added under its notation comment.
 fn papers_src(environment: &TestEnvironment) -> PathBuf {
     let src = environment.workspace.join("Study/cs-final/papers/src");
     fs::create_dir_all(&src).unwrap();
@@ -148,10 +127,6 @@ fn the_paper_build_withholds_a_paper_with_a_line_off_the_page_and_says_where_eac
         assert_eq!(papers.join(pdf).exists(), written, "{pdf}\n{report}");
     }
 
-    // The display and the narrow box at the right run past the page in the
-    // paper and the key. The display in the solution is named by its line in
-    // the body, though the comment package reads a solution from a file of
-    // its own.
     for cut in [
         "CUT LINE in Cut.pdf: line 5 of Cut-body.tex is ",
         "CUT LINE in Cut-KEY.pdf: line 5 of Cut-body.tex is ",
@@ -198,9 +173,6 @@ fn the_paper_build_withholds_a_paper_with_a_line_off_the_page_and_says_where_eac
         "{report}"
     );
 
-    // The rewritten display breaks, and the rule stays on the page. The lines
-    // too wide for their narrow boxes end inside the text, nowhere near the
-    // margin, and are noted as such.
     for note in [
         "wide line in Fits.pdf: lines 14 to 15 of Fits-body.tex are 30.0pt too wide for their column, so they run 30.0pt into the right margin and stay on the page.",
         "wide line in Fits-KEY.pdf: lines 14 to 15 of Fits-body.tex are 30.0pt too wide for their column, so they run 30.0pt into the right margin and stay on the page.",
@@ -235,8 +207,6 @@ fn the_papers_stage_and_skill_send_the_tutor_back_to_a_cut_line() {
     ] {
         assert!(text.contains(rule), "the papers stage lacks: {rule}");
     }
-    // The skill tells an old build.sh from the template by the word the
-    // template prints, so the two must keep the same word.
     let skill = include_str!("../../claude-plugin/skills/papers/SKILL.md");
     let script = include_str!("../../claude-plugin/skills/papers/templates/build.sh");
     assert!(

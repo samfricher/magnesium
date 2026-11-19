@@ -1,8 +1,6 @@
 use super::*;
 use crate::learner::records::{StoredCheckpoint, event_facts};
 
-/// One interpretation of the typed lifecycle request, applied under the same
-/// transaction as observations, memories, checkpoint and receipt.
 #[derive(Clone, Copy)]
 pub(super) enum SessionTransition<'a> {
     None,
@@ -56,7 +54,6 @@ impl HostBinding {
     }
 }
 
-/// A request that only pauses or completes a lesson and records nothing else.
 fn bare_close(r: &UpdateRequest) -> bool {
     r.native_capture.is_none()
         && r.turn_ref.is_none()
@@ -70,12 +67,6 @@ fn bare_close(r: &UpdateRequest) -> bool {
         && r.attempt_corrections.is_empty()
 }
 
-/// A pause control stops capture in its own conversation only; the tutor then
-/// pauses or completes the lesson. A learner who comes back in a new
-/// conversation must be able to close an old lesson too, so a bare pause or
-/// complete of any open lesson is admitted from any conversation: it only
-/// reduces activity. Any other edit keeps the inactive refusal and its
-/// complete_captured route.
 fn bare_close_of_open_lesson(
     conn: &Connection,
     r: &UpdateRequest,
@@ -103,8 +94,6 @@ fn bare_close_of_open_lesson(
     })
 }
 
-/// Semantic admission is independent of raw capture admission. A completion
-/// consumes scoped, already recorded learner work without changing permission.
 pub(super) fn admit_semantic_update(
     conn: &Connection,
     host: &HostContext,
@@ -133,10 +122,6 @@ pub(super) fn admit_semantic_update(
                 "learning_inactive",
                 "Start or resume explicitly, or complete already captured work with mode:complete_captured",
             );
-            // A lesson paused or completed from another conversation leaves
-            // this one bound but inactive. Say so, and keep the route to any
-            // captured work that still needs completing: already-recorded
-            // learner turns can finish with complete_captured while inactive.
             let state: Option<(String, i64)> = match &bound {
                 Some(id) => conn
                     .query_row(
@@ -402,7 +387,6 @@ pub(super) fn apply_session(
                  WHERE session_id = ?1",
                 params![session_id, goal, next, now],
             )?;
-            // A guarded checkpoint update is not an activity transition.
             return Ok((Some(session_id.clone()), false));
         }
         SessionTransition::Resume(ResumeSessionEdit {
@@ -418,9 +402,6 @@ pub(super) fn apply_session(
             session_id,
             expected_revision,
         }) => {
-            // Closing a lesson this conversation is not bound to must record
-            // nothing else, so no evidence is filed under another lesson, and
-            // must not reopen a completed one.
             if !matches!(transition, SessionTransition::Resume(_))
                 && existing.as_ref() != Some(session_id)
                 && !bare_close_of_open_lesson(conn, r, transition)?
@@ -451,8 +432,6 @@ pub(super) fn apply_session(
             (session_id.clone(), status == "active")
         }
     };
-    // Closing another conversation's lesson leaves this conversation's own
-    // binding, and any lesson it is running, as it was.
     let closes_unbound_lesson = matches!(
         transition,
         SessionTransition::Pause(_) | SessionTransition::Complete(_)
@@ -466,9 +445,6 @@ pub(super) fn apply_session(
             params![host.host_kind, host.host_thread_id, id, active],
         )?;
     }
-    // Several conversations may share an active lesson (a fork resumes it
-    // alongside the original), but a paused or completed lesson stops capture
-    // in every conversation still bound to it, not only the one that asked.
     if matches!(
         transition,
         SessionTransition::Pause(_) | SessionTransition::Complete(_)
@@ -547,8 +523,6 @@ fn attach_session_inputs(
             ));
         }
     }
-    // Selection never changes original capture ownership; only the deliberate
-    // lesson association changes, in this semantic transaction.
     let mut changed = false;
     for id in captured.iter().chain(selected).collect::<BTreeSet<_>>() {
         changed |= conn.execute(

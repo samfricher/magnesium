@@ -1,11 +1,3 @@
-//! The study folder's side of practice items (#30).
-//!
-//! The learner store holds every item, and [`crate::learner::practice`] works
-//! out what is due. This module reads each plan's test date, brings a gap log
-//! the runtime has not seen into the store once, and writes each plan's
-//! `gap-log.md` Gaps table from the store. The tutor reads that table and no
-//! longer edits it. An edit made there by hand is noticed, saved and reported,
-//! never silently lost.
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -22,11 +14,9 @@ use crate::learner::practice::{ItemFacts, ItemState, Origin, derive, load_items,
 use crate::learner::store::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 
-/// At most this many due rows per plan are spelled out in a sitting opener.
 const MAX_LISTED_ROWS: usize = 3;
 const MAX_TODO: usize = 12;
 
-/// An item with its state worked out.
 #[derive(Clone, Debug)]
 pub(crate) struct Item {
     pub(crate) facts: ItemFacts,
@@ -38,17 +28,11 @@ impl Item {
         self.facts.name()
     }
 
-    /// Whether a pass on it can count on `day`: it is due, and its label has
-    /// no answer that day yet. The runtime takes no answer as cold on a label
-    /// that already has one that day (`learner::update::observations`), so a
-    /// due item answered once without a pass waits for the next day.
-    /// `answered` holds the label keys with an answer on `day`.
     pub(crate) fn can_pass_on(&self, day: NaiveDate, answered: &BTreeSet<String>) -> bool {
         self.state.due_on(day) && !answered.contains(&crate::learner::label_key(&self.facts.label))
     }
 }
 
-/// The label keys with an answer on `day`, whatever its mark.
 pub(crate) fn answered_on(conn: &Connection, day: NaiveDate) -> rusqlite::Result<BTreeSet<String>> {
     let mut statement = conn.prepare("SELECT label_key, answered_at_ms FROM attempts")?;
     let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
@@ -69,7 +53,6 @@ pub(crate) fn open_store(workspace: &Workspace) -> Result<LearnerStore, String> 
     LearnerStore::open(&workspace.store_path(), &id).map_err(|e| e.to_string())
 }
 
-/// Every item that is not dropped, worked out with its plan's test date.
 pub(crate) fn snapshot(conn: &Connection, root: &Path) -> Result<Vec<Item>, String> {
     let facts = load_items(conn).map_err(|e| e.to_string())?;
     let mut dates: BTreeMap<String, Option<NaiveDate>> = BTreeMap::new();
@@ -88,7 +71,6 @@ pub(crate) fn snapshot(conn: &Connection, root: &Path) -> Result<Vec<Item>, Stri
         .collect())
 }
 
-/// Quick checks due on `day`, the longest due first.
 pub(crate) fn due_checks(items: &[Item], day: NaiveDate) -> Vec<&Item> {
     let mut due = items
         .iter()
@@ -98,7 +80,6 @@ pub(crate) fn due_checks(items: &[Item], day: NaiveDate) -> Vec<&Item> {
     due
 }
 
-/// Paper redos due on `day` in one plan's gap log.
 #[derive(Clone, Debug)]
 pub(crate) struct DueRedos {
     pub(crate) gap_log: String,
@@ -115,8 +96,6 @@ pub(crate) struct DueRow {
     pub(crate) key: Option<String>,
 }
 
-/// Each plan's paper redos due on `day`, the longest due first. Rows in no
-/// plan are listed under no gap log.
 pub(crate) fn due_redos(items: &[Item], day: NaiveDate) -> Vec<DueRedos> {
     let mut by_plan: BTreeMap<Option<String>, Vec<&Item>> = BTreeMap::new();
     for item in items {
@@ -159,13 +138,8 @@ pub(crate) fn due_redos(items: &[Item], day: NaiveDate) -> Vec<DueRedos> {
         .collect()
 }
 
-/// At most this many due rows go out as data with a sitting's opener.
 const MAX_ROWS_AS_DATA: usize = 24;
 
-/// The paper redos due on `day` as data, the longest due first: the rows the
-/// opener's text counts and names, whole, for a caller that runs the lesson
-/// itself. `item` is the name `counts_for` takes: "<plan>#<n>", or the item's
-/// ID for a row in no plan.
 pub(crate) fn due_rows_json(items: &[Item], day: NaiveDate) -> Value {
     let mut due = items
         .iter()
@@ -202,17 +176,8 @@ pub(crate) fn due_rows_json(items: &[Item], day: NaiveDate) -> Value {
     )
 }
 
-/// At most this many rows waiting for a repair go out as data: more than a
-/// sitting can fail, at most 6 redos of 12 rows each, so a row that failed
-/// in the caller's own sitting is always listed.
 const MAX_WAITING_AS_DATA: usize = 96;
 
-/// The gap-log rows waiting for a repair, as data, the most recently
-/// changed first: open, not closed, with no next redo. A repair schedules
-/// the first redo of such a row; on any other row it does nothing or moves
-/// a redo that is already set, so a caller records one only for a row
-/// listed here. `item` is the name a practice change takes, as in
-/// [`due_rows_json`].
 pub(crate) fn waiting_rows_json(items: &[Item]) -> Value {
     let mut waiting = items
         .iter()
@@ -252,8 +217,6 @@ pub(crate) fn waiting_rows_json(items: &[Item]) -> Value {
     )
 }
 
-/// Open quick checks' labels, soonest due first, so a later attempt on the
-/// same skill can reuse one exactly.
 pub(crate) fn open_labels(items: &[Item]) -> Vec<String> {
     let mut open = items
         .iter()
@@ -266,9 +229,6 @@ pub(crate) fn open_labels(items: &[Item]) -> Vec<String> {
         .collect()
 }
 
-/// What each attempt of a committed update did, by attempt, for the tool
-/// result and the sitting: (attempt ID, observation client_ref, [(item,
-/// effect)]).
 pub(crate) struct AttemptEffects {
     pub(crate) attempt_id: String,
     pub(crate) client_ref: String,
@@ -330,8 +290,6 @@ pub(crate) fn attempt_effects(
     out
 }
 
-/// The `practice` field of a committed update's result: each attempt's ID
-/// and what it did to each item, and what each touched item still needs.
 pub(crate) fn update_summary(
     items: &[Item],
     effects: &[AttemptEffects],
@@ -430,7 +388,6 @@ pub(crate) fn update_summary(
     Some(value)
 }
 
-/// What bringing gap logs in and writing them did, for a tool result.
 #[derive(Debug, Default)]
 pub(crate) struct GapLogReport {
     pub(crate) imported: Vec<String>,
@@ -489,9 +446,6 @@ impl GapLogReport {
     }
 }
 
-/// Bring in each plan's gap log the runtime has not taken over, then write
-/// the Gaps table of every plan it has. A plan whose log cannot be read is
-/// left alone. Nothing here fails the call that triggered it.
 pub(crate) fn sync_gap_logs(workspace: &Workspace, today: NaiveDate) -> GapLogReport {
     let mut report = GapLogReport::default();
     let Ok(store) = open_store(workspace) else {
@@ -570,7 +524,6 @@ fn backup(workspace: &Workspace, plan: &str, kind: &str, text: &str) -> std::io:
         .into_owned())
 }
 
-/// One row of an old gap log, as it will be stored.
 struct ImportedRow {
     row_no: Option<i64>,
     logged_on: NaiveDate,
@@ -603,10 +556,6 @@ const KNOWN_COLUMNS: [&str; 13] = [
     "Status",
 ];
 
-/// The rows of a plan's gap log, or why it cannot be read. A log from any
-/// template is read: one with a Cold-redo date column, or with no Next redo
-/// column at all. An open row whose repair is written down and that has no
-/// date is due `today`, as the conversion of #26 had it.
 fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow>, Vec<Value>> {
     let table = Table::parse(section(text, "Gaps"));
     let mut reasons = Vec::new();
@@ -658,7 +607,6 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
                 .map(str::to_owned)
         };
         let Some(logged_on) = cell("Date").as_deref().and_then(first_date) else {
-            // The template's row has only placeholders, a number and a status.
             let content = table.header.iter().enumerate().any(|(index, header)| {
                 !["#", "Status"]
                     .iter()
@@ -704,9 +652,6 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
             _ => None,
         };
         let repair = cell("Repair done").unwrap_or_default();
-        // An older log had no Next redo: a repaired open row there is due now.
-        // A row part-way through its redos with no date is due now too, or
-        // it could never fall due again.
         let next_on = match next_on {
             None if passes < 3 && table.column("Next redo").is_none() && !repair.is_empty() => {
                 Some(today)
@@ -735,7 +680,6 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
             _ => None,
         };
         let mut what = cell("What went wrong").unwrap_or_default();
-        // Keep whatever the runtime has no column for, so nothing is lost.
         let mut extra = Vec::new();
         if gap_type.is_none() && !type_cell.is_empty() {
             extra.push(format!("Type: {type_cell}"));
@@ -784,8 +728,6 @@ fn read_rows(file: &str, text: &str, today: NaiveDate) -> Result<Vec<ImportedRow
     }
 }
 
-/// Bring one plan's gap log into the store, once. Ok(true) when it had a
-/// file; the original is kept in `.magnesium/backups/gap-logs/`.
 fn import(
     workspace: &Workspace,
     conn: &Connection,
@@ -808,8 +750,6 @@ fn import(
         None => Vec::new(),
     };
     let storage = |e: rusqlite::Error| vec![json!({"file": file, "reason": e.to_string()})];
-    // With no file, the plan is taken over only once it has a row to write,
-    // so a gap log made later is still brought in.
     if text.is_none() {
         let has_rows: bool = conn
             .query_row(
@@ -884,8 +824,6 @@ fn import(
                 ],
             )?;
         }
-        // The import keeps its own copy, so the table as brought in counts
-        // as the last one seen, and the first write makes no second copy.
         let seen = text
             .as_deref()
             .and_then(|text| gaps_range(text).map(|(start, end)| sha256(&text[start..end])));
@@ -923,7 +861,6 @@ fn conf_letter(item: &Item) -> &'static str {
     }
 }
 
-/// The Gaps section, from its heading to the line before the next one.
 pub(crate) fn render_section(plan: &str, rows: &[&Item]) -> String {
     let mut text = format!(
         "## Gaps\n\nMagnesium writes this table from the learner record after each change, so an edit here is not kept: tell the tutor what is wrong instead. In learning_step a row is named as {plan}#1 for row 1.\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n"
@@ -964,8 +901,6 @@ pub(crate) fn render_section(plan: &str, rows: &[&Item]) -> String {
     text
 }
 
-/// The byte range of the Gaps section: its heading line through the line
-/// before the next `## ` heading, or the end.
 fn gaps_range(text: &str) -> Option<(usize, usize)> {
     let mut start = None;
     let mut offset = 0;
@@ -983,8 +918,6 @@ fn gaps_range(text: &str) -> Option<(usize, usize)> {
     start.map(|start| (start, text.len()))
 }
 
-/// The file with its Gaps section replaced by `section`. Without one, the
-/// section goes before Scores, or at the end.
 fn with_section(text: &str, new: &str) -> String {
     if let Some((start, end)) = gaps_range(text) {
         return format!("{}{new}{}", &text[..start], &text[end..]);
@@ -1022,7 +955,6 @@ fn write_gap_log(
     let file = gap_log_file(plan);
     let path = workspace.root().join(&file);
     reject_symlink_components(&path, workspace.root())?;
-    // A file that exists but cannot be read is never written over.
     let current = match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() => match read_small(&path) {
             Some(text) => Some(text),
@@ -1034,7 +966,6 @@ fn write_gap_log(
         Ok(_) => return Ok(()),
         Err(_) => None,
     };
-    // A plan with no rows and no file needs no file yet.
     if current.is_none() && rows.is_empty() {
         return Ok(());
     }
@@ -1056,7 +987,6 @@ fn write_gap_log(
             let saved = backup(workspace, plan, "edited-", &text)?;
             report.edited.push(json!({"file": file, "saved_to": saved}));
         }
-        // The first write over a file keeps a copy of it as it was.
         (None, _) if current.is_some() => {
             backup(workspace, plan, "before-first-write-", &text)?;
         }
@@ -1076,8 +1006,6 @@ fn remember(conn: &Connection, plan: &str, section: &str) {
     );
 }
 
-/// The digest's view of a plan the runtime has taken over: its unfixed rows,
-/// those due, and the first due, from the store.
 pub(crate) fn plan_gaps(
     conn: &Connection,
     root: &Path,

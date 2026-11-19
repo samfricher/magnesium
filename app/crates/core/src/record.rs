@@ -1,64 +1,27 @@
-//! The record block the direct engine's tutor ends each reply with, and what
-//! code makes of it.
-//!
-//! The tutor writes its reply, then one block:
-//!
-//! ```text
-//! <record>
-//! {"answer": "wrong", "help": "none", "skill": "sign of b", ...}
-//! </record>
-//! ```
-//!
-//! The block holds only the tutor's judgment. [`Cutter`] keeps it off the
-//! screen while the reply streams, [`parse`] checks it, and [`Lesson::apply`]
-//! turns it into the `learning_step` the runtime takes, adding what code
-//! knows better than the model: which task was open, the help given on it
-//! across turns, the Hint button, "I don't know", the confidence line, the
-//! label of a due quick check, the gap-log rows a paper redo counts for, and
-//! whether the answer was cold.
-
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// Where the block starts. Everything before it is the reply.
 pub const MARK: &str = "<record>";
 const END: &str = "</record>";
 
-/// The longest skill, kind or step the runtime keeps, in bytes.
 const MAX_NAME: usize = 120;
 const MAX_QUESTION: usize = 1000;
 const MAX_NOTE: usize = 500;
 const MAX_STEPS: usize = 12;
-/// The longest goal sent, as a lesson's start sends it.
 const MAX_GOAL: usize = 500;
 
-/// The lines of the checkpoint's plan_text that carry the open task to a
-/// later conversation, which reads them back.
 pub const TASK_LINE: &str = "Open task, posed to the learner: ";
 pub const HELP_LINE: &str = "Help on it so far: ";
 pub const CHECK_LINE: &str = "It is the quick check ";
-/// Followed by the redo as JSON: its rows, its tag and whether it is timed.
 pub const REDO_LINE: &str = "It is the paper redo ";
 pub const GUESS_LINE: &str = "It asks for a guess before teaching: its answer gets no mark.";
 pub const AGAIN_LINE: &str =
     "It was asked again after its mark: its next answer is not a first try.";
 
-/// The words the window's Hint button sends.
 pub const HINT_WORDS: &str = "Can I have a hint?";
-/// The words the window's "I don't know" button sends.
 pub const DONT_KNOW_WORDS: &str = "I don't know";
-/// The words the window's "I'm lost" button sends. The teaching files answer
-/// a lost learner with a question that finds the cause, then teach from
-/// their answer: help on an ordinary task in hand, so code records at least
-/// a hint on it, as for the Hint button. On a due quick check or paper redo
-/// the tutor warns first, and only help a reply gives counts.
 pub const LOST_WORDS: &str = "I'm lost";
 
-/// Passes the reply through as it streams and stops at the record block.
-///
-/// A tail that could be the start of the marker is held back until the next
-/// piece shows what it is, and so is trailing white space, so the window
-/// never shows a stray `<rec` or blank lines before the block.
 #[derive(Debug, Default)]
 pub struct Cutter {
     text: String,
@@ -71,7 +34,6 @@ impl Cutter {
         Self::default()
     }
 
-    /// Take more of the reply, and give back what may be shown now.
     pub fn push(&mut self, more: &str) -> String {
         self.text.push_str(more);
         if self.cut.is_some() {
@@ -88,8 +50,6 @@ impl Cutter {
             self.shown = end.max(self.shown);
             return fresh;
         }
-        // Hold back the longest tail that begins the marker. The marker is
-        // ASCII, so the cut is on a character boundary.
         let bytes = self.text.as_bytes();
         let hold = (1..MARK.len())
             .rev()
@@ -101,12 +61,9 @@ impl Cutter {
         fresh
     }
 
-    /// The reply as the window shows it once whole: everything before the
-    /// block, trimmed.
     pub fn reply(&self) -> String {
         let end = self.cut.unwrap_or(self.text.len());
         let reply = &self.text[..end];
-        // A reply cut off in the middle of the marker shows no part of it.
         let reply = match self.cut {
             Some(_) => reply,
             None => {
@@ -123,7 +80,6 @@ impl Cutter {
         reply.trim().to_owned()
     }
 
-    /// The text of the block, without its tags, when the reply has one.
     pub fn block(&self) -> Option<&str> {
         let rest = &self.text[self.cut? + MARK.len()..];
         Some(match rest.find(END) {
@@ -132,20 +88,16 @@ impl Cutter {
         })
     }
 
-    /// Whether anything has been written yet.
     pub fn is_empty(&self) -> bool {
         self.text.trim().is_empty()
     }
 }
 
-/// The end of `text[..end]` without trailing white space, but not before
-/// `floor`, which is already shown.
 fn trim_end(text: &str, floor: usize, end: usize) -> usize {
     let trimmed = text[..end].trim_end_matches([' ', '\n', '\t', '\r']).len();
     trimmed.max(floor).min(end.max(floor))
 }
 
-/// A first try's mark, in the runtime's words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mark {
@@ -166,7 +118,6 @@ impl Mark {
     }
 }
 
-/// Help on a task, least first, in the runtime's words.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Help {
@@ -188,15 +139,12 @@ impl Help {
     }
 }
 
-/// One step of the goal's route.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {
     pub step: String,
     pub status: String,
 }
 
-/// A control the learner asked for in their own words, as the runtime's
-/// `learning_step` `action:"control"` names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Control {
@@ -217,12 +165,8 @@ impl Control {
     }
 }
 
-/// A misunderstanding the reply found or saw cleared, for the learner's
-/// memory of that skill.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryNote {
-    /// The short id, such as "m2", of a memory the lesson state listed,
-    /// when the tutor revises that one. None makes a new memory.
     #[serde(default)]
     pub id: Option<String>,
     pub skill: String,
@@ -231,7 +175,6 @@ pub struct MemoryNote {
     pub cleared: bool,
 }
 
-/// The tutor's judgment on one turn.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Record {
     pub answer: Option<Mark>,
@@ -244,31 +187,17 @@ pub struct Record {
     pub guess: bool,
     pub steps: Option<Vec<Step>>,
     pub memory: Option<MemoryNote>,
-    /// The tutor's judgment that the answer came from a blank page: it has
-    /// not taught, shown, hinted at or corrected this skill in this sitting.
     pub cold: bool,
     pub control: Option<Control>,
-    /// A right answer to a timed paper redo took longer than allowed.
     pub slow: bool,
-    /// The next problem for the due quick check or paper redo the message
-    /// answered, with its key.
     pub next: Option<Next>,
-    /// A repair this reply finished, by the number the state gave it.
     pub repair: Option<RepairNote>,
-    /// The block named a repair that could not be read: nothing is
-    /// recorded for it, and the learner is told.
     pub repair_unreadable: bool,
-    /// A new goal for the lesson, when the learner asked to work on
-    /// something else. Kept through the runtime's own `session.use` goal.
     pub goal: Option<String>,
-    /// The learner is stopping for now, so this reply ends the sitting: the
-    /// engine tells the runtime, which works out the closing lines.
     #[serde(default)]
     pub sitting_ends: bool,
 }
 
-/// A repair the tutor finished: which one, by the number the state gave it,
-/// what it was in one line, and the next question for its rows.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepairNote {
     pub number: i64,
@@ -276,16 +205,12 @@ pub struct RepairNote {
     pub next: Option<Next>,
 }
 
-/// The next question the runtime stores for an item, and its key, which the
-/// tutor holds back until the learner has answered.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Next {
     pub question: String,
     pub key: String,
 }
 
-/// Read a record block. The error says, in a few words, what is wrong, for
-/// the hidden request that asks again.
 pub fn parse(block: &str) -> Result<Record, String> {
     let text = block.trim();
     let (Some(open), Some(close)) = (text.find('{'), text.rfind('}')) else {
@@ -409,11 +334,7 @@ pub fn parse(block: &str) -> Result<Record, String> {
             ))
         }
     };
-    // An optional field never costs the block: a next question with no
-    // question or no key is left out.
     let next = object.get("next").and_then(next_of);
-    // A repair never costs the block, and with it the mark: one that cannot
-    // be read is recorded for nothing, and the learner is told.
     let (repair, repair_unreadable) = match object.get("repair") {
         None | Some(Value::Null) => (None, false),
         Some(Value::Object(note)) => {
@@ -459,7 +380,6 @@ pub fn parse(block: &str) -> Result<Record, String> {
     })
 }
 
-/// A next question and its key, or none when either is missing.
 fn next_of(value: &Value) -> Option<Next> {
     let next = value.as_object()?;
     let text = |keys: &[&str]| {
@@ -471,12 +391,10 @@ fn next_of(value: &Value) -> Option<Next> {
     };
     Some(Next {
         question: text(&["question"])?,
-        // The runtime's own name for the key is taken too.
         key: text(&["key", "answer_key"])?,
     })
 }
 
-/// At most `bytes` bytes of `text`, cut on a character boundary.
 pub fn clip(text: &str, bytes: usize) -> String {
     if text.len() <= bytes {
         return text.to_owned();
@@ -498,7 +416,6 @@ fn same_task(a: &str, b: &str) -> bool {
     words(a) == words(b)
 }
 
-/// A quick check due in this sitting, from the runtime's `sitting_checks`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DueCheck {
     pub number: i64,
@@ -511,7 +428,6 @@ pub struct DueCheck {
     pub key: Option<String>,
 }
 
-/// One gap-log row whose redo is due, from the runtime's `sitting_redos`.
 #[derive(Clone, Debug, Default, Deserialize)]
 struct DueRow {
     item: String,
@@ -532,31 +448,19 @@ struct DueRow {
     key: Option<String>,
 }
 
-/// The most paper redos one sitting lists. The rest stay due and open a
-/// later sitting.
 pub const MAX_REDOS: usize = 6;
-/// The most rows one answer may count for, by the runtime's limit.
 const MAX_ROWS: usize = 12;
-/// The most bytes the names of one redo's rows may take: they go into the
-/// checkpoint's plan_text with the task, which the runtime bounds at 4 KiB.
 const MAX_ROW_BYTES: usize = 1200;
 
-/// A paper redo due in this sitting: one question, asked cold, that counts
-/// for the due gap-log rows of one tag in one plan. The runtime takes one
-/// cold answer on a label in a day, so a sitting has one redo for a tag.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DueRedo {
     pub number: i64,
-    /// The rows it counts for, as `counts_for` names them.
     pub rows: Vec<String>,
     pub tag: String,
-    /// A row of type S, lost for slowness, passes only in time.
     #[serde(default)]
     pub timed: bool,
-    /// The paper question each row came from, such as "Diagnostic Q3".
     #[serde(default)]
     pub from: Vec<String>,
-    /// What went wrong on each row.
     #[serde(default)]
     pub misses: Vec<String>,
     #[serde(default)]
@@ -565,12 +469,6 @@ pub struct DueRedo {
     pub key: Option<String>,
 }
 
-/// The sitting's paper redos from the runtime's due rows, which come the
-/// longest due first. The rows of one tag in one plan make one redo. A tag
-/// gets one redo in a sitting: rows of the same tag in another plan, or
-/// beyond what one answer may count for, stay due for a later day, and so
-/// does a tag `answered_today` says was already answered today, because no
-/// answer on it could be cold.
 pub fn redos_from(rows: &Value, answered_today: &dyn Fn(&str) -> bool) -> Vec<DueRedo> {
     let rows: Vec<DueRow> = rows
         .as_array()
@@ -633,7 +531,6 @@ pub fn redos_from(rows: &Value, answered_today: &dyn Fn(&str) -> bool) -> Vec<Du
         if !miss.is_empty() && !redo.misses.contains(&miss) {
             redo.misses.push(miss);
         }
-        // The first stored question among the rows is the one to pose.
         if redo.question.is_none() {
             if let Some(question) = row.question.filter(|q| !q.trim().is_empty()) {
                 redo.question = Some(question);
@@ -649,11 +546,8 @@ pub fn redos_from(rows: &Value, answered_today: &dyn Fn(&str) -> bool) -> Vec<Du
         .collect()
 }
 
-/// The paper redo a task poses: what the answer's `counts_for` and label
-/// need of it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Redo {
-    /// Its number in the sitting, by which the tutor names it.
     #[serde(default)]
     pub number: i64,
     pub rows: Vec<String>,
@@ -662,32 +556,21 @@ pub struct Redo {
     pub timed: bool,
 }
 
-/// The task the learner has been set and not yet answered.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenTask {
     pub text: String,
-    /// The most help given on it so far.
     pub help: Help,
-    /// A prediction asked for before teaching: its answer gets no mark.
     pub guess: bool,
-    /// The label of the due quick check this task poses, if it poses one.
     pub check: Option<String>,
-    /// The paper redo this task poses, if it poses one.
     #[serde(default)]
     pub redo: Option<Redo>,
-    /// Asked again after a mark: its next answer is not a first try.
     pub again: bool,
-    /// The learner already had no starting move on it. Having none again on
-    /// the same problem does not move its kind's help on a second time.
     #[serde(default)]
     pub stuck: bool,
-    /// The skill the reply that posed it named, for an answer whose own
-    /// record names none, as "I don't know" can leave it.
     #[serde(default)]
     pub skill: String,
 }
 
-/// What the engine knows of the lesson between turns.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Lesson {
     pub session_id: Option<String>,
@@ -695,70 +578,42 @@ pub struct Lesson {
     pub goal: Option<String>,
     pub task: Option<OpenTask>,
     pub steps: Vec<Step>,
-    /// The quick checks due in this sitting and not yet posed.
     pub checks: Vec<DueCheck>,
-    /// The paper redos due in this sitting and not yet posed.
     #[serde(default)]
     pub redos: Vec<DueRedo>,
-    /// Each turn's request gets a new id: the runtime refuses an id used
-    /// before anywhere in the study folder.
     pub turns: u64,
-    /// Today, as "2026-11-12", and the skills answered on it, by their
-    /// label in lower case: the runtime refuses a cold answer on a label
-    /// already answered earlier that day.
     pub today: String,
     pub answered_today: Vec<String>,
-    /// The labels and skills, in lower case, that this sitting answered,
-    /// gave help on or corrected, as far as code knows: no answer on one of
-    /// them is cold for the rest of the sitting.
     #[serde(default)]
     pub sitting_labels: Vec<String>,
-    /// The quick checks posed in this sitting, so that one whose answer
-    /// was never marked can go back on the list.
     #[serde(default)]
     pub posed_checks: Vec<DueCheck>,
-    /// The paper questions waiting for a repair, as the record listed them
-    /// at the start of the sitting or after a redo failed in it.
     #[serde(default)]
     pub repairs: Vec<WaitingRepair>,
-    /// The last number a repair was given. Numbers are never reused in a
-    /// conversation, so a tutor that remembers an old one names nothing.
     #[serde(default)]
     pub repair_numbers: i64,
-    /// What this sitting taught before the window last started is not
-    /// known, as after a restart with nothing kept: no answer is sent cold
-    /// until a new sitting begins.
     #[serde(default)]
     pub sitting_unknown: bool,
 }
 
-/// A repair waiting to be done: the gap-log rows of one tag in one plan
-/// that the record holds as waiting for one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WaitingRepair {
     pub number: i64,
-    /// The rows, as a practice change names them.
     pub rows: Vec<String>,
     pub tag: String,
     #[serde(default)]
     pub plan: Option<String>,
-    /// The paper question each row came from, such as "Diagnostic Q3".
     #[serde(default)]
     pub from: Vec<String>,
-    /// What went wrong on each row.
     #[serde(default)]
     pub misses: Vec<String>,
-    /// Its redo failed in this sitting, rather than before it.
     #[serde(default)]
     pub failed_here: bool,
 }
 
-/// The most rows one repair covers.
 const MAX_REPAIR_ROWS: usize = 12;
 
 impl Lesson {
-    /// A new sitting starts from what is due now: the checks and redos the
-    /// last one listed and did not pose are gone, and so is what it taught.
     pub fn begin_sitting(&mut self) {
         self.checks.clear();
         self.redos.clear();
@@ -767,10 +622,6 @@ impl Lesson {
         self.repairs.clear();
     }
 
-    /// Take in rows the record holds as waiting for a repair, as
-    /// `repairs_waiting` lists them, or as a failed redo's rows: the rows of
-    /// one tag in one plan make one repair, and a row already listed is not
-    /// listed twice. Returns the repairs made new.
     pub fn take_waiting(&mut self, rows: &Value, failed_here: bool) -> Vec<WaitingRepair> {
         let mut made: Vec<i64> = Vec::new();
         for row in rows.as_array().into_iter().flatten() {
@@ -832,7 +683,6 @@ impl Lesson {
             .collect()
     }
 
-    /// Note that this sitting answered, helped on or corrected `label`.
     pub fn touch(&mut self, label: &str) {
         let key = label.trim().to_lowercase();
         if !key.is_empty() && !self.sitting_labels.contains(&key) {
@@ -840,23 +690,16 @@ impl Lesson {
         }
     }
 
-    /// Whether this sitting answered, helped on or corrected `label`.
     pub fn touched(&self, label: &str) -> bool {
         self.sitting_labels.contains(&label.trim().to_lowercase())
     }
 
-    /// Note every name a task goes by as touched in this sitting.
     fn touch_task(&mut self, task: &OpenTask) {
         for label in task_labels(task) {
             self.touch(&label);
         }
     }
 
-    /// Forget the open task, because what is on screen is no longer known:
-    /// a reply was shown and has no record. What the learner may have seen
-    /// of it counts as an answer or a correction on the task's skill in this
-    /// sitting. A quick check goes back on the list: it is still due and
-    /// may be posed again. Returns the task, and the check put back.
     pub fn forget_task(&mut self) -> (Option<OpenTask>, Option<DueCheck>) {
         let Some(task) = self.task.take() else {
             return (None, None);
@@ -877,7 +720,6 @@ impl Lesson {
         (Some(task), back)
     }
 
-    /// Start a new day's list of answered skills when the day has changed.
     pub fn set_today(&mut self, day: &str) {
         if self.today != day {
             self.today = day.to_owned();
@@ -885,9 +727,6 @@ impl Lesson {
         }
     }
 
-    /// Forget the paper redos a reply showed the learner, by the words
-    /// that pose one: a redo seen is never posed again in the sitting. For
-    /// a reply the engine has no record of, such as one cut short.
     pub fn spend_shown(&mut self, reply: &str) {
         let shown: Vec<i64> = redo_marks(reply)
             .into_iter()
@@ -896,7 +735,6 @@ impl Lesson {
         self.redos.retain(|due| !shown.contains(&due.number));
     }
 
-    /// Note a skill answered today.
     pub fn answered(&mut self, label: &str) {
         let key = label.trim().to_lowercase();
         if !self.answered_today.contains(&key) {
@@ -909,19 +747,11 @@ impl Lesson {
     }
 }
 
-/// One message from the learner, as the engine sees it.
 #[derive(Clone, Debug, Default)]
 pub struct Message {
-    /// The learner's exact words.
     pub words: String,
-    /// The event the runtime captured them as.
     pub event_id: Option<String>,
-    /// The open task is a timed paper redo and no clock ran on it: the
-    /// engine did not see it posed, as after a resume. Its answer cannot
-    /// earn a pass.
     pub no_clock: bool,
-    /// The window sent it as talk, not as an answer: it is never marked,
-    /// and the task that was open stays open.
     pub talk: bool,
 }
 
@@ -930,7 +760,6 @@ impl Message {
         self.words.trim().eq_ignore_ascii_case(words)
     }
 
-    /// The confidence the window adds as its own line, "Confidence: sure".
     pub fn confidence(&self) -> Option<&'static str> {
         self.words.lines().rev().find_map(|line| {
             match line.trim().strip_prefix("Confidence:")?.trim() {
@@ -943,53 +772,30 @@ impl Message {
     }
 }
 
-/// What one turn writes: the request for `learning_step`, and whether it
-/// recorded an attempt.
 #[derive(Clone, Debug)]
 pub struct Write {
     pub request: Value,
     pub marked: bool,
-    /// Why the tutor marked the message as an answer and no attempt could
-    /// be written: no task known to be open, or the message not captured.
     pub lost: Option<&'static str>,
-    /// The attempt answers a paper redo.
     pub redo: Option<RedoAnswer>,
-    /// The attempt answers a due quick check: whether the tutor marked it
-    /// right, so the engine can say when the record holds no pass.
     pub check: Option<bool>,
-    /// The learner is owed a word: the task this reply sets is no paper
-    /// redo for the record, though it looks like one on screen.
     pub not_a_redo: Option<NotARedo>,
 }
 
-/// An answer sent for a paper redo: what the engine needs to read the
-/// runtime's verdict back, and to send the answer again if it is refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RedoAnswer {
-    /// The redo's tag, for the repair its failed rows then wait for.
     pub tag: String,
-    /// Its rows, as `counts_for` named them, which is how the runtime lists
-    /// them as waiting for a repair.
     pub rows: Vec<String>,
-    /// The tutor marked it right.
     pub right: bool,
-    /// The label to send when the runtime refuses the rows' tag as one: a
-    /// tag from a gap log written by hand may name a problem.
     pub other_label: String,
 }
 
-/// Why a task is no paper redo for the record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotARedo {
-    /// The reply poses a paper redo the sitting does not list, or one
-    /// already spent.
     Unlisted,
-    /// A redo that was open gave way to another task before its answer.
     SetAside,
 }
 
-/// Every name an answer to `task` may go by: the quick check's label, the
-/// paper redo's tag, and the skill the reply that posed it named.
 fn task_labels(task: &OpenTask) -> Vec<String> {
     task.check
         .iter()
@@ -1000,7 +806,6 @@ fn task_labels(task: &OpenTask) -> Vec<String> {
         .collect()
 }
 
-/// The open task in the checkpoint's plan_text.
 fn plan_text(task: &OpenTask) -> String {
     let mut lines = vec![
         format!("{TASK_LINE}{}", clip(&task.text, MAX_QUESTION)),
@@ -1021,35 +826,17 @@ fn plan_text(task: &OpenTask) -> String {
     lines.join("\n")
 }
 
-/// The runtime's limits on a memory's description and summary, in bytes
-/// (`STATE_BYTES` and `SUMMARY_BYTES` in `src/learner/limits.rs`). Past
-/// them the runtime cuts the text's end, which could cut a line the engine
-/// did not write, so the engine stays within them itself.
 pub const STATE_LIMIT: usize = 16 * 1024;
 const SUMMARY_LIMIT: usize = 1024;
 
-/// How each line the engine writes in a memory begins. A line that begins
-/// any other way is someone else's, such as an `anchor:` line the plugin
-/// engine's tutor wrote, and the engine never removes or changes it.
 const FOUND: &str = "Misunderstanding found in a lesson: ";
 const CLEARED: &str = "Misunderstanding cleared in a lesson: ";
-/// The least of its own text worth writing.
 const LEAST_TEXT: usize = 24;
 
 fn is_own(line: &str) -> bool {
     line.starts_with(FOUND) || line.starts_with(CLEARED)
 }
 
-/// The memory edit for a misunderstanding found or cleared, made with the
-/// same `learning_step` memory edit a lesson run by the plugin makes, and
-/// resting on this turn's observation (`client_ref` "answer").
-///
-/// The engine keeps one line of its own in the memory's description: one
-/// current statement of what the learner does, and whether it is cleared,
-/// rewritten in place, never dated, never a list. Every other line stays
-/// byte for byte. `found` is the memory being revised, as `memory` `read`
-/// returns it. None when the description would not fit even with the
-/// engine's own line cut short: then no edit is made.
 pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str) -> Option<Value> {
     let prefix = if note.cleared { CLEARED } else { FOUND };
     let new = json!({"new_observation": "answer"});
@@ -1081,7 +868,6 @@ pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str) -> Opti
         state.split('\n').collect()
     };
     let own = lines.iter().position(|line| is_own(line));
-    // The room the other lines leave, with the newline that joins ours.
     let others: usize = lines
         .iter()
         .enumerate()
@@ -1099,7 +885,6 @@ pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str) -> Opti
     }
     let state_text = lines.join("\n");
     debug_assert!(state_text.len() <= STATE_LIMIT);
-    // The summary is the engine's to rewrite only if it wrote it.
     let summary = memory["summary"].as_str().unwrap_or_default();
     let summary = if summary.is_empty() || is_own(summary) {
         clip(&line, SUMMARY_LIMIT)
@@ -1130,8 +915,6 @@ pub fn memory_edit(note: &MemoryNote, found: Option<&Value>, goal: &str) -> Opti
     }))
 }
 
-/// The quick check a reply poses, by the words "Quick check N", the way the
-/// runtime spots it in a stored reply.
 pub fn posed_check(reply: &str, checks: &[DueCheck]) -> Option<DueCheck> {
     let lower = reply.to_lowercase();
     checks
@@ -1148,8 +931,6 @@ pub fn posed_check(reply: &str, checks: &[DueCheck]) -> Option<DueCheck> {
         .cloned()
 }
 
-/// Where a reply last names a quick check by its number, in the
-/// lower-cased reply.
 fn check_at(reply: &str, number: i64) -> Option<usize> {
     let lower = reply.to_lowercase();
     let needle = format!("quick check {number}");
@@ -1164,10 +945,6 @@ fn check_at(reply: &str, number: i64) -> Option<usize> {
         .map(|(start, _)| start)
 }
 
-/// Where a reply poses a paper redo: the words "Paper redo N:", each as
-/// its place in the lower-cased reply and its number. The colon tells a
-/// redo posed from one only spoken of, as in "then paper redo 2"; marks
-/// of emphasis may stand before it.
 pub fn redo_marks(reply: &str) -> Vec<(usize, i64)> {
     const WORDS: &str = "paper redo ";
     let lower = reply.to_lowercase();
@@ -1186,9 +963,6 @@ pub fn redo_marks(reply: &str) -> Vec<(usize, i64)> {
 }
 
 impl Lesson {
-    /// Apply one turn's record: update what the engine knows and return the
-    /// `learning_step` that keeps it. `reply` is the reply as shown, and
-    /// `request_id` names the request uniquely in the study folder.
     pub fn apply(
         &mut self,
         record: &Record,
@@ -1197,13 +971,6 @@ impl Lesson {
         request_id: &str,
     ) -> Write {
         let mut open = self.task.clone();
-        // The Hint button asks for help on the task in hand, and so does
-        // "I'm lost": the teaching files answer it with a question that
-        // finds the cause, then teach from the answer. On an ordinary task
-        // code records at least a hint whatever the block says. On a due
-        // quick check or paper redo the tutor first warns that help means
-        // no pass and gives nothing: there the press alone is no help, and
-        // help counts only when a reply's block gives it.
         if message.is(HINT_WORDS) || message.is(LOST_WORDS) {
             if let Some(task) = open
                 .as_mut()
@@ -1216,15 +983,11 @@ impl Lesson {
             self.touch_task(task);
         }
         let mut answer = record.answer;
-        // "I don't know" on a task that is not a guess is a decline, never
-        // a wrong answer.
         if message.is(DONT_KNOW_WORDS)
             && open.as_ref().is_some_and(|task| !task.guess && !task.again)
         {
             answer = Some(Mark::Declined);
         }
-        // Talk is never an answer, whatever the block says: nothing is
-        // marked, and the task that was open stays open.
         if message.talk {
             answer = None;
         }
@@ -1237,9 +1000,6 @@ impl Lesson {
         let mut not_a_redo = None;
         let markable = open.as_ref().filter(|task| !task.guess && !task.again);
         if let (Some(mark), Some(task), Some(event)) = (answer, markable, &message.event_id) {
-            // The runtime refuses an empty label, so a decline the engine
-            // marks itself always has one: the check's, the redo's tag, the
-            // answer's, the task's, or the goal's.
             let skill = clip(
                 &Some(record.skill.clone())
                     .filter(|s| !s.trim().is_empty())
@@ -1256,18 +1016,6 @@ impl Lesson {
                     .unwrap_or_else(|| skill.clone()),
                 MAX_NAME,
             );
-            // Cold: from a blank page, with no help. One rule for every
-            // answer, a due quick check's and a paper redo's included: cold
-            // only when the tutor judges it so, no help was given, it is not
-            // a decline, and code knows of no earlier answer, help or
-            // correction on its label in this sitting, nor of an answer on
-            // it earlier today, which the runtime would refuse. Names are
-            // noted broadly (an answer's label, its skill and its task's),
-            // and the label is looked up among them. A check or a redo
-            // comes after whatever the sitting taught, so only the tutor
-            // knows whether the page was blank; code can only rule it out.
-            // A timed redo on which no clock ran is never cold: it could
-            // pass whatever time it took.
             let unaided = task.help == Help::None && mark != Mark::Declined;
             let clocked = !(message.no_clock && task.redo.as_ref().is_some_and(|redo| redo.timed));
             let seen =
@@ -1289,17 +1037,12 @@ impl Lesson {
             if let Some(confidence) = message.confidence() {
                 attempt["confidence"] = json!(confidence);
             }
-            // A paper redo names the gap-log rows it counts for; the runtime
-            // works out each row's pass or fail from the mark.
             if let Some(redo) = &task.redo {
                 attempt["counts_for"] = json!(redo.rows);
                 if record.slow && redo.timed && mark == Mark::Right {
                     attempt["slow"] = json!(true);
                 }
             }
-            // The next question of the one item the answer redoes. An
-            // answer that counts for several rows stores it on each. A
-            // decline changes nothing, the stored question included.
             if let Some(next) = record.next.as_ref().filter(|_| mark != Mark::Declined) {
                 let stored = json!({"question": next.question, "answer_key": next.key});
                 match &task.redo {
@@ -1326,7 +1069,6 @@ impl Lesson {
                 check_answer = Some(mark == Mark::Right);
             }
             self.answered(&label);
-            // Answered, and marked: corrected when it was not right.
             for name in [&label, &skill, &task.skill] {
                 self.touch(name);
             }
@@ -1341,20 +1083,15 @@ impl Lesson {
         }
         if let (Some(_), false) = (answer, marked) {
             lost = match (&open, &message.event_id) {
-                // A guess, or a task asked again after its mark, is not
-                // marked by rule: nothing is lost.
                 (Some(task), _) if task.guess || task.again => None,
                 (None, _) => Some("no task was known to be open"),
                 (Some(_), None) => Some("the learner's message was not captured"),
                 _ => None,
             };
         }
-        // A misunderstanding found or cleared was a correction on its skill.
         if let Some(note) = &record.memory {
             self.touch(&note.skill);
         }
-        // A misunderstanding found or cleared needs an observation of this
-        // message to rest on, even when it was not an answer.
         if record.memory.is_some() && observations.is_empty() {
             if let Some(event) = &message.event_id {
                 observations.push(json!({
@@ -1366,14 +1103,11 @@ impl Lesson {
             }
         }
 
-        // The task now open.
         let answered = answer.is_some() && open.is_some();
         let answered_text = open.as_ref().map(|task| task.text.clone());
         let was_stuck = open
             .as_ref()
             .is_some_and(|task| task.stuck || (record.no_start && marked));
-        // The redo this message answered with a mark, if it did: a reply
-        // that marks it may name it again without posing anything.
         let marked_redo = open
             .as_ref()
             .filter(|_| answered && answer != Some(Mark::Declined))
@@ -1382,8 +1116,6 @@ impl Lesson {
         if answered {
             open = None;
         }
-        // A posed check that another task replaces before its answer is
-        // still due: it goes back on the list, and may be posed again.
         if let (Some(task), Some(text), false) = (open.as_ref(), &record.task, message.talk) {
             if let Some(label) = task.check.as_ref().filter(|_| !same_task(&task.text, text)) {
                 if let Some(due) = self.posed_checks.iter().find(|due| &due.label == label) {
@@ -1394,10 +1126,6 @@ impl Lesson {
                 }
             }
         }
-        // The task a reply sets is named by the last of these in it: a
-        // listed quick check's words, or the words that pose a paper redo.
-        // A check or redo only spoken of on the way binds nothing.
-        // Talk sets no task: a check or redo it speaks of is not posed.
         let posed = posed_check(reply, &self.checks).filter(|_| !message.talk);
         let mark = redo_marks(reply).last().copied().filter(|_| !message.talk);
         let (check, redo_number) = match (
@@ -1410,7 +1138,6 @@ impl Lesson {
             (Some(_), _) => (posed.as_ref(), None),
             (None, mark) => (None, mark.map(|(_, number)| number)),
         };
-        // The redo still open, which a new task would replace unanswered.
         let waiting = open
             .as_ref()
             .and_then(|task| task.redo.clone().map(|redo| (redo, task.help)));
@@ -1421,9 +1148,6 @@ impl Lesson {
                     task.help = task.help.max(record.help);
                 }
                 _ => {
-                    // After a decline there was no try, so the same task
-                    // asked again, often after a worked example, gets its
-                    // first one.
                     let same = answered
                         && answered_text
                             .as_deref()
@@ -1433,8 +1157,6 @@ impl Lesson {
                     let listed = redo_number
                         .and_then(|number| self.redos.iter().position(|due| due.number == number));
                     let redo = match (redo_number, listed, &waiting) {
-                        // A redo the sitting lists: it is posed now, and
-                        // never again in this sitting.
                         (Some(number), Some(at), _) => {
                             let due = self.redos.remove(at);
                             if waiting.is_some() {
@@ -1447,17 +1169,11 @@ impl Lesson {
                                 timed: due.timed,
                             })
                         }
-                        // The open redo, posed again in other words: it
-                        // keeps its rows and the help given on it.
                         (Some(number), None, Some((redo, given))) if redo.number == number => {
                             help = help.max(*given);
                             Some(redo.clone())
                         }
-                        // The reply names the redo it has just marked.
                         (Some(number), None, _) if marked_redo == Some(number) => None,
-                        // A redo this sitting does not list, or one spent:
-                        // the task is an ordinary one, and the learner is
-                        // told that it counts for no paper question.
                         (Some(_), None, _) => {
                             not_a_redo = Some(NotARedo::Unlisted);
                             None
@@ -1492,8 +1208,6 @@ impl Lesson {
                 self.posed_checks.push(check.clone());
             }
         }
-        // Help this reply gives on the task it leaves open, on the skill it
-        // names, rules out a cold answer on them in the rest of the sitting.
         if record.help > Help::None {
             if let Some(task) = &open {
                 self.touch_task(task);
@@ -1504,7 +1218,6 @@ impl Lesson {
         if let Some(steps) = &record.steps {
             self.steps = steps.clone();
         }
-        // A new goal, when the learner asked to work on something else.
         let new_goal = record
             .goal
             .clone()
@@ -1586,7 +1299,6 @@ mod tests {
     fn the_block_never_reaches_the_screen_however_the_reply_is_split() {
         let reply = "Right: b is −5, and a < b here.\n\nWhat is c in 2x² + x − 3 = 0?";
         let text = format!("{reply}\n\n<record>\n{{\"answer\": \"right\"}}\n</record>");
-        // Every split into three pieces, at every byte that is a boundary.
         let bounds: Vec<usize> = (1..text.len())
             .filter(|i| text.is_char_boundary(*i))
             .collect();
@@ -1598,7 +1310,6 @@ mod tests {
                 assert_eq!(cutter.block().unwrap().trim(), "{\"answer\": \"right\"}");
             }
         }
-        // One character at a time.
         let pieces: Vec<String> = text.chars().map(String::from).collect();
         let refs: Vec<&str> = pieces.iter().map(String::as_str).collect();
         let (shown, _) = cut(&refs);
@@ -1623,7 +1334,6 @@ mod tests {
         .unwrap();
         assert_eq!(record.answer, Some(Mark::Wrong));
         assert_eq!(record.steps.unwrap()[0].status, "doing");
-        // A fenced block, and a null answer.
         let fenced =
             parse("```json\n{\"answer\": null, \"help\": \"hint\", \"task\": null}\n```").unwrap();
         assert_eq!(fenced.answer, None);
@@ -1668,7 +1378,6 @@ mod tests {
     #[test]
     fn an_answer_to_the_open_task_is_marked_with_the_help_given_on_it() {
         let mut lesson = lesson();
-        // The reply poses a task.
         let posed = lesson.apply(
             &record(r#"{"answer": null, "task": "Solve x² − 1 = 0", "steps": [{"step": "Solve", "status": "doing"}]}"#),
             &message("Teach me"),
@@ -1689,14 +1398,12 @@ mod tests {
             "Solve"
         );
         assert_eq!(posed.request["session"]["expected_revision"], 3);
-        // The learner presses Hint; the reply gives one and leaves the task open.
         lesson.apply(
             &record(r#"{"answer": null, "help": "hint", "task": null}"#),
             &message(HINT_WORDS),
             "Think of a difference of squares.",
             "r-2",
         );
-        // The model forgets the hint when it marks the answer: code does not.
         let marked = lesson.apply(
             &record(r#"{"answer": "right", "help": "none", "skill": "difference of squares", "task": "Solve x² − 4 = 0"}"#),
             &message("x = 1 or x = −1\n\nConfidence: sure"),
@@ -1780,7 +1487,6 @@ mod tests {
             "r-2",
         );
         assert!(!second.marked);
-        // The task restated in the same words keeps its help.
         lesson.task.as_mut().unwrap().help = Help::Hint;
         lesson.apply(
             &record(r#"{"answer": null, "task": "Solve x² + 2x − 15 = 0"}"#),
@@ -1789,8 +1495,6 @@ mod tests {
             "r-3",
         );
         assert_eq!(lesson.task.as_ref().unwrap().help, Help::Hint);
-        // After a decline there was no try: the same task asked again, as
-        // after a worked example, gets its first one.
         let declined = lesson.apply(
             &record(
                 r#"{"answer": "declined", "skill": "formula", "task": "Solve x² + 2x − 15 = 0"}"#,
@@ -1801,8 +1505,6 @@ mod tests {
         );
         assert!(declined.marked);
         assert!(!lesson.task.as_ref().unwrap().again);
-        // No starting move on it, then none again on the same problem after
-        // the example: the kind's help moves on once, not twice.
         let stuck = r#"{"answer": "declined", "skill": "formula", "kind": "quadratic formula", "no_start": true, "task": "Solve x² + 2x − 15 = 0"}"#;
         let first = lesson.apply(
             &record(stuck),
@@ -1849,12 +1551,9 @@ mod tests {
         let cold = r#"{"answer": "right", "skill": "expected value", "cold": true}"#;
         let first = lesson.apply(&record(cold), &message("4"), "Right.", "r-1");
         assert_eq!(first.request["observations"][0]["attempt"]["cold"], true);
-        // A second answer on the same label today is never sent cold.
         open(&mut lesson, "A die pays its face: the average per roll?");
         let second = lesson.apply(&record(cold), &message("3.5"), "Right.", "r-2");
         assert_eq!(second.request["observations"][0]["attempt"]["cold"], false);
-        // Past midnight in the same sitting, the sitting's answer still
-        // rules it out; a new sitting on a new day starts a new list.
         lesson.set_today("2026-11-13");
         open(&mut lesson, "A spinner pays 1 or 11, 80/20: the average?");
         let midnight = lesson.apply(&record(cold), &message("3"), "Right.", "r-3a");
@@ -1867,7 +1566,6 @@ mod tests {
         open(&mut lesson, "A spinner pays 1 or 11, 80/20: the average?");
         let next_day = lesson.apply(&record(cold), &message("3"), "Right.", "r-3");
         assert_eq!(next_day.request["observations"][0]["attempt"]["cold"], true);
-        // Not cold when the tutor does not say so, after a hint, or as a decline.
         open(&mut lesson, "Another?");
         let not = lesson.apply(
             &record(r#"{"answer": "right", "skill": "variance"}"#),
@@ -1921,8 +1619,6 @@ mod tests {
             "What is b in x² − 5x?",
             "r-1",
         );
-        // The model calls "I don't know" no answer and names no skill; the
-        // engine marks it declined, and the runtime needs a label.
         let declined = lesson.apply(
             &record(r#"{"answer": null}"#),
             &message(DONT_KNOW_WORDS),
@@ -1932,7 +1628,6 @@ mod tests {
         let attempt = &declined.request["observations"][0]["attempt"];
         assert_eq!(attempt["first_try"], "declined");
         assert_eq!(attempt["label"], "sign of b");
-        // With no skill anywhere, the goal names it.
         lesson.task = Some(OpenTask {
             text: "Another?".into(),
             help: Help::None,
@@ -1978,8 +1673,6 @@ mod tests {
             assert_eq!(answer.check, Some(true));
             answer.request["observations"][0]["attempt"].clone()
         };
-        // The tutor's block says the page was not blank: not cold, though
-        // no help was given.
         let attempt =
             posed(r#"{"answer": "right", "skill": "reading coefficients", "task": null}"#);
         assert_eq!(attempt["label"], "sign of b in the quadratic formula");
@@ -1988,8 +1681,6 @@ mod tests {
             r#"{"answer": "right", "skill": "reading coefficients", "cold": true, "task": null}"#,
         );
         assert_eq!(attempt["cold"], true);
-        // Code knows the sitting taught the skill: a step on it, or a
-        // misunderstanding of it found, rules cold out whatever the block.
         for earlier in [
             r#"{"answer": null, "help": "step", "skill": "sign of b in the quadratic formula", "task": "Try 3x² − 2x?"}"#,
             r#"{"answer": null, "memory": {"skill": "sign of b in the quadratic formula", "text": "Drops the sign."}}"#,
@@ -2015,7 +1706,6 @@ mod tests {
                 "{earlier}"
             );
         }
-        // "Quick check 1" is not "Quick check 12".
         let twelve = DueCheck {
             number: 1,
             label: "x".into(),
@@ -2044,7 +1734,6 @@ mod tests {
         false
     }
 
-    /// A lesson whose sitting lists two paper redos.
     fn with_redos() -> Lesson {
         let mut lesson = lesson();
         lesson.redos = vec![
@@ -2054,7 +1743,6 @@ mod tests {
         lesson
     }
 
-    /// Pose a redo: a reply that sets `task` with the given words.
     fn pose(lesson: &mut Lesson, reply: &str, task: &str) -> Write {
         lesson.apply(
             &record(&json!({"answer": null, "skill": "reading a plot", "task": task}).to_string()),
@@ -2102,16 +1790,12 @@ mod tests {
         assert_eq!(km.question.as_deref(), Some("Find Km."));
         assert_eq!(km.key.as_deref(), Some("the key"));
         assert!(!redos[1].timed);
-        // The runtime takes one cold answer on a label in a day, so the
-        // same tag in another plan is no second redo: its row waits.
         assert!(
             redos
                 .iter()
                 .all(|redo| !redo.rows.contains(&"final#1".to_owned())),
             "{redos:#?}"
         );
-        // So do rows beyond the twelve one answer may count for, and rows
-        // whose names would not fit the checkpoint beside the task.
         let many: Vec<Value> = (1..=14)
             .map(|n| row(&format!("p#{n}"), Some("p"), "km", "K", None))
             .collect();
@@ -2133,8 +1817,6 @@ mod tests {
             plan_text(lesson.task.as_ref().unwrap()).len() <= 4096,
             "the checkpoint's plan_text is bounded at 4 KiB"
         );
-        // A tag answered earlier today is left out: its redo could not be
-        // cold today.
         let redos = redos_from(
             &json!([
                 row("m#1", Some("m"), "Km", "K", None),
@@ -2144,7 +1826,6 @@ mod tests {
         );
         assert_eq!(redos.len(), 1);
         assert_eq!((redos[0].number, redos[0].tag.as_str()), (1, "rate law"));
-        // A sitting lists at most six, and a runtime that sends no rows none.
         let many: Vec<Value> = (1..=9)
             .map(|n| row(&format!("p#{n}"), Some("p"), &format!("tag {n}"), "K", None))
             .collect();
@@ -2170,8 +1851,6 @@ mod tests {
                 timed: true
             })
         );
-        // Right, cold, but over time, with the next problem: the answer
-        // names both rows under their tag, and each row gets the question.
         let answer = lesson.apply(
             &record(r#"{"answer": "right", "skill": "reading a plot", "cold": true, "slow": true,
                 "next": {"question": "A plot crosses at −0.25: what is Km?", "key": "4"},
@@ -2203,9 +1882,6 @@ mod tests {
             })
         );
         assert_eq!(answer.not_a_redo, None);
-        // The next redo is open, with one row: after a hint its answer is
-        // not cold, slow is not sent for a redo that is not timed, and the
-        // next question goes with the answer.
         assert_eq!(
             lesson.task.as_ref().unwrap().redo.as_ref().unwrap().tag,
             "rate law"
@@ -2233,8 +1909,6 @@ mod tests {
         assert!(attempt.get("slow").is_none(), "{attempt}");
         assert_eq!(attempt["next"]["answer_key"], "v = k[A]²");
         assert!(hinted.request.get("practice").is_none());
-        // The answer to a due quick check stores its next question too, and
-        // an answer to any other task stores none and is no redo.
         lesson.checks = vec![DueCheck {
             number: 1,
             label: "sign of b".into(),
@@ -2279,8 +1953,6 @@ mod tests {
                 .clone()
         };
         let right = r#"{"answer": "right", "skill": "km", "cold": true}"#;
-        // The tutor taught the skill in this sitting, as after a quick
-        // check on it: its block says not cold, and code does not overrule.
         let mut lesson = with_redos();
         pose(
             &mut lesson,
@@ -2289,7 +1961,6 @@ mod tests {
         );
         let taught = r#"{"answer": "right", "skill": "rate laws", "cold": false}"#;
         assert_eq!(answer(&mut lesson, taught, &message("v = k[A]")), false);
-        // The tag was answered earlier today: the runtime would refuse cold.
         let mut lesson = with_redos();
         lesson.answered("Rate Law");
         pose(
@@ -2298,8 +1969,6 @@ mod tests {
             "Write the rate law.",
         );
         assert_eq!(answer(&mut lesson, right, &message("v = k[A]")), false);
-        // A timed redo on which no clock ran, as after a resume, could pass
-        // whatever time it took: it is never sent cold.
         let mut lesson = with_redos();
         pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
         let unclocked = Message {
@@ -2307,11 +1976,9 @@ mod tests {
             ..message("2")
         };
         assert_eq!(answer(&mut lesson, right, &unclocked), false);
-        // With its clock, and the tutor's word, it is.
         let mut lesson = with_redos();
         pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
         assert_eq!(answer(&mut lesson, right, &message("2")), true);
-        // A redo that is not timed needs no clock.
         let mut lesson = with_redos();
         pose(
             &mut lesson,
@@ -2327,7 +1994,6 @@ mod tests {
 
     #[test]
     fn a_redo_is_posed_only_by_its_words_with_the_colon_where_the_task_is_set() {
-        // Spoken of beside another task: nothing is bound, nothing spent.
         let mut lesson = with_redos();
         let write = pose(
             &mut lesson,
@@ -2337,7 +2003,6 @@ mod tests {
         assert_eq!(lesson.task.as_ref().unwrap().redo, None);
         assert_eq!(lesson.redos.len(), 2);
         assert_eq!(write.not_a_redo, None);
-        // Spoken of in a reply that sets no task: it is still to be posed.
         lesson.task = None;
         lesson.apply(
             &record(r#"{"answer": null, "task": null}"#),
@@ -2346,8 +2011,6 @@ mod tests {
             "r-1",
         );
         assert_eq!(lesson.redos.len(), 2, "nothing was posed");
-        // The redo posed is the one whose words set the task: the last in
-        // the reply, whatever lower number is spoken of before it.
         pose(
             &mut lesson,
             "We'll come back to paper redo 1. **Paper redo 2:** Write the rate law.",
@@ -2358,12 +2021,9 @@ mod tests {
             "rate law"
         );
         assert_eq!(lesson.redos[0].number, 1, "redo 1 is still listed");
-        // Emphasis round the words, and "12" is not "1".
         assert_eq!(redo_marks("**Paper redo 1**: hi"), [(2, 1)]);
         assert_eq!(redo_marks("PAPER REDO 12: hi"), [(0, 12)]);
         assert!(redo_marks("paper redo 1 is next; paper redo x: no").is_empty());
-        // A quick check and a redo in one reply: the last one named is the
-        // task.
         let check = DueCheck {
             number: 1,
             label: "sign of b".into(),
@@ -2396,8 +2056,6 @@ mod tests {
 
     #[test]
     fn a_task_that_only_looks_like_a_redo_is_flagged_for_the_learner() {
-        // The open redo, posed again in other words before its answer: it
-        // keeps its rows and the help given on it.
         let mut lesson = with_redos();
         pose(&mut lesson, "Paper redo 1: What is Km?", "What is Km?");
         lesson.apply(
@@ -2415,12 +2073,9 @@ mod tests {
         assert_eq!(open.redo.as_ref().unwrap().rows.len(), 2);
         assert_eq!(open.help, Help::Hint);
         assert_eq!(reworded.not_a_redo, None);
-        // The open redo gives way to another task before its answer.
         let aside = pose(&mut lesson, "First: what is a slope?", "What is a slope?");
         assert_eq!(lesson.task.as_ref().unwrap().redo, None);
         assert_eq!(aside.not_a_redo, Some(NotARedo::SetAside));
-        // A redo declined, then posed again after a worked example: the
-        // redo was spent, so the task is an ordinary one, and flagged.
         let mut lesson = with_redos();
         pose(
             &mut lesson,
@@ -2437,12 +2092,9 @@ mod tests {
         );
         assert_eq!(lesson.task.as_ref().unwrap().redo, None);
         assert_eq!(again.not_a_redo, Some(NotARedo::Unlisted));
-        // So is a redo the sitting never listed.
         let mut lesson = with_redos();
         let unknown = pose(&mut lesson, "Paper redo 7: What is Vmax?", "What is Vmax?");
         assert_eq!(unknown.not_a_redo, Some(NotARedo::Unlisted));
-        // A reply that names the redo it has just marked sets an ordinary
-        // task, and nothing is flagged.
         let mut lesson = with_redos();
         pose(
             &mut lesson,
@@ -2508,7 +2160,6 @@ mod tests {
                 key: "2".into()
             })
         );
-        // An optional field never costs the block, and with it the mark.
         for next in [
             "null",
             r#"{"question": "Find Km."}"#,
@@ -2545,7 +2196,6 @@ mod tests {
             create["record"]["state_text"],
             "Misunderstanding found in a lesson: Drops the minus sign of b."
         );
-        // A memory the plugin wrote, with an anchor, then the engine's line.
         let theirs = "Reads coefficients well.\nanchor: reads a from a bare x² (check question)\n";
         let memory = |state: &str| {
             json!({"memory_id": "m-1", "revision": 2, "title": "Sign of B", "scope": "Quadratics",
@@ -2564,14 +2214,12 @@ mod tests {
             "theirs is kept byte for byte: {text:?}"
         );
         assert_eq!(first["record"]["summary"], "Their summary.");
-        // A second edit rewrites the engine's line in place: no date, no list.
         let second =
             memory_edit(&note("Keeps the sign now.", true), Some(&memory(&text)), "").unwrap();
         let text = second["record"]["state_text"].as_str().unwrap();
         assert!(text.starts_with(theirs));
         assert_eq!(text.matches("in a lesson:").count(), 1, "{text}");
         assert!(text.ends_with("Misunderstanding cleared in a lesson: Keeps the sign now."));
-        // Near the runtime's limit, only the engine's own text is cut.
         let long = format!("anchor: kept\n{}", "x".repeat(STATE_LIMIT - 100));
         let cut = memory_edit(&note(&"y".repeat(500), false), Some(&memory(&long)), "").unwrap();
         let text = cut["record"]["state_text"].as_str().unwrap();
@@ -2580,7 +2228,6 @@ mod tests {
             "{}",
             text.len()
         );
-        // With no room left for it, no edit at all.
         let full = format!("anchor: kept\n{}", "x".repeat(STATE_LIMIT - 20));
         assert!(memory_edit(&note("Drops the sign.", false), Some(&memory(&full)), "").is_none());
     }
@@ -2667,8 +2314,6 @@ mod tests {
             ]
         );
         assert_eq!(made[0].from, ["Diagnostic Q1", "Diagnostic Q2"]);
-        // A row already listed is not listed again; a new one gets a new
-        // number, and a new sitting never reuses one.
         let again =
             lesson.take_waiting(&json!([row("m#1", "m", "km"), row("m#4", "m", "km")]), true);
         assert_eq!(again.len(), 1);
@@ -2706,7 +2351,6 @@ mod tests {
                 assert_eq!(press(redo, words, hint), Help::Hint, "{redo} {words}");
             }
         }
-        // On an ordinary task the press is help.
         let mut lesson = lesson();
         pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
         lesson.apply(&record(warning), &message(HINT_WORDS), "A line.", "r-1");
@@ -2719,8 +2363,6 @@ mod tests {
         pose(&mut lesson, "Solve x² = 4.", "Solve x² = 4.");
         assert!(lesson.task.is_some());
         lesson.forget_task();
-        // Whatever the next turn's record says, its request carries the whole
-        // checkpoint, and no task in it unless that reply sets one.
         let write = lesson.apply(
             &record(r#"{"answer": null}"#),
             &message("ok"),

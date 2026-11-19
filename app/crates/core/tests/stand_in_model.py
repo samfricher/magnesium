@@ -1,88 +1,4 @@
 #!/usr/bin/env python3
-"""A stand-in for `claude` started as the direct engine's model, for tests.
-
-It speaks Claude Code's stream-json lines, starts no model and reaches no
-network. Each reply ends with a record block, cut into small pieces so the
-block's marker is split across them, as a real stream can split it.
-
-What a turn does is chosen by words in the learner's message (inside
-<learner>):
-  TEACH        start: pose "What is b in x² − 5x + 6 = 0?" and set two steps
-  b = 5        a wrong answer: mark it and pose a new task
-  b = -5       a right answer: mark it, pose the next task, step one done
-  HINT         ("Can I have a hint?") give a hint and leave the task open
-  NOBLOCK      reply with no record block; the hidden request then gets one
-  NEVERBLOCK   reply with no record block, and none when asked again
-  SLOW         write slowly, so the reply can be interrupted
-  EXPIRED      the sign-in ran out: Claude Code's own line comes in the
-               reply's place, as 2.1.322 sent it on 2026-11-15
-  NOMODEL      the model is one the account cannot use: Claude Code's own
-               line comes in the reply's place, as 2.1.322 sent it on
-               2026-11-15
-  BACK         (or the window's "I'm back") pose quick check 1 when the
-               state lists one or says it is still due, or else the first
-               paper redo it lists
-  I'm lost     ask a question that finds the cause, and leave the task open;
-               on a due quick check or paper redo, warn first (see HINT)
-  HINT         on a due quick check or paper redo, the first request gets a
-               one-line warning with help none, and the next the hint
-  Km = 2       a right answer to a paper redo: mark it cold, give its next
-               question, and pose the next paper redo the state listed
-  Km = 0.5     a wrong answer to a paper redo
-  OVERTIME     with "Km = 2": mark the answer slow
-  TAUGHT       with "Km = 2": mark the answer not cold
-  REWORD       pose the open paper redo again in other words
-  MENTION      speak of paper redo 2 and pose an ordinary task
-  COLD         with "b = -5": mark the answer cold
-  PARTLY       mark the answer to the open task partly right, and pose
-               "What is b in x² − 5x + 6 = 0?"
-  DECLINE      mark the open task declined, and pose "What is b in
-               x² + 3x − 4 = 0?"
-  REPAIRED     finish the first repair the state listed (or REPAIR <n>:
-               repair n), with its next question
-  BADREPAIR    name a repair with no number
-  CONTROLREPAIR  ask for a pause and finish the first listed repair in one block
-  CHECK AGAIN  pose quick check 1 again
-  RIGHTCHECK   a right answer, cold, under the skill "reading coefficients"
-  RECORDING OFF / RECORDING ON / PAUSE   ask for that control
-  DONE FOR TODAY   (any case) the learner stops: close in a line, no task,
-               and end the sitting
-  VERYSLOW     write for about ten seconds
-  Just the quick checks.   with STAND_IN_SLOW_CHECKS set: pose quick check 1
-               slowly, over about ten seconds, so a photograph can catch the
-               reply being written; STAND_IN_CHECK_QUESTION, if set, is the
-               question it poses
-  CITETASK     set a task with two links beside it: a page of the past paper
-               (opens at once) and a page of slides (shut until answered)
-  CITE         cite page 2 of the scratch course's past paper as a link, name
-               its practice paper as a path, and link the paper's answer key
-  RESTART      stream part of the reply, start the same message again, then
-               stream it whole
-  CUTSHORT     stream only the start of the reply; the finished message has
-               all of it, block included
-  MEMORY found <text> / MEMORY cleared <text>   note a misunderstanding of
-               "sign of b", revising the last memory id the state showed
-  change the plan   (any case) move the exam in the plan the state names a
-               week later and swap the two items after the one in hand
-               (the first not done), by an Edit of the
-               plan file as Claude Code would make it: only when the
-               arguments give the Edit tool and allow Edit on that file;
-               otherwise say the plan cannot be changed from here
-  NEW GOAL <goal>   set the record's goal to <goal>
-  LONGSTEP     a reply of seven paragraphs that moves the lesson on to the
-               third step of the stats route ("A test of the mean")
-  by the way   (any case) answer an off-plan question: no task, no mark
-  back to      (any case) pose the open task again, in the same words
-  The stats course: when the state names the plan "Midterm 2" (the scratch
-  course of scripts/scratch-course.sh), a lesson's first message (or words
-  with no number while no task is open) with no other trigger poses "What is the standard error of the mean?" for a sample
-  of 25 with s = 10; an answer of 2 is right (cold), any other is wrong; the
-  next task asks for the 95% margin of error (t* = 2.064): about 4.13 is
-  right.
-
-The hidden request (it says the block "could not be read") is answered with
-the block alone, after STAND_IN_REPAIR_DELAY seconds.
-"""
 
 import datetime
 import json
@@ -110,9 +26,6 @@ def emit(value):
         sys.stdout.flush()
 
 
-# The list a real Claude Code sends in its reply to `initialize`: aliases
-# first, then a full id each for older models. The names and lines follow
-# Claude Code 2.1.322's own; an account's real list differs.
 ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 MODELS = [
     {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)",
@@ -134,8 +47,6 @@ MODELS = [
 
 
 def listed_models():
-    """Claude Code 2.1.326, started with `--model claude-fable-5-2`, sends
-    that full id in place of the `fable` row, at the same place."""
     picked = args[args.index("--model") + 1] if "--model" in args else None
     if picked != "claude-fable-5-2":
         return MODELS
@@ -179,7 +90,6 @@ def stream(event):
 
 
 def say(text, slow=False, mode=None):
-    """Stream text in pieces of five characters, then the finished message."""
     message_id = "msg_" + uuid.uuid4().hex[:12]
     stream({"type": "message_start", "message": {"id": message_id}})
     if mode == "RESTART":
@@ -220,7 +130,6 @@ def block(**record):
 
 
 def flag_value(name):
-    """The value after a flag, as the engine passes it: `--flag value`."""
     if name in args:
         at = args.index(name)
         if at + 1 < len(args):
@@ -229,9 +138,6 @@ def flag_value(name):
 
 
 def rule_matches(rule, tool, path):
-    """Whether one of Claude Code's permission rules, such as
-    Edit(//root/Study/*/plan.md), covers `tool` on the absolute `path`. `**`
-    takes any depth, `*` one folder name; `//` starts an absolute path."""
     found = re.fullmatch(r"(\w+)\((.*)\)", rule.strip())
     if not found or found.group(1) != tool:
         return False
@@ -255,7 +161,6 @@ def rule_matches(rule, tool, path):
 
 
 def split_rules(text):
-    """A comma-separated list of rules, with no split inside parentheses."""
     rules, depth, current = [], 0, ""
     for c in text:
         if c == "(":
@@ -273,9 +178,6 @@ def split_rules(text):
 
 
 def may_edit(path):
-    """Whether Claude Code, started with these arguments, would let the
-    model Edit `path` without asking: Edit among the tools, an allow rule
-    for it, and no deny rule."""
     tools = flag_value("--tools").replace(" ", ",").split(",")
     if "Edit" not in tools:
         return False
@@ -287,7 +189,6 @@ def may_edit(path):
 
 
 def study_root():
-    """The study root, as the Read rule names it, else the folder."""
     for rule in split_rules(flag_value("--allowedTools")):
         found = re.fullmatch(r"Read\(/(/.*)/\*\*\)", rule.strip())
         if found:
@@ -296,7 +197,6 @@ def study_root():
 
 
 def tool_call(name, tool_input):
-    """A tool call as Claude Code streams it, and its result."""
     tool_id = "toolu_" + uuid.uuid4().hex[:12]
     message_id = "msg_" + uuid.uuid4().hex[:12]
     stream({"type": "message_start", "message": {"id": message_id}})
@@ -312,9 +212,6 @@ def tool_call(name, tool_input):
 
 
 def change_plan():
-    """Move the exam a week later and swap the next two items of the plan
-    the state named, as the real tutor would with Read and Edit. Returns the
-    line that says what changed, or None when the plan cannot be edited."""
     if not plan_path[0]:
         return None
     path = os.path.join(study_root(), plan_path[0])
@@ -336,7 +233,6 @@ def change_plan():
                 rest = re.sub(r"^ \((Mon|Tue|Wed|Thu|Fri|Sat|Sun)\)", " (" + day.strftime("%a") + ")", rest)
                 lines[at] = line[:found.start()] + day.isoformat() + rest
             break
-    # The Blocks table: the next two rows not done change places.
     swapped = None
     in_blocks = False
     header = None
@@ -355,7 +251,6 @@ def change_plan():
         status_at = header.index("status") if "status" in header else None
         open_rows = [(at, cells) for at, cells in rows
                      if status_at is None or "done" not in cells[status_at].lower()]
-        # The item in hand stays first; the two after it change places.
         if len(open_rows) >= 3:
             open_rows = open_rows[1:]
         if len(open_rows) >= 2:
@@ -363,7 +258,6 @@ def change_plan():
             number_at = header.index("#") if "#" in header else None
             if number_at is not None:
                 first[number_at], second[number_at] = second[number_at], first[number_at]
-            # The days stay in order: each row takes the day of the place it moves to.
             day_at = header.index("day") if "day" in header else None
             if day_at is not None:
                 first[day_at], second[day_at] = second[day_at], first[day_at]
@@ -390,8 +284,6 @@ def change_plan():
 
 
 STATS_FIRST = "A sample of 25 students has mean study time 52 minutes and s = 10 minutes. What is the standard error of the mean?"
-# Each task restates what its answer needs, as the tutor's rules ask: the
-# window can show the open task's words alone.
 STATS_SECOND = ("A sample of 25 students has s = 10 minutes, so the standard error of the mean is 2 minutes. "
                 "With t* = 2.064 for 24 degrees of freedom, what is the margin of error of a 95% interval for the mean?")
 STATS_STEPS = [{"step": "The standard error", "status": "doing"}, {"step": "A 95% interval", "status": "todo"},
@@ -414,9 +306,7 @@ def redo_question(number):
 
 
 NEXT_REDO = {"question": "A Lineweaver-Burk plot crosses the x axis at −0.25: what is Km?", "key": "4"}
-# The numbers of the paper redos the state listed and this model has not posed.
 redos_listed = []
-# The numbers of the repairs the state listed, first listed first.
 repairs_listed = []
 
 
@@ -442,8 +332,6 @@ def reply_for(learner, state):
     if re.search(r"^Study plan: Study/[^:\n]+/plan\.md: Midterm 2,", state, re.M):
         course[0] = "stats"
     if plan_path[0] is None:
-        # A resumed conversation's state may name no plan: look, as the
-        # tutor could with Read.
         study = os.path.join(study_root(), "Study")
         for name in sorted(os.listdir(study)) if os.path.isdir(study) else []:
             path = os.path.join(study, name, "plan.md")
@@ -527,7 +415,6 @@ def reply_for(learner, state):
                 "The practice paper is `Study/midterm-2/papers/Practice midterm #2.pdf`, and the past paper's key is "
                 "[the answers](Study/midterm-2/papers/Midterm%202023%20key.pdf).") + block(), False
     if os.environ.get("STAND_IN_SLOW_CHECKS") and "Just the quick checks." in learner:
-        # STAND_IN_CHECK_QUESTION: pose another question than the one the record stores, as a stale Home would face.
         question = os.environ.get("STAND_IN_CHECK_QUESTION") or (
             "Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?")
         return f"Quick check 1: {question}" + block(task=question), 0.45
@@ -535,8 +422,6 @@ def reply_for(learner, state):
         return "Ten seconds of careful words, written one small piece at a time, so that it takes a while to finish." + block(), 0.5
     if "SLOW" in learner:
         return "Let me think about that slowly, one small word after another, for a while." + block(), True
-    # A long reply that moves a statistics lesson on to its third step: long enough that a learner can read on
-    # past its first lines in a small window.
     if "LONGSTEP" in learner:
         paragraph = ("A test of the mean asks whether a sample mean this far from a claimed value is likely by chance. "
                      "The test statistic is the distance between them, counted in standard errors.")
@@ -553,7 +438,6 @@ def reply_for(learner, state):
             return f"Paper redo {number}: {redo_question(number)}" + block(task=redo_question(number)), False
         if "BACK" in learner:
             return "Welcome back. " + THIRD + block(task=THIRD), False
-    # Each poses a new task, for the record marks only a task's first answer.
     if "PARTLY" in learner and open_task[0]:
         return f"Partly: the method is right, the arithmetic is not. Next: {FIRST}" + block(
             answer="partly", skill="arithmetic", note="Right method, slipped in the arithmetic.", task=FIRST), False
@@ -573,8 +457,6 @@ def reply_for(learner, state):
         if open_task[0] == STATS_SECOND and re.search(r"4\.1", learner):
             return "Right: 2.064 × 2 ≈ 4.13 minutes, so the interval is 47.9 to 56.1." + block(
                 answer="right", skill="margin of error", note="Multiplied t* by the standard error.", cold=True), False
-        # A lesson's first message (the state says no task is open), or
-        # any words with no number while none is.
         if open_task[0] is None and ("Open task: none" in state or not re.search(r"\d", learner)):
             return f"Let's start with the standard error. {STATS_FIRST}" + block(
                 note="Lesson start.", task=STATS_FIRST, steps=STATS_STEPS), False
@@ -609,12 +491,9 @@ def reply_for(learner, state):
 
 
 last_learner = [""]
-# The plan the state named, the course it belongs to, and the task open.
 plan_path = [None]
 course = [None]
 open_task = [None]
-# A due quick check or paper redo is the task on screen; the learner was
-# warned once that help on it means no pass; what the last reply was.
 due_open = [False]
 warned = [False]
 last_kind = [None]

@@ -1,4 +1,3 @@
-//! Typed snapshot reads, candidate selection, and bounded packet construction.
 mod evidence;
 mod pages;
 mod prepare;
@@ -20,7 +19,6 @@ pub enum Tool {
     Context,
     Memory,
 }
-/// Native tool selection constrains actions independently of model arguments.
 pub fn prepare_snapshot_for_tool(
     conn: &Connection,
     host_kind: &str,
@@ -115,10 +113,6 @@ fn decode_protocol<T: requests::ReadProtocol>(request: &Value) -> Result<T, Stri
     }
     T::decode(request)
 }
-/// Unit-test entry that names only the action and reads through the same
-/// per-tool decoders production uses. Returns only after the read snapshot has
-/// closed. No control-admission guard belongs around this call; the adapter
-/// separately guards optional tracing.
 #[cfg(test)]
 pub(crate) fn prepare_snapshot(
     conn: &Connection,
@@ -219,8 +213,6 @@ fn prepare_decoded_snapshot(
             trace.clone(),
             live,
         );
-        // Successful receipt with its full ID is larger than either disabled or
-        // unavailable status with a null ID. Reserve that exact maximum envelope.
         packet.trace_status = if trace_capable {
             "recorded"
         } else {
@@ -339,8 +331,6 @@ fn prepare_decoded_snapshot(
         }
     }
 }
-/// The adapter holds only the relevant host admission gate during this optional
-/// side effect. A failed/disallowed trace always returns the useful packet.
 pub fn finish_trace(
     conn: &Connection,
     mut prepared: PreparedRead,

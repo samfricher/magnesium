@@ -1,4 +1,3 @@
-//! One cooperative request lifetime shared by blocking source and learner work.
 use std::cell::RefCell;
 use std::sync::{
     Arc,
@@ -6,13 +5,6 @@ use std::sync::{
 };
 use std::time::Instant;
 
-/// Cooperative cancellation/budget token for synchronous request work.
-///
-/// Checked at real traversal/extraction boundaries (directory walk, per-entry
-/// budget loop, on-demand extraction) and in SQLite progress callbacks where
-/// supported. A dropped future alone does not stop blocking work; callers that
-/// need early termination must signal this token and the worker must poll it.
-/// Never carries prompt, response, credential, or source-content data.
 #[derive(Clone, Debug)]
 pub(crate) struct OperationCancellation {
     cancelled: Option<Arc<AtomicBool>>,
@@ -22,18 +14,10 @@ pub(crate) struct OperationCancellation {
 }
 
 thread_local! {
-    /// Request-scoped cancellation installed by an MCP blocking worker. Any
-    /// [`OperationCancellation`] check on that thread observes it, including
-    /// `none()` tokens created by helpers that do not thread the request token
-    /// explicitly. The scope guard restores the previous value on drop so a
-    /// pooled blocking thread never inherits stale cancellation.
     static REQUEST_CANCELLATION: RefCell<Option<OperationCancellation>> =
         const { RefCell::new(None) };
 }
 
-/// RAII scope installing the request cancellation observed by every
-/// [`OperationCancellation`] check on this thread. Dropping the guard restores
-/// the previous scope.
 pub(crate) struct RequestCancellationScope {
     previous: Option<OperationCancellation>,
 }
@@ -46,10 +30,6 @@ impl Drop for RequestCancellationScope {
     }
 }
 
-/// Install the request cancellation for work running on the current blocking
-/// worker. The MCP server bridges its request `CancellationToken` into the
-/// supplied token; dropping or cancelling the request sets its flag, and this
-/// scope makes every nested request check observe it.
 pub(crate) fn enter_request_cancellation(
     cancellation: &OperationCancellation,
 ) -> RequestCancellationScope {
@@ -85,8 +65,6 @@ impl OperationCancellation {
         }
     }
 
-    /// Preserve caller cancellation while imposing the preparation deadline.
-    /// A stricter caller deadline continues to win.
     pub(crate) fn with_earlier_deadline(&self, deadline: Instant) -> Self {
         Self {
             cancelled: self.cancelled.clone(),
@@ -99,8 +77,6 @@ impl OperationCancellation {
         }
     }
 
-    /// This token's own state, excluding any request-scoped ambient
-    /// cancellation.
     fn directly_cancelled(&self) -> bool {
         if self
             .cancelled
