@@ -4,7 +4,7 @@ import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, op
 import { marksOfTurns } from "../marks";
 import { drawHeadNow, stillHeld } from "../stepHead";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, movePlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
-import { hasTask, heldAnswerGoes, poses } from "../render";
+import { coverage, hasTask, heldAnswerGoes, poses } from "../render";
 import { sentHomeDraft } from "../homeDraft";
 import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
@@ -225,6 +225,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const act = useCallback(() => setActed((n) => n + 1), []);
   const [copy, setCopy] = useState<string | null>(null);
   const decided = useRef("");
+  const wantedCopy = useRef<() => string | null>(() => null);
   const surface = useRef<HTMLElement>(null);
   const [heldStep, setHeldStep] = useState<number | null>(null);
   const nowRef = useRef<HTMLElement>(null);
@@ -871,7 +872,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
-    if (spot.scrolled()) act();
+    if (spot.scrolled()) setCopy(wantedCopy.current());
     const end = measureEnd();
     if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
       (document.activeElement as HTMLElement).blur();
@@ -954,9 +955,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return (inView.current = was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24);
   };
   useEffect(() => {
-    window.addEventListener("resize", act);
-    return () => window.removeEventListener("resize", act);
-  }, [act]);
+    const resized = () => setCopy(wantedCopy.current());
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, []);
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
   const ownBusy = isBusyNow(session);
@@ -967,13 +969,17 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const live = session.live;
   const streaming = ownBusy && live?.status === "writing";
   const moment = `${acted} ${phase} ${props.panel} ${props.active} ${folded}`;
+  wantedCopy.current = () => {
+    const settingTask = ownBusy && live !== null && replyOf(live.since)?.querySelector(".prose .task") != null;
+    const hidden = task === null || raised || folded || (ownBusy && live?.said === "answer") || (settling && !streaming) || settingTask;
+    return hidden || questionInView() ? null : task.text;
+  };
   useLayoutEffect(() => {
     if (!streaming && decided.current === moment) return;
     decided.current = moment;
-    const hidden =
-      task === null || raised || folded || (ownBusy && live?.said === "answer") || (settling && !streaming) || (ownBusy && live !== null && hasTask(tutorText(live)));
-    setCopy(hidden || questionInView() ? null : task.text);
+    setCopy(wantedCopy.current());
   });
+  const copySpent = copy !== null && (task === null || (copy !== task.text && Math.min(coverage(copy, task.text), coverage(task.text, copy)) < 0.8));
   const turnsDrawn = !folded && turns.length > 0;
   useEffect(() => {
     const section = nowRef.current;
@@ -1096,7 +1102,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       const range = selection && !selection.isCollapsed && selection.rangeCount > 0 && box.current?.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
       const selected = range ? quotable(selectedWords(range)) : "";
       const open = now.current.task;
-      const passage = selected ? { text: selected, fromTask: range !== null && open !== null && inTask(range, open.text) } : undefined;
+      const passage = selected ? { text: selected, fromTask: range !== null && open !== null && box.current !== null && inTask(range, open.text, box.current) } : undefined;
       if (composing) return lineRef.current?.write("", passage);
       event.preventDefault();
       lineRef.current?.write(char ? event.key : "", passage);
@@ -1396,7 +1402,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
                     {session.live && session.cards.length === 0 && <Working live={session.live} />}
                     {copy !== null && (
-                      <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
+                      <button className={`parked${copySpent ? " spent" : ""}`} data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
                         <Line text={copy} />
                       </button>
                     )}

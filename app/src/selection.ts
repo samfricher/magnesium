@@ -53,18 +53,23 @@ function overlap(a: Range, b: Range): Range | null {
   return shared;
 }
 
-export function inTask(range: Range, task: string): boolean {
-  const node = range.commonAncestorContainer;
-  const element = node instanceof Element ? node : node.parentElement;
-  if (!element) return false;
-  if (element.closest(".answer-task, .foot .parked")) return true;
-  const prose = element.closest<HTMLElement>(".turn.open .tutor .prose");
-  if (!prose) return false;
-  const holder = prose.querySelector("div.task");
-  const whole = holder ? document.createRange() : taskRange(prose, task);
-  if (holder) whole?.selectNodeContents(holder);
-  const shared = whole ? overlap(range, whole) : null;
-  if (!shared) return false;
+function contents(el: Element): Range {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  return range;
+}
+
+export function inTask(range: Range, task: string, page: ParentNode): boolean {
+  const prose = page.querySelector<HTMLElement>(".turn.open .tutor .prose");
+  const holder = prose?.querySelector("div.task");
+  const places = [
+    holder ? contents(holder) : prose ? taskRange(prose, task) : null,
+    ...Array.from(page.querySelectorAll(".answer-task, .foot .parked")).map(contents),
+  ];
   const said = words(selectedWords(range, LABEL));
-  return said !== "" && said === words(selectedWords(shared, LABEL));
+  if (said === "") return false;
+  return places.some((place) => {
+    const shared = place ? overlap(range, place) : null;
+    return shared !== null && said === words(selectedWords(shared, LABEL));
+  });
 }

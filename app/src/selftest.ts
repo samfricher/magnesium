@@ -814,7 +814,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
       const sample = document.createElement("div");
       sample.style.cssText = "position: absolute; left: -9999px; top: 0; width: 400px";
-      sample.innerHTML = '<article class="turn open"><div class="tutor"><div class="prose"><p>Read the interval first.</p><p>What is <em>nine</em> plus 9?</p><p>After it.</p></div></div></article>';
+      sample.innerHTML = '<article class="turn open"><div class="tutor"><div class="prose"><p>Read the interval first.</p><p>What is <em>nine</em> plus 9?</p></div></div></article><p>After the reply.</p>';
       document.body.appendChild(sample);
       const [lead, question, after] = Array.from(sample.querySelectorAll("p"));
       const span = (from: Node, at: number, to: Node, end: number) => {
@@ -825,16 +825,17 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       };
       const posed = "What is *nine* plus 9?";
       const judged = {
-        paragraph: inTask(span(question, 0, question, question.childNodes.length), posed),
-        tripleClick: inTask(span(question, 0, after, 0), posed),
-        words: inTask(span(question.lastChild!, 1, question.lastChild!, 5), posed),
-        lead: inTask(span(lead, 0, lead, lead.childNodes.length), posed),
-        leadAndTask: inTask(span(lead, 0, question, question.childNodes.length), posed),
-        wordInLead: inTask(span(lead.firstChild!, 0, lead.firstChild!, 4), posed),
+        paragraph: inTask(span(question, 0, question, question.childNodes.length), posed, sample),
+        tripleClick: inTask(span(question, 0, after, 0), posed, sample),
+        words: inTask(span(question.lastChild!, 1, question.lastChild!, 5), posed, sample),
+        lead: inTask(span(lead, 0, lead, lead.childNodes.length), posed, sample),
+        leadAndTask: inTask(span(lead, 0, question, question.childNodes.length), posed, sample),
+        wordInLead: inTask(span(lead.firstChild!, 0, lead.firstChild!, 4), posed, sample),
+        intoNext: inTask(span(question, 0, after, after.childNodes.length), posed, sample),
       };
       sample.remove();
       steady.judged = judged;
-      if (!judged.paragraph || !judged.tripleClick || !judged.words || judged.lead || judged.leadAndTask || judged.wordInLead) throw new Error(`a selection was judged the task, or not, by where its ends sit: ${JSON.stringify(judged)}`);
+      if (!judged.paragraph || !judged.tripleClick || !judged.words || judged.lead || judged.leadAndTask || judged.wordInLead || judged.intoNext) throw new Error(`a selection was judged the task, or not, by where its ends sit: ${JSON.stringify(judged)}`);
 
       const pane = document.createElement("div");
       pane.style.cssText = "position: absolute; left: -9999px; top: 0; width: 400px; height: 200px; overflow-y: auto; overflow-anchor: none";
@@ -915,6 +916,21 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       steady.atEnd = { sawSaving, spread: Math.round(Math.max(...atEnd) - Math.min(...atEnd)) };
       if (!sawSaving) throw new Error("the stand-in's reply never showed that it was saving the work");
       if (Math.max(...atEnd) - Math.min(...atEnd) > 1) throw new Error(`at the end of the page, the reply moved while the tutor saved and finished: ${JSON.stringify(steady.atEnd)}`);
+
+      const fromTheEnd = () => Math.round(view.scrollHeight - view.clientHeight - view.scrollTop);
+      const startedAt = fromTheEnd();
+      const slowly: number[] = [];
+      for (let n = 0; n < 4; n++) {
+        view.scrollTop -= 3;
+        await frame();
+        await frame();
+        slowly.push(fromTheEnd());
+      }
+      steady.slowScroll = { startedAt, slowly };
+      if (startedAt > 0 || slowly.join() !== "3,6,9,12") throw new Error(`a slow scroll up from the end was pulled back: ${JSON.stringify(steady.slowScroll)}`);
+      view.scrollTop = view.scrollHeight;
+      await frame();
+      await frame();
 
       void actions.session()!.say(`PACED SAVING\n\n${paragraphs("Reading", 14)}\n\n**Task.** What is 8 + 8?`, "talk");
       await until("the paced reply to run past a screen", () => written("Reading paragraph 8 says"), 15_000);
@@ -1013,6 +1029,35 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       steady.keys = { reads, pastes, erases, accents };
       if (!reads || !pastes || !erases || !accents) throw new Error(`from the page, a key that writes did not reach the line, or a reading key did: ${JSON.stringify(steady.keys)}`);
       await clearLine();
+
+      const longTask = Array.from({ length: 40 }, (_, n) => `part ${n + 1} of the long question asks for one more step written out in full`).join(", ");
+      await actions.session()!.say(`A long one.\n\n**Task.** ${longTask}.`, "talk");
+      await until("the long task open", () => idle() && actions.session()?.probe().task?.includes("part 40") === true, 15_000);
+      line().focus();
+      writeLine("x");
+      await frame();
+      await frame();
+      const taskView = document.querySelector<HTMLElement>(".session.in-front .answer-task");
+      const tall = { page: actions.session()?.probe().page ?? null, raised: false, taller: (taskView?.offsetHeight ?? 0) > view.clientHeight, moved: Number.NaN };
+      if (taskView) {
+        view.scrollTop = view.scrollHeight;
+        await frame();
+        await frame();
+        view.scrollTop -= 100;
+        await frame();
+        await frame();
+        tall.raised = document.querySelector(".session.in-front .foot.raised") !== null;
+        const was = taskView.getBoundingClientRect().top;
+        view.scrollTop -= 100;
+        await frame();
+        await frame();
+        tall.moved = Math.round(taskView.getBoundingClientRect().top - was);
+      }
+      steady.tallTask = tall;
+      if (tall.page !== "folded" || !tall.raised || !tall.taller || tall.moved !== 100) throw new Error(`in task view with the line raised, a 100 px scroll did not move the task by 100 px: ${JSON.stringify(tall)}`);
+      await clearLine();
+      actions.run("look-back");
+      await until("the lesson open again over the long task", () => actions.session()?.probe().page === "open", 3000);
     }
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);

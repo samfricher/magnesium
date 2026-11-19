@@ -585,6 +585,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--text);
   cursor: text;
 }
+.parked.spent { color: var(--quiet); border-left-color: var(--faint); }
 .line-end {
   font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);

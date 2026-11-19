@@ -603,7 +603,7 @@ async function run(op: Op): Promise<Result> {
       await new Promise<void>((done) => {
         const tick = (now: number) => {
           const parked = document.querySelector<HTMLElement>(".session.in-front .foot .parked");
-          const text = parked ? collapse(parked.innerText) : null;
+          const text = parked ? `${parked.classList.contains("spent") ? "(spent) " : ""}${collapse(parked.innerText)}` : null;
           if (text !== current) {
             if (current !== null) shown.push({ text: current, ms: Math.round(now - since) });
             current = text;
