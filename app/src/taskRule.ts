@@ -60,6 +60,34 @@ function blockRange(root: HTMLElement, task: string): Range | null {
   return null;
 }
 
+export type Box = { top: number; bottom: number };
+
+function drawnIn(prose: HTMLElement, task: string, open: boolean): Box | null {
+  if (open) {
+    const block = prose.querySelector("div.task");
+    if (block) return block.getBoundingClientRect();
+    if (prose.classList.contains("has-task-rule")) {
+      const top = prose.getBoundingClientRect().top + (parseFloat(prose.style.getPropertyValue("--task-top")) || 0);
+      return { top, bottom: top + (parseFloat(prose.style.getPropertyValue("--task-height")) || 0) };
+    }
+  }
+  const range = taskRange(prose, task);
+  return range ? range.getBoundingClientRect() : null;
+}
+
+export function taskBox(page: HTMLElement, task: string): Box | null {
+  const open = page.querySelector<HTMLElement>(".turn.open .tutor .prose");
+  const there = open ? drawnIn(open, task, true) : null;
+  if (there) return there;
+  const proses = Array.from(page.querySelectorAll<HTMLElement>("article.turn .tutor .prose")).reverse();
+  for (const prose of proses) {
+    if (prose === open) continue;
+    const box = drawnIn(prose, task, false);
+    if (box) return box;
+  }
+  return null;
+}
+
 export function drawTaskRule(root: HTMLElement, task: string): () => void {
   const clear = () => {
     root.classList.remove("has-task-rule");

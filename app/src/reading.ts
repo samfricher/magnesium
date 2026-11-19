@@ -4,7 +4,7 @@ export type Spot = {
   follow: () => void;
   restore: (fromFoot: number) => void;
   settle: () => void;
-  scrolled: () => void;
+  scrolled: () => boolean;
 };
 
 const END = 6;
@@ -98,7 +98,9 @@ export function readingSpot(view: () => HTMLElement | null, section: () => HTMLE
     },
     scrolled: () => {
       const found = both();
-      if (found && Math.abs(found[0].scrollTop - seenTop) > 1) apply(...found);
+      if (!found || Math.abs(found[0].scrollTop - seenTop) <= 1) return false;
+      apply(...found);
+      return true;
     },
   };
 }

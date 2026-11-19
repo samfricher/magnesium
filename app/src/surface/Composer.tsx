@@ -91,6 +91,7 @@ type Props = {
   cardWaits?: boolean;
   onEmptyReturn?: () => void;
   onWrite?: (answering: boolean) => void;
+  onEdit?: () => void;
   onPutAway?: () => void;
   onLeftEmpty?: () => void;
 };
@@ -159,6 +160,7 @@ export const Composer = memo(
       setText(value);
       keep(value);
       if (bare(value)) setConfidence(null);
+      if (latest.current.place === "lesson" && bare(value) !== bare(held.current.text)) latest.current.onEdit?.();
       if (latest.current.place === "lesson" && value !== "") latest.current.onWrite?.(answering());
     };
 

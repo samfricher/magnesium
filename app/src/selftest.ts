@@ -706,19 +706,21 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       }
       await api.interrupt();
       await until("the slow reply to stop", () => idle(), 15_000);
-      let back = false;
-      for (let n = 0; n < 200 && !back; n++) {
-        back = copy();
-        if (!back) await wait(50);
+      const atStop = copy();
+      const afterStop: boolean[] = [];
+      for (let n = 0; n < 20; n++) {
+        afterStop.push(copy());
+        await wait(50);
       }
+      const changed = afterStop.filter((each) => each !== atStop).length;
 
-      steps.steadyLine = { scrolls, rest, lowest, fromFoot, caret, looks, copies, back };
+      steps.steadyLine = { scrolls, rest, lowest, fromFoot, caret, looks, copies, atStop, changed };
       const wrong: string[] = [];
       if (scrolls < 100) wrong.push(`the lesson was too short to scroll (${scrolls} px), so the line could not be seen to move`);
       if (lowest - rest > 2 || fromFoot > 6) wrong.push(`taking words off the line left it ${lowest - rest} px under its place, the lesson ${fromFoot} px from its end`);
       if (caret !== 9) wrong.push(`a reply ending moved the caret from 9 to ${caret}`);
-      if (copies > 0) wrong.push(`the task's copy was over the line while the tutor wrote, in ${copies} of ${looks} looks`);
-      if (!back) wrong.push("the task's copy did not come back over the line after the reply ended");
+      if (copies === 0) wrong.push(`the task's copy did not come in while the reply to a question streamed with the task out of view, in ${looks} looks`);
+      if (changed > 0) wrong.push(`the task's copy came or went after the reply had ended, in ${changed} of ${afterStop.length} looks`);
       if (wrong.length > 0) throw new Error(wrong.join("; "));
     }
     await actions.session()!.say("6", "answer");
@@ -860,6 +862,41 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
       await actions.session()!.say(`${paragraphs("Earlier", 10)}\n\n**Task.** What is 7 + 7?`, "talk");
       await until("the long reply that poses a task", () => idle() && actions.session()?.probe().task?.includes("7 + 7") === true, 15_000);
+
+      const copied = () => document.querySelector(".session.in-front .foot .parked") !== null;
+      const watchCopy = async (words: string, said: "talk" | "help" | "answer") => {
+        const before = copied();
+        void actions.session()!.say(words, said);
+        await until(`"${words}" sent`, () => session().live?.learner === words, 10_000);
+        const seen: { copy: boolean; streaming: boolean }[] = [];
+        while (!idle()) {
+          seen.push({ copy: copied(), streaming: session().live?.status === "writing" });
+          await frame();
+        }
+        for (let n = 0; n < 12; n++) {
+          seen.push({ copy: copied(), streaming: false });
+          await frame();
+        }
+        const ended = seen.map((each) => each.streaming).lastIndexOf(true);
+        const atEnd = ended >= 0 ? seen[ended].copy : null;
+        return {
+          before,
+          cameWhileStreaming: seen.some((each) => each.copy && each.streaming),
+          shownInLooks: seen.filter((each) => each.copy).length,
+          looks: seen.length,
+          changedAfterStreaming: atEnd === null ? 0 : seen.slice(ended + 1).filter((each) => each.copy !== atEnd).length,
+        };
+      };
+      const sideQuestion = await watchCopy("PACED SAVING LONGER A side question: why does the interval narrow?", "talk");
+      steady.copyForQuestion = sideQuestion;
+      if (sideQuestion.before || !sideQuestion.cameWhileStreaming || sideQuestion.changedAfterStreaming > 0)
+        throw new Error(`with the task on screen, a question's reply that pushed it away did not bring its copy in while it streamed, or the copy changed after: ${JSON.stringify(sideQuestion)}`);
+      const lost = await watchCopy("PACED SAVING LONGER I'm lost", "help");
+      steady.copyForHelp = lost;
+      if (!lost.before || lost.shownInLooks !== lost.looks) throw new Error(`"I'm lost" was not treated as a question: the task's copy went: ${JSON.stringify(lost)}`);
+      const answered = await watchCopy("PACED SAVING 14", "answer");
+      steady.copyForAnswer = answered;
+      if (!answered.before || answered.shownInLooks > 0) throw new Error(`after an answer the task's copy stayed or came back: ${JSON.stringify(answered)}`);
 
       void actions.session()!.say(`PACED SAVING\n\n${paragraphs("Ending", 4)}\n\n**Task.** What is 7 + 7?`, "talk");
       await until("the paced reply's last words", () => written("Ending paragraph 4 says") && written("What is 7 + 7?"), 15_000);

@@ -432,6 +432,10 @@ def turn(text):
         answer = " ".join(f"word{n}" for n in range(60))
     else:
         answer = "You said: " + text
+    if "LONGER" in text:
+        answer += "\n\n" + "\n\n".join(
+            f"More about it, part {n + 1}: a few plain words about the interval, so that the reply runs past one screen."
+            for n in range(14))
 
     finished = say(answer, slow=0.01 if "PACED" in text else "SLOW" in text)
     if not finished:

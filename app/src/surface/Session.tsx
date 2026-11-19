@@ -23,6 +23,7 @@ import { useModelPicker } from "./ModelPicker";
 import { pageClock, wordsBatch, type WordsBatch } from "../wordsBatch";
 import { inTask, quotable, selectedWords, selecting } from "../selection";
 import { readingSpot } from "../reading";
+import { taskBox } from "../taskRule";
 
 export type Pending =
   | { kind: "start" }
@@ -220,6 +221,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [reading, setReading] = useState(false);
   const [lookedBack, setLookedBack] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [acted, setActed] = useState(0);
+  const act = useCallback(() => setActed((n) => n + 1), []);
+  const [copy, setCopy] = useState<string | null>(null);
+  const decided = useRef("");
   const surface = useRef<HTMLElement>(null);
   const [heldStep, setHeldStep] = useState<number | null>(null);
   const nowRef = useRef<HTMLElement>(null);
@@ -302,10 +307,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
-  const setRaised = useCallback((up: boolean) => {
-    now.current.raised = up;
-    setRaisedState(up);
-  }, []);
+  const setRaised = useCallback(
+    (up: boolean) => {
+      if (now.current.raised !== up) act();
+      now.current.raised = up;
+      setRaisedState(up);
+    },
+    [act],
+  );
   const raise = useCallback(() => {
     if (now.current.phase === "lesson" && !now.current.atEnd && !now.current.raised) setRaised(true);
   }, [setRaised]);
@@ -528,6 +537,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       spot.follow();
       setFact(null);
       dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
+      act();
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
       if (fromHome) {
@@ -630,10 +640,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     }
     setRaised(false);
     spot.follow();
-    requestAnimationFrame(() => {
-      lineRef.current?.focus();
-      requestAnimationFrame(() => measureQuestion.current());
-    });
+    act();
+    requestAnimationFrame(() => lineRef.current?.focus());
     return true;
   };
 
@@ -863,7 +871,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
-    spot.scrolled();
+    if (spot.scrolled()) act();
     const end = measureEnd();
     if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
       (document.activeElement as HTMLElement).blur();
@@ -933,48 +941,39 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useEffect(() => {
     props.onTaskChange(tab.key, taskText_ !== null);
   }, [taskText_, phase]);
-  const [questionInView, setQuestionInView] = useState(false);
-  const measureQuestion = useRef<() => void>(() => {});
-  measureQuestion.current = () => {
+  const inView = useRef(false);
+  const questionInView = (): boolean => {
     const root = surface.current;
-    const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
-    const ruled = root?.querySelector<HTMLElement>(".turn.open .tutor .prose.has-task-rule");
-    if (!root || !asked || task === null) return setQuestionInView(false);
+    const box = root && task !== null ? taskBox(root, task.text) : null;
+    if (!root || !box) return (inView.current = false);
     const foot = root.querySelector<HTMLElement>(".foot");
     const pinned = foot?.querySelector<HTMLElement>(".parked");
     const view = root.getBoundingClientRect();
-    const whole = asked.getBoundingClientRect();
-    const top = ruled ? ruled.getBoundingClientRect().top + (parseFloat(ruled.style.getPropertyValue("--task-top")) || 0) : whole.top;
-    const box = ruled ? { top, bottom: top + (parseFloat(ruled.style.getPropertyValue("--task-height")) || 0) } : whole;
     const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
-    setQuestionInView((was) => (was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24));
+    const was = inView.current;
+    return (inView.current = was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24);
   };
   useEffect(() => {
-    const root = surface.current;
-    if (!root) return;
-    let frame = 0;
-    const again = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => measureQuestion.current());
-    };
-    root.addEventListener("scroll", again, { passive: true });
-    window.addEventListener("resize", again);
-    return () => {
-      cancelAnimationFrame(frame);
-      root.removeEventListener("scroll", again);
-      window.removeEventListener("resize", again);
-    };
-  }, []);
+    window.addEventListener("resize", act);
+    return () => window.removeEventListener("resize", act);
+  }, [act]);
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
   const ownBusy = isBusyNow(session);
   const isBusy = ownBusy || props.elsewhereBusy;
-  useLayoutEffect(() => {
-    measureQuestion.current();
-  }, [task, openAt, session, raised, props.panel, ownBusy, settling]);
   const page: AnswerPage = phase === "lesson" && task !== null && !ownBusy && session.cards.length === 0 ? (reading || lookedBack ? "open" : "folded") : null;
   const folded = page === "folded";
   now.current.page = page;
+  const live = session.live;
+  const streaming = ownBusy && live?.status === "writing";
+  const moment = `${acted} ${phase} ${props.panel} ${props.active} ${folded}`;
+  useLayoutEffect(() => {
+    if (!streaming && decided.current === moment) return;
+    decided.current = moment;
+    const hidden =
+      task === null || raised || folded || (ownBusy && live?.said === "answer") || (settling && !streaming) || (ownBusy && live !== null && hasTask(tutorText(live)));
+    setCopy(hidden || questionInView() ? null : task.text);
+  });
   const turnsDrawn = !folded && turns.length > 0;
   useEffect(() => {
     const section = nowRef.current;
@@ -1396,9 +1395,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 {home && (
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
                     {session.live && session.cards.length === 0 && <Working live={session.live} />}
-                    {task && !raised && !questionInView && !folded && !ownBusy && !settling && (
+                    {copy !== null && (
                       <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
-                        <Line text={task.text} />
+                        <Line text={copy} />
                       </button>
                     )}
                     <Composer
@@ -1427,6 +1426,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
                       cardWaits={session.cards.length > 0}
                       onWrite={onWrite}
+                      onEdit={act}
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
                     />
