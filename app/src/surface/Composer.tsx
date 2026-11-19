@@ -1,7 +1,7 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { HELP, attachedWords, quotable, withQuote } from "../lesson";
+import { HELP, attachedWords, withQuote } from "../lesson";
 import { keepPlace, type KeyAction } from "../prefs";
 import { renderPlain } from "../render";
 import { selecting } from "../selection";
@@ -224,11 +224,9 @@ export const Composer = memo(
         setSymbols((open) => !open);
       },
       write: (chars, passage) => {
-        const words = passage ? quotable(passage.text) : "";
-        if (passage && words !== "") {
-          const quoted = { text: words, fromTask: passage.fromTask };
-          setQuote(quoted);
-          held.current = { ...held.current, quote: quoted };
+        if (passage && passage.text !== "") {
+          setQuote(passage);
+          held.current = { ...held.current, quote: passage };
         }
         const next = held.current.text + chars;
         caretAt.current = next.length;

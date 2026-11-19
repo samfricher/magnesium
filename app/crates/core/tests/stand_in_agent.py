@@ -221,7 +221,7 @@ def say(text, slow=False):
         piece = word if index == 0 else " " + word
         stream({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": piece}})
         if slow:
-            time.sleep(0.15)
+            time.sleep(0.15 if slow is True else slow)
     stream({"type": "content_block_stop", "index": 0})
     assistant([{"type": "text", "text": text}], message_id)
     return True
@@ -433,10 +433,13 @@ def turn(text):
     else:
         answer = "You said: " + text
 
-    finished = say(answer, slow="SLOW" in text)
+    finished = say(answer, slow=0.01 if "PACED" in text else "SLOW" in text)
     if not finished:
         stopped()
         return
+    if "SAVING" in text:
+        use_tool("mcp__plugin_magnesium_magnesium__learning_step", {})
+        time.sleep(1.5)
     result(answer)
 
 

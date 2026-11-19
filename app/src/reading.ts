@@ -9,9 +9,7 @@ export type Spot = {
 
 const END = 6;
 
-function blocksOf(turn: Element): Element[] {
-  return Array.from(turn.children).flatMap((child) => (child.classList.contains("tutor") ? Array.from(child.querySelector(":scope > .prose")?.children ?? []) : [child]));
-}
+const proseOf = (turn: Element) => turn.querySelector<HTMLElement>(":scope > .tutor > .prose");
 
 function anchorAt(view: HTMLElement, section: HTMLElement): Anchor | null {
   const line = view.getBoundingClientRect().top;
@@ -28,18 +26,26 @@ function anchorAt(view: HTMLElement, section: HTMLElement): Anchor | null {
   }
   const turn = first >= 0 ? turns[first] : section.querySelector<HTMLElement>(":scope > .foot");
   if (!turn || turn.getClientRects().length === 0) return null;
-  const blocks = turn.matches("article.turn") ? blocksOf(turn) : [];
-  const at = blocks.findIndex((block) => block.getBoundingClientRect().bottom > line);
-  const el = at >= 0 ? (blocks[at] as HTMLElement) : turn;
-  return { el, ms: turn.dataset.ms ?? null, at, y: el.getBoundingClientRect().top };
+  const ms = turn.dataset.ms ?? null;
+  const held = (el: Element, at: number): Anchor => ({ el: el as HTMLElement, ms, at, y: el.getBoundingClientRect().top });
+  if (turn.matches("article.turn")) {
+    for (const part of Array.from(turn.children)) {
+      if (part.getBoundingClientRect().bottom <= line) continue;
+      const prose = part.classList.contains("tutor") ? proseOf(turn) : null;
+      if (!prose) return held(part, -1);
+      const blocks = Array.from(prose.children);
+      const at = blocks.findIndex((block) => block.getBoundingClientRect().bottom > line);
+      return at >= 0 ? held(blocks[at], at) : held(part, -1);
+    }
+  }
+  return held(turn, -1);
 }
 
 function anchorNow(section: HTMLElement, anchor: Anchor): HTMLElement | null {
   if (anchor.el.isConnected) return anchor.el;
-  if (anchor.ms === null) return null;
-  const turn = section.querySelector<HTMLElement>(`:scope > article.turn[data-ms="${anchor.ms}"]`);
-  if (!turn || anchor.at < 0) return turn;
-  const found = blocksOf(turn)[anchor.at];
+  if (anchor.ms === null || anchor.at < 0) return null;
+  const turn = section.querySelector(`:scope > article.turn[data-ms="${anchor.ms}"]`);
+  const found = turn ? proseOf(turn)?.children[anchor.at] : null;
   return found instanceof HTMLElement ? found : null;
 }
 
@@ -50,11 +56,28 @@ export function readingSpot(view: () => HTMLElement | null, section: () => HTMLE
 
   const look = (shown: HTMLElement, page: HTMLElement) => {
     seenTop = shown.scrollTop;
-    anchor = following ? null : anchorAt(shown, page);
+    anchor = anchorAt(shown, page);
   };
-  const moved = (shown: HTMLElement) => {
-    const fromFoot = shown.scrollHeight - shown.clientHeight - shown.scrollTop;
-    following = shown.scrollTop < seenTop ? fromFoot < END : following || fromFoot < END;
+  const apply = (shown: HTMLElement, page: HTMLElement) => {
+    const scrolledBy = shown.scrollTop - seenTop;
+    if (Math.abs(scrolledBy) > 1) {
+      const atEnd = shown.scrollHeight - shown.clientHeight - shown.scrollTop < END;
+      following = scrolledBy < 0 ? atEnd : following || atEnd;
+    }
+    if (following) shown.scrollTop = shown.scrollHeight;
+    else if (anchor) {
+      const el = anchorNow(page, anchor);
+      if (el && el.getClientRects().length > 0) {
+        const by = Math.round(el.getBoundingClientRect().top - (anchor.y - scrolledBy));
+        if (by !== 0) shown.scrollTop += by;
+      }
+    }
+    look(shown, page);
+  };
+  const both = (): [HTMLElement, HTMLElement] | null => {
+    const shown = view();
+    const page = section();
+    return shown && page && shown.clientHeight > 0 ? [shown, page] : null;
   };
 
   return {
@@ -70,26 +93,12 @@ export function readingSpot(view: () => HTMLElement | null, section: () => HTMLE
       look(shown, page);
     },
     settle: () => {
-      const shown = view();
-      const page = section();
-      if (!shown || !page || shown.clientHeight === 0) return;
-      if (Math.abs(shown.scrollTop - seenTop) > 1) moved(shown);
-      else if (following) shown.scrollTop = shown.scrollHeight;
-      else if (anchor) {
-        const el = anchorNow(page, anchor);
-        if (el && el.getClientRects().length > 0) {
-          const by = Math.round(el.getBoundingClientRect().top - anchor.y);
-          if (by !== 0) shown.scrollTop += by;
-        }
-      }
-      look(shown, page);
+      const found = both();
+      if (found) apply(...found);
     },
     scrolled: () => {
-      const shown = view();
-      const page = section();
-      if (!shown || !page || Math.abs(shown.scrollTop - seenTop) <= 1) return;
-      moved(shown);
-      look(shown, page);
+      const found = both();
+      if (found && Math.abs(found[0].scrollTop - seenTop) > 1) apply(...found);
     },
   };
 }

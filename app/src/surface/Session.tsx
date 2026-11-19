@@ -21,7 +21,7 @@ import { Line, Rich } from "./Rich";
 import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 import { pageClock, wordsBatch, type WordsBatch } from "../wordsBatch";
-import { inTask, selectedWords, selecting } from "../selection";
+import { inTask, quotable, selectedWords, selecting } from "../selection";
 import { readingSpot } from "../reading";
 
 export type Pending =
@@ -1078,24 +1078,29 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useEffect(() => {
     if (!props.active || phase !== "lesson") return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.isComposing || event.keyCode === 229) return;
+      if (event.defaultPrevented) return;
       const { props: current, session: shown } = now.current;
       if (current.covered || shown.cards.length > 0) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (target?.closest("input, textarea, select, [contenteditable], .layer, .card")) return;
-      const enter = event.key === "Enter" && !event.altKey && !event.shiftKey;
-      const char = event.key.length === 1 && event.key !== " ";
-      if (!enter && !char) return;
-      if (enter && target?.closest("button, a, summary, [role='button'], [role='option']")) return;
       if (actionOf(event, current.prefs.keys)) return;
+      const command = event.metaKey || event.ctrlKey;
+      const paste = command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v";
+      const composing = !command && (event.isComposing || event.keyCode === 229 || event.key === "Process" || event.key === "Dead");
+      const erase = !command && (event.key === "Backspace" || event.key === "Delete") && lineRef.current?.holds() === true;
+      const enter = !command && event.key === "Enter" && !event.altKey && !event.shiftKey && !target?.closest("button, a, summary, [role='button'], [role='option']");
+      const char = !command && !composing && event.key.length === 1 && event.key !== " ";
+      if (!paste && !composing && !erase && !enter && !char) return;
+      raise();
+      if (paste || erase) return lineRef.current?.focus();
       const selection = window.getSelection();
       const range = selection && !selection.isCollapsed && selection.rangeCount > 0 && box.current?.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
-      const selected = range ? selectedWords(range) : "";
+      const selected = range ? quotable(selectedWords(range)) : "";
       const open = now.current.task;
-      const fromTask = range !== null && selected !== "" && open !== null && inTask(range, open.text);
+      const passage = selected ? { text: selected, fromTask: range !== null && open !== null && inTask(range, open.text) } : undefined;
+      if (composing) return lineRef.current?.write("", passage);
       event.preventDefault();
-      raise();
-      lineRef.current?.write(char ? event.key : "", selected ? { text: selected, fromTask } : undefined);
+      lineRef.current?.write(char ? event.key : "", passage);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

@@ -732,6 +732,8 @@ button.line-end:hover { color: var(--text); }
   padding-top: 0.5rem;
   background: var(--ground);
 }
+.foot.raised:has(> .working) { padding-top: 2.1rem; }
+.foot.raised > .working { top: 0.5rem; bottom: auto; }
 .foot.raised::before {
   content: "";
   position: absolute;
