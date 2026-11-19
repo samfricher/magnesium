@@ -157,7 +157,7 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
           <Line text={firstWords(turn.question)} />
         </p>
       )}
-      {quoted.quote && <p className="said-quote">“{quoted.quote}”</p>}
+      {quoted.quote && <p className="said-quote" dangerouslySetInnerHTML={{ __html: `“${renderPlain(quoted.quote)}”` }} />}
       {words.trim() !== "" && <Said text={words} className={`you talk${quiet ? (turn.pick ? " pick" : " help") : ""}`} />}
       {confidence && <span className="said-sure">{confidence.toLowerCase()}</span>}
       <Sent files={attached.files} working={attached.working} />
@@ -169,7 +169,6 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
 type TurnProps = {
   turn: LessonTurn;
   open: boolean;
-  held: boolean;
   linksOpen: boolean;
   opensNow?: (path: string) => boolean;
   writing: boolean;
@@ -180,18 +179,13 @@ type TurnProps = {
   planKey: string | null;
   onSource: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
-  onHold: () => void;
   waiting?: boolean;
 };
 
-export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold, waiting }: TurnProps) {
+export const Turn = memo(function Turn({ turn, open, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, waiting }: TurnProps) {
   const reply = turn.tutor;
   return (
-    <article
-      className={`turn${open ? " open" : ""}${held ? " held" : ""}`}
-      data-ms={turn.ms}
-      onClick={open && !held ? (event) => !(event.target as HTMLElement).closest("a, button, code.path") && onHold() : undefined}
-    >
+    <article className={`turn${open ? " open" : ""}`} data-ms={turn.ms}>
       {divider && <hr className="sitting-rule" />}
       <Learner turn={turn} showQuestion={showQuestion} />
       {waiting && (

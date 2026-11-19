@@ -126,10 +126,13 @@ button {
   inset: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   scrollbar-width: thin;
 }
 
 .column {
+  display: flex;
+  flex-direction: column;
   width: min(var(--measure), calc(100% - 2 * var(--hang) - 40px));
   margin: 0 auto;
 }
@@ -334,7 +337,10 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
 .record-keys { margin: 0.35rem 0 0; font: 400 0.765rem/1.5 var(--app); color: var(--quiet); }
 
 .working {
-  margin: 0.6rem 0 0;
+  position: absolute;
+  left: calc(var(--hang) + 8px);
+  bottom: 100%;
+  pointer-events: none;
   min-height: 1.6em;
   font: 400 0.765rem/1.6 var(--app);
   color: var(--quiet);
@@ -579,6 +585,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   color: var(--text);
   cursor: text;
 }
+.parked.spent { color: var(--quiet); border-left-color: var(--faint); }
 .line-end {
   font: 400 0.765rem/1.6 var(--app);
   color: var(--hint);
@@ -726,6 +733,8 @@ button.line-end:hover { color: var(--text); }
   padding-top: 0.5rem;
   background: var(--ground);
 }
+.foot.raised:has(> .working) { padding-top: 2.1rem; }
+.foot.raised > .working { top: 0.5rem; bottom: auto; }
 .foot.raised::before {
   content: "";
   position: absolute;
@@ -836,7 +845,7 @@ button.line-end:hover { color: var(--text); }
   font: 400 0.882rem/1.6 var(--mono);
   color: var(--ink);
 }
-:root:not([data-field="soft"]) .foot:not(.asking) { margin-top: 2.6rem; }
+.now .foot:not(.asking) { margin-top: 2.6rem; }
 
 :root[data-field="ruled"] .line.lesson .field-row { padding-bottom: 0.5rem; }
 :root[data-field="ruled"] .line.lesson .field-row::after {

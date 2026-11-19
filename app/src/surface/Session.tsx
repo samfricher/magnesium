@@ -4,7 +4,7 @@ import { busy as isBusyNow, CHECKS_WORDS, emptySession, isHelp, openingWords, op
 import { marksOfTurns } from "../marks";
 import { drawHeadNow, stillHeld } from "../stepHead";
 import { actionOf, changeOf, keepChange, keyName, keepPlace, movePlace, placeKey as keyOf, placeOf, type KeyAction, type Prefs } from "../prefs";
-import { hasTask, heldAnswerGoes, poses } from "../render";
+import { coverage, hasTask, heldAnswerGoes, poses } from "../render";
 import { sentHomeDraft } from "../homeDraft";
 import { setupReady } from "../setup";
 import type { SourceRef } from "../sources";
@@ -21,6 +21,9 @@ import { Line, Rich } from "./Rich";
 import type { LineRow } from "./LineMenu";
 import { useModelPicker } from "./ModelPicker";
 import { pageClock, wordsBatch, type WordsBatch } from "../wordsBatch";
+import { inTask, quotable, selectedWords, selecting } from "../selection";
+import { readingSpot } from "../reading";
+import { taskBox } from "../taskRule";
 
 export type Pending =
   | { kind: "start" }
@@ -218,17 +221,20 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const [reading, setReading] = useState(false);
   const [lookedBack, setLookedBack] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [acted, setActed] = useState(0);
+  const act = useCallback(() => setActed((n) => n + 1), []);
+  const [copy, setCopy] = useState<string | null>(null);
+  const decided = useRef("");
+  const wantedCopy = useRef<() => string | null>(() => null);
   const surface = useRef<HTMLElement>(null);
   const [heldStep, setHeldStep] = useState<number | null>(null);
-  const keepReply = useRef<{ ms: number; top: number } | null>(null);
   const nowRef = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const lineRef = useRef<ComposerHandle>(null);
   const fromLine = useRef<string | null>(null);
   const modelAt = useMemo(() => ({ folder, session: props.tab.session, live: props.live }), [folder, props.tab.session, props.live]);
   const picker = useModelPicker({ api, at: modelAt, onClose: () => lineRef.current?.focus() });
-  const stuck = useRef(true);
-  const lastTop = useRef(0);
+  const spot = useRef(readingSpot(() => surface.current, () => nowRef.current)).current;
   const restoring = useRef<number | null>(null);
   const started = useRef(false);
   const [homeAnswer, setHomeAnswerState] = useState<
@@ -302,10 +308,14 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     else setNotes((old) => [...old.filter((n) => n !== text), text].slice(-3));
   }, []);
 
-  const setRaised = useCallback((up: boolean) => {
-    now.current.raised = up;
-    setRaisedState(up);
-  }, []);
+  const setRaised = useCallback(
+    (up: boolean) => {
+      if (now.current.raised !== up) act();
+      now.current.raised = up;
+      setRaisedState(up);
+    },
+    [act],
+  );
   const raise = useCallback(() => {
     if (now.current.phase === "lesson" && !now.current.atEnd && !now.current.raised) setRaised(true);
   }, [setRaised]);
@@ -378,11 +388,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const reply = replyOf(ms);
     const view = surface.current;
     const place = { folded: now.current.page === "folded", shown: now.current.props.active && view !== null && view.clientHeight > 0, replyTop: reply ? reply.getBoundingClientRect().top : null, viewTop: view ? view.getBoundingClientRect().top : 0 };
-    if (!drawHeadNow(place)) {
-      setHeldStep(ms);
-      return;
-    }
-    keepReply.current = reply && place.shown && !place.folded ? { ms, top: reply.getBoundingClientRect().top } : null;
+    if (!drawHeadNow(place)) setHeldStep(ms);
   };
   const replyOf = (ms: number) => surface.current?.querySelector<HTMLElement>(`article.turn[data-ms="${ms}"] .tutor`) ?? null;
 
@@ -458,7 +464,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     setSittingTitle(title);
     props.onTitle(props.tab.key, title);
     setChanged(null);
-    stuck.current = true;
+    spot.follow();
     setPhase("lesson");
     keepPlace(now.current.place, { inLesson: true });
     props.claim(props.tab.key);
@@ -529,9 +535,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
         dispatch({ type: "reopened" });
         props.onEngine();
       }
-      stuck.current = true;
+      spot.follow();
       setFact(null);
       dispatch({ type: "sent", shown: text, now: at ?? Date.now(), ...(said ? { said } : {}), ...(question ? { question } : {}) });
+      act();
       const intent = said === "answer" ? "answer" : said === "talk" ? "talk" : undefined;
       await api.send(text, intent);
       if (fromHome) {
@@ -633,11 +640,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       setReading(false);
     }
     setRaised(false);
-    stuck.current = true;
-    requestAnimationFrame(() => {
-      lineRef.current?.focus();
-      requestAnimationFrame(() => measureQuestion.current());
-    });
+    spot.follow();
+    act();
+    requestAnimationFrame(() => lineRef.current?.focus());
     return true;
   };
 
@@ -812,9 +817,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       return;
     }
     if (restoring.current !== null) {
-      el.scrollTop = el.scrollHeight - el.clientHeight - restoring.current;
-      stuck.current = restoring.current < 6;
-      lastTop.current = el.scrollTop;
+      spot.restore(restoring.current);
       restoring.current = null;
     }
   }, [phase, painted]);
@@ -823,25 +826,21 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const el = surface.current;
     const section = nowRef.current;
     if (!el || !section || phase !== "lesson") return;
-    const pin = () => {
-      if (stuck.current) {
-        el.scrollTop = el.scrollHeight;
-        lastTop.current = el.scrollTop;
-      }
+    const settle = () => {
+      spot.settle();
+      keepLineInView();
     };
-    const watch = new ResizeObserver(pin);
+    const watch = new ResizeObserver(settle);
     watch.observe(section);
     watch.observe(el);
-    pin();
+    settle();
     return () => watch.disconnect();
   }, [phase]);
 
   useLayoutEffect(() => {
-    const el = surface.current;
-    if (!el || phase !== "lesson" || !stuck.current || el.clientHeight === 0) return;
-    if (el.scrollTop < Math.min(lastTop.current, el.scrollHeight - el.clientHeight) - 1) return;
-    el.scrollTop = el.scrollHeight;
-    lastTop.current = el.scrollTop;
+    if (phase !== "lesson") return;
+    spot.settle();
+    keepLineInView();
   });
 
   useEffect(() => {
@@ -873,10 +872,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
-    const up = el.scrollTop < lastTop.current - 1;
-    lastTop.current = el.scrollTop;
-    if (up) stuck.current = fromFoot < 6;
-    else if (fromFoot < 6) stuck.current = true;
+    if (spot.scrolled()) setCopy(wantedCopy.current());
     const end = measureEnd();
     if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
       (document.activeElement as HTMLElement).blur();
@@ -887,13 +883,16 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const measureEnd = (): boolean | null => {
     const el = surface.current;
     if (!el || el.clientHeight === 0 || now.current.phase !== "lesson") return null;
-    const line = nowRef.current?.querySelector<HTMLElement>(".foot");
-    const end = !line || line.getBoundingClientRect().top < el.getBoundingClientRect().bottom - 8;
+    const field = nowRef.current?.querySelector<HTMLElement>(".foot .field-row");
+    const end = !field || field.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom;
     if (end !== now.current.atEnd) {
       now.current.atEnd = end;
       setAtEnd(end);
     }
     return end;
+  };
+  const keepLineInView = () => {
+    if (measureEnd() === false && lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) raise();
   };
   useEffect(() => {
     if (!props.active) return;
@@ -943,48 +942,44 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useEffect(() => {
     props.onTaskChange(tab.key, taskText_ !== null);
   }, [taskText_, phase]);
-  const [questionInView, setQuestionInView] = useState(false);
-  const measureQuestion = useRef<() => void>(() => {});
-  measureQuestion.current = () => {
+  const inView = useRef(false);
+  const questionInView = (): boolean => {
     const root = surface.current;
-    const asked = root?.querySelector<HTMLElement>(".turn.open .tutor .prose div.task") ?? root?.querySelector<HTMLElement>(".turn.open .tutor");
-    const ruled = root?.querySelector<HTMLElement>(".turn.open .tutor .prose.has-task-rule");
-    if (!root || !asked || task === null) return setQuestionInView(false);
+    const box = root && task !== null ? taskBox(root, task.text) : null;
+    if (!root || !box) return (inView.current = false);
     const foot = root.querySelector<HTMLElement>(".foot");
     const pinned = foot?.querySelector<HTMLElement>(".parked");
     const view = root.getBoundingClientRect();
-    const whole = asked.getBoundingClientRect();
-    const top = ruled ? ruled.getBoundingClientRect().top + (parseFloat(ruled.style.getPropertyValue("--task-top")) || 0) : whole.top;
-    const box = ruled ? { top, bottom: top + (parseFloat(ruled.style.getPropertyValue("--task-height")) || 0) } : whole;
     const lineTop = (foot?.getBoundingClientRect().top ?? view.bottom) + (pinned?.offsetHeight ?? 0);
-    setQuestionInView((was) => (was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24));
+    const was = inView.current;
+    return (inView.current = was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24);
   };
   useEffect(() => {
-    const root = surface.current;
-    if (!root) return;
-    let frame = 0;
-    const again = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => measureQuestion.current());
-    };
-    root.addEventListener("scroll", again, { passive: true });
-    window.addEventListener("resize", again);
-    return () => {
-      cancelAnimationFrame(frame);
-      root.removeEventListener("scroll", again);
-      window.removeEventListener("resize", again);
-    };
+    const resized = () => setCopy(wantedCopy.current());
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
   }, []);
   const firstSaid = phase === "lesson" ? (turns[sittingStart]?.learner ?? "") : "";
   const titleIsFirstWords = firstSaid.trim() !== "" && sittingTitle.trim() !== "" && firstWords(firstSaid, 80) === sittingTitle;
   const ownBusy = isBusyNow(session);
   const isBusy = ownBusy || props.elsewhereBusy;
-  useLayoutEffect(() => {
-    measureQuestion.current();
-  }, [task, openAt, session, raised, props.panel, ownBusy, settling]);
   const page: AnswerPage = phase === "lesson" && task !== null && !ownBusy && session.cards.length === 0 ? (reading || lookedBack ? "open" : "folded") : null;
   const folded = page === "folded";
   now.current.page = page;
+  const live = session.live;
+  const streaming = ownBusy && live?.status === "writing";
+  const moment = `${acted} ${phase} ${props.panel} ${props.active} ${folded}`;
+  wantedCopy.current = () => {
+    const settingTask = ownBusy && live !== null && replyOf(live.since)?.querySelector(".prose .task") != null;
+    const hidden = task === null || raised || folded || (ownBusy && live?.said === "answer") || (settling && !streaming) || settingTask;
+    return hidden || questionInView() ? null : task.text;
+  };
+  useLayoutEffect(() => {
+    if (!streaming && decided.current === moment) return;
+    decided.current = moment;
+    setCopy(wantedCopy.current());
+  });
+  const copySpent = copy !== null && (task === null || (copy !== task.text && Math.min(coverage(copy, task.text), coverage(task.text, copy)) < 0.8));
   const turnsDrawn = !folded && turns.length > 0;
   useEffect(() => {
     const section = nowRef.current;
@@ -1031,15 +1026,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useLayoutEffect(() => {
     if (heldStep !== null && !holdingStep) setHeldStep(null);
   }, [heldStep, holdingStep]);
-  useLayoutEffect(() => {
-    const kept = keepReply.current;
-    const view = surface.current;
-    if (!kept || !view) return;
-    keepReply.current = null;
-    if (stuck.current) return;
-    const reply = replyOf(kept.ms);
-    if (reply) view.scrollTop += Math.round(reply.getBoundingClientRect().top - kept.top);
-  });
   const stepAt = plan?.steps.findIndex((step) => step.status === "doing") ?? -1;
   const currentStep = stepAt >= 0 ? plan!.steps[stepAt].step : null;
   const restVerb = rest?.start ? (/^↩ ([a-z]+(?: on)?)/.exec(rest.keys)?.[1] ?? "start") : null;
@@ -1097,41 +1083,45 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   useEffect(() => {
     if (!props.active || phase !== "lesson") return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.isComposing || event.keyCode === 229) return;
+      if (event.defaultPrevented) return;
       const { props: current, session: shown } = now.current;
       if (current.covered || shown.cards.length > 0) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (target?.closest("input, textarea, select, [contenteditable], .layer, .card")) return;
-      const enter = event.key === "Enter" && !event.altKey && !event.shiftKey;
-      const char = event.key.length === 1 && event.key !== " ";
-      if (!enter && !char) return;
-      if (enter && target?.closest("button, a, summary, [role='button'], [role='option']")) return;
       if (actionOf(event, current.prefs.keys)) return;
-      const selection = window.getSelection();
-      const selected = selection && !selection.isCollapsed && selection.anchorNode && box.current?.contains(selection.anchorNode) ? selection.toString() : "";
-      event.preventDefault();
+      const command = event.metaKey || event.ctrlKey;
+      const paste = command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v";
+      const composing = !command && (event.isComposing || event.keyCode === 229 || event.key === "Process" || event.key === "Dead");
+      const erase = !command && (event.key === "Backspace" || event.key === "Delete") && lineRef.current?.holds() === true;
+      const enter = !command && event.key === "Enter" && !event.altKey && !event.shiftKey && !target?.closest("button, a, summary, [role='button'], [role='option']");
+      const char = !command && !composing && event.key.length === 1 && event.key !== " ";
+      if (!paste && !composing && !erase && !enter && !char) return;
       raise();
-      lineRef.current?.write(char ? event.key : "", selected);
+      if (paste || erase) return lineRef.current?.focus();
+      const selection = window.getSelection();
+      const range = selection && !selection.isCollapsed && selection.rangeCount > 0 && box.current?.contains(selection.anchorNode) ? selection.getRangeAt(0) : null;
+      const selected = range ? quotable(selectedWords(range)) : "";
+      const open = now.current.task;
+      const passage = selected ? { text: selected, fromTask: range !== null && open !== null && box.current !== null && inTask(range, open.text, box.current) } : undefined;
+      if (composing) return lineRef.current?.write("", passage);
+      event.preventDefault();
+      lineRef.current?.write(char ? event.key : "", passage);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [props.active, phase, raise]);
 
-  const onWrite = useCallback(() => {
+  const onWrite = useCallback((answering: boolean) => {
     const { page, lookedBack } = now.current;
-    if (page !== null && !lookedBack) {
+    if (page !== null && !lookedBack && answering) {
       setReading(false);
       setRaised(false);
-      stuck.current = true;
+      spot.follow();
       return;
     }
     raise();
   }, [raise, setRaised]);
 
-  const onHold = useCallback(() => {
-    raise();
-    lineRef.current?.focus();
-  }, [raise]);
   const onDismiss = useCallback((text: string) => dispatch({ type: "dismiss", text }), []);
   const again = useRef({ turns, sittingStart, sittingTitle });
   again.current = { turns, sittingStart, sittingTitle };
@@ -1367,7 +1357,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 </header>
                 {shownFrom > 0 && <p className="record quiet earlier-note">Earlier turns of this session are kept, and not drawn here.</p>}
                 {folded && task && (
-                  <div className="answer-task" data-role="answer-task" onClick={(event) => !(event.target as HTMLElement).closest("a, button") && lineRef.current?.focus()}>
+                  <div className="answer-task" data-role="answer-task" onClick={(event) => !(event.target as HTMLElement).closest("a, button") && !selecting() && lineRef.current?.focus()}>
                     <Rich text={task.text} final linksOpen={false} opensNow={isPaper} onSource={onSource} onNote={note} />
                   </div>
                 )}
@@ -1383,7 +1373,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       key={`${turn.ms}-${index}`}
                       turn={holdingStep && turn.step && turn.ms === heldStep ? { ...turn, step: undefined } : turn}
                       open={index === openAt}
-                      held={false}
                       linksOpen={index !== openAt}
                       opensNow={isPaper}
                       writing={live && session.live!.status !== "idle"}
@@ -1394,7 +1383,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       planKey={props.panel ? null : keyName(props.prefs.keys.plan) || null}
                       onSource={onSource}
                       onNote={note}
-                      onHold={onHold}
                       waiting={homeAnswer !== null && !homeAnswerSent && turn.ms === homeAnswer.ms}
                     />
                   );
@@ -1404,7 +1392,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     Your answer from Home was not sent: this may not be the check Home asked. It is on the line, to send for this one or to change.
                   </p>
                 )}
-                {session.live && session.cards.length === 0 && <Working live={session.live} />}
                 <p className="visually-hidden" role="status" aria-live="polite" data-role="mark-said">
                   {markSaid}
                 </p>
@@ -1413,9 +1400,10 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 <Cards cards={session.cards} onDecide={onDecide} onAnswer={onAnswer} />
                 {home && (
                   <div className={`foot${raised ? " raised" : ""}${session.cards.length > 0 ? " asking" : ""}`}>
-                    {task && !raised && !questionInView && !folded && !ownBusy && !settling && (
-                      <button className="parked" data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
-                        <Line text={task.text} />
+                    {session.live && session.cards.length === 0 && <Working live={session.live} />}
+                    {copy !== null && (
+                      <button className={`parked${copySpent ? " spent" : ""}`} data-drive="open-task" onMouseDown={(event) => event.preventDefault()} onClick={() => lineRef.current?.focus()}>
+                        <Line text={copy} />
                       </button>
                     )}
                     <Composer
@@ -1444,6 +1432,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       stopWords={session.cards.length > 0 ? "stop the tutor" : "stop the reply"}
                       cardWaits={session.cards.length > 0}
                       onWrite={onWrite}
+                      onEdit={act}
                       onPutAway={putAway}
                       onLeftEmpty={putAway}
                     />

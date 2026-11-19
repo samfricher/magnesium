@@ -1,8 +1,10 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { HELP, attachedWords, quotable, withQuote } from "../lesson";
+import { HELP, attachedWords, withQuote } from "../lesson";
 import { keepPlace, type KeyAction } from "../prefs";
+import { renderPlain } from "../render";
+import { selecting } from "../selection";
 import { LineMenu, type LineRow } from "./LineMenu";
 
 export type Place = "rest" | "lesson";
@@ -49,6 +51,8 @@ const composing = (event: React.KeyboardEvent) => event.nativeEvent.isComposing 
 
 const bare = (text: string) => /^[\s$]*$/.test(text);
 
+export type Passage = { text: string; fromTask: boolean };
+
 export const fileName = (path: string) => path.split("/").pop() ?? path;
 
 export type ComposerHandle = {
@@ -56,7 +60,7 @@ export type ComposerHandle = {
   pick: () => void;
   add: (saved: string[]) => void;
   toggleSymbols: () => void;
-  write: (chars: string, selected?: string) => void;
+  write: (chars: string, passage?: Passage) => void;
   holds: () => boolean;
 };
 
@@ -86,7 +90,8 @@ type Props = {
   stopWords?: string;
   cardWaits?: boolean;
   onEmptyReturn?: () => void;
-  onWrite?: () => void;
+  onWrite?: (answering: boolean) => void;
+  onEdit?: () => void;
   onPutAway?: () => void;
   onLeftEmpty?: () => void;
 };
@@ -94,7 +99,7 @@ type Props = {
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
     const [text, setText] = useState(props.initial);
-    const [quote, setQuote] = useState<string | null>(null);
+    const [quote, setQuote] = useState<Passage | null>(null);
     const [confidence, setConfidence] = useState<Confidence | null>(null);
     const [files, setFiles] = useState<string[]>([]);
     const [queued, setQueued] = useState<null | { talk: boolean }>(null);
@@ -109,6 +114,7 @@ export const Composer = memo(
     latest.current = props;
     const held = useRef({ text, quote, files });
     held.current = { text, quote, files };
+    const answering = () => held.current.quote === null || held.current.quote.fromTask;
 
     useLayoutEffect(() => {
       const el = box.current;
@@ -139,6 +145,7 @@ export const Composer = memo(
       const active = document.activeElement;
       if (active === el) return;
       if (active && active !== document.body && active.closest(".card, .line-tools, .line-menu, .model-list, .symbols, .attached, .panel.side")) return;
+      if (selecting()) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     }, [props.active, props.paused, props.busy]);
@@ -153,7 +160,8 @@ export const Composer = memo(
       setText(value);
       keep(value);
       if (bare(value)) setConfidence(null);
-      if (latest.current.place === "lesson" && value !== "") latest.current.onWrite?.();
+      if (latest.current.place === "lesson" && bare(value) !== bare(held.current.text)) latest.current.onEdit?.();
+      if (latest.current.place === "lesson" && value !== "") latest.current.onWrite?.(answering());
     };
 
     const typed = !bare(text);
@@ -171,7 +179,7 @@ export const Composer = memo(
         return;
       }
       const asTalk = talk || quote !== null;
-      const parts = [quote !== null ? withQuote(quote, text.trim()) : text.trim()];
+      const parts = [quote !== null ? withQuote(quote.text, text.trim()) : text.trim()];
       if (confidence && typed && !asTalk) parts.push(`Confidence: ${confidence}`);
       if (files.length > 0) parts.push(attachedWords(files, place === "lesson" && taskOpen && !asTalk));
       latest.current.onSend({ text: parts.filter((part) => part !== "").join("\n\n"), place, talk: asTalk });
@@ -193,13 +201,13 @@ export const Composer = memo(
     const add = (saved: string[]) => {
       if (saved.length === 0) return;
       setFiles((old) => [...old, ...saved.filter((path) => !old.includes(path))]);
-      latest.current.onWrite?.();
+      latest.current.onWrite?.(answering());
     };
 
     const working = () => latest.current.place === "lesson" && latest.current.taskOpen && held.current.quote === null;
 
     const pick = async () => {
-      latest.current.onWrite?.();
+      latest.current.onWrite?.(answering());
       try {
         const picked = await latest.current.onPick();
         if (picked.length > 0) add(await latest.current.onAttach(picked, working()));
@@ -214,17 +222,19 @@ export const Composer = memo(
       pick: () => void pick(),
       add,
       toggleSymbols: () => {
-        latest.current.onWrite?.();
+        latest.current.onWrite?.(answering());
         setSymbols((open) => !open);
       },
-      write: (chars, selected) => {
-        const passage = selected ? quotable(selected) : "";
-        if (passage !== "") setQuote(passage);
+      write: (chars, passage) => {
+        if (passage && passage.text !== "") {
+          setQuote(passage);
+          held.current = { ...held.current, quote: passage };
+        }
         const next = held.current.text + chars;
         caretAt.current = next.length;
         if (chars !== "") change(next);
         else box.current?.focus({ preventScroll: true });
-        latest.current.onWrite?.();
+        latest.current.onWrite?.(answering());
       },
       holds: () => !bare(held.current.text) || held.current.files.length > 0 || held.current.quote !== null,
     }));
@@ -375,9 +385,7 @@ export const Composer = memo(
       <div className={`line lesson${rest ? " first" : ""}${props.active ? " on" : ""}${typed ? " typed" : ""}`} data-line={place}>
         {menu === "stuck" && <LineMenu label="Stuck" rows={stuckRows} opener={stuckRef} onClose={closeMenu} inline />}
         {quote !== null && (
-          <p className="quote" title="⌫ on an empty line takes it off">
-            “{quote}”
-          </p>
+          <p className="quote" title="⌫ on an empty line takes it off" dangerouslySetInnerHTML={{ __html: `“${renderPlain(quote.text)}”` }} />
         )}
         <div className="field-row">
           <span className="attached" role="group" aria-label="Files that go with the next message" aria-live="polite">

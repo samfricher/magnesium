@@ -337,15 +337,6 @@ export function saidByTheWindow(text: string): boolean {
 
 export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
 
-const QUOTE_MAX = 600;
-
-export function quotable(selected: string): string {
-  const flat = selected.replace(/\s+/g, " ").trim();
-  if (flat.length <= QUOTE_MAX) return flat;
-  const cut = flat.slice(0, QUOTE_MAX);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), QUOTE_MAX - 40))}…`;
-}
-
 export function withQuote(quote: string, words: string): string {
   return `> ${quote}\n\n${words}`;
 }

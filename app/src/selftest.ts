@@ -5,6 +5,8 @@ import { drawPage, openPdf } from "./pdf";
 import { hasTask, renderInline, renderMarkdown, renderPlain, setSourcesApart, withoutOpenMath } from "./render";
 import { comboOf, keyName, parseCombo, keepPlace, placeKey, type Place } from "./prefs";
 import { sourceRef } from "./sources";
+import { readingSpot } from "./reading";
+import { inTask } from "./selection";
 import { rebuild } from "./surface/Session";
 import type { Core, Mark, Turn as SavedTurn } from "./types";
 import { withoutPaths } from "./words";
@@ -704,19 +706,21 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       }
       await api.interrupt();
       await until("the slow reply to stop", () => idle(), 15_000);
-      let back = false;
-      for (let n = 0; n < 200 && !back; n++) {
-        back = copy();
-        if (!back) await wait(50);
+      const atStop = copy();
+      const afterStop: boolean[] = [];
+      for (let n = 0; n < 20; n++) {
+        afterStop.push(copy());
+        await wait(50);
       }
+      const changed = afterStop.filter((each) => each !== atStop).length;
 
-      steps.steadyLine = { scrolls, rest, lowest, fromFoot, caret, looks, copies, back };
+      steps.steadyLine = { scrolls, rest, lowest, fromFoot, caret, looks, copies, atStop, changed };
       const wrong: string[] = [];
       if (scrolls < 100) wrong.push(`the lesson was too short to scroll (${scrolls} px), so the line could not be seen to move`);
       if (lowest - rest > 2 || fromFoot > 6) wrong.push(`taking words off the line left it ${lowest - rest} px under its place, the lesson ${fromFoot} px from its end`);
       if (caret !== 9) wrong.push(`a reply ending moved the caret from 9 to ${caret}`);
-      if (copies > 0) wrong.push(`the task's copy was over the line while the tutor wrote, in ${copies} of ${looks} looks`);
-      if (!back) wrong.push("the task's copy did not come back over the line after the reply ended");
+      if (copies === 0) wrong.push(`the task's copy did not come in while the reply to a question streamed with the task out of view, in ${looks} looks`);
+      if (changed > 0) wrong.push(`the task's copy came or went after the reply had ended, in ${changed} of ${afterStop.length} looks`);
       if (wrong.length > 0) throw new Error(wrong.join("; "));
     }
     await actions.session()!.say("6", "answer");
@@ -773,6 +777,288 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     const sentAgain = { kept: (await keptTurns()) - keptBefore, task: actions.session()?.probe().task ?? null, onLine: lessonLine().value };
     steps.sentAgain = sentAgain;
     if (sentAgain.kept !== 1 || sentAgain.task !== null || sentAgain.onLine !== "") throw new Error(`the answer sent again after the sign-in was not taken as one answer: ${JSON.stringify(sentAgain)}`);
+
+    {
+      const view = document.querySelector<HTMLElement>(".session.in-front main.surface")!;
+      const frame = () => within("drawing the window's next frame (a covered window draws none)", new Promise<void>((done) => requestAnimationFrame(() => done())), 10_000);
+      const line = () => document.querySelector<HTMLTextAreaElement>('.session.in-front [data-drive="composer"]')!;
+      const writeLine = (value: string) => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(line(), value);
+        line().dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const key = (init: KeyboardEventInit, on: EventTarget = document.body) => on.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+      const paragraphs = (name: string, count: number) =>
+        Array.from({ length: count }, (_, n) => `${name} paragraph ${n + 1} says that the half-width falls because $t^*$ also falls, so that the reply runs well past one screen.`).join("\n\n");
+      const block = (words: string) => [...document.querySelectorAll<HTMLElement>(".session.in-front .now > article.turn .tutor .prose > *")].reverse().find((each) => (each.textContent ?? "").includes(words)) ?? null;
+      const topOf = (words: string) => block(words)?.getBoundingClientRect().top ?? Number.NaN;
+      const written = (words: string) => {
+        const live = session().live;
+        return live !== null && tutorText(live).includes(words);
+      };
+      const select = (el: Element) => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+      };
+      const clearLine = async () => {
+        line().focus();
+        writeLine("");
+        key({ key: "Backspace" }, line());
+        key({ key: "Escape" }, line());
+        await frame();
+      };
+      const steady: Record<string, unknown> = {};
+      steps.steadyPage = steady;
+
+      const sample = document.createElement("div");
+      sample.style.cssText = "position: absolute; left: -9999px; top: 0; width: 400px";
+      sample.innerHTML = '<article class="turn open"><div class="tutor"><div class="prose"><p>Read the interval first.</p><p>What is <em>nine</em> plus 9?</p></div></div></article><p>After the reply.</p>';
+      document.body.appendChild(sample);
+      const [lead, question, after] = Array.from(sample.querySelectorAll("p"));
+      const span = (from: Node, at: number, to: Node, end: number) => {
+        const range = document.createRange();
+        range.setStart(from, at);
+        range.setEnd(to, end);
+        return range;
+      };
+      const posed = "What is *nine* plus 9?";
+      const judged = {
+        paragraph: inTask(span(question, 0, question, question.childNodes.length), posed, sample),
+        tripleClick: inTask(span(question, 0, after, 0), posed, sample),
+        words: inTask(span(question.lastChild!, 1, question.lastChild!, 5), posed, sample),
+        lead: inTask(span(lead, 0, lead, lead.childNodes.length), posed, sample),
+        leadAndTask: inTask(span(lead, 0, question, question.childNodes.length), posed, sample),
+        wordInLead: inTask(span(lead.firstChild!, 0, lead.firstChild!, 4), posed, sample),
+        intoNext: inTask(span(question, 0, after, after.childNodes.length), posed, sample),
+      };
+      sample.remove();
+      steady.judged = judged;
+      if (!judged.paragraph || !judged.tripleClick || !judged.words || judged.lead || judged.leadAndTask || judged.wordInLead || judged.intoNext) throw new Error(`a selection was judged the task, or not, by where its ends sit: ${JSON.stringify(judged)}`);
+
+      const pane = document.createElement("div");
+      pane.style.cssText = "position: absolute; left: -9999px; top: 0; width: 400px; height: 200px; overflow-y: auto; overflow-anchor: none";
+      const blocks = Array.from({ length: 8 }, (_, n) => `<p style="height: 60px; margin: 0">Block ${n + 1}</p>`).join("");
+      pane.innerHTML = `<section class="now"><article class="turn" data-ms="1"><p class="you" style="margin: 0">Asked.</p><div class="tutor"><div class="prose">${blocks}</div></div></article><div class="foot" style="height: 40px"></div></section>`;
+      document.body.appendChild(pane);
+      const page = pane.querySelector<HTMLElement>(".now")!;
+      const place = readingSpot(() => pane, () => page);
+      place.settle();
+      pane.scrollTop -= 230;
+      place.scrolled();
+      const atTop = [...page.querySelectorAll<HTMLElement>(".prose > p")].find((each) => each.getBoundingClientRect().bottom > pane.getBoundingClientRect().top + 1)!;
+      const name = atTop.textContent ?? "";
+      const was = atTop.getBoundingClientRect().top;
+      const prose = page.querySelector<HTMLElement>(".prose")!;
+      prose.innerHTML = blocks;
+      const heading = document.createElement("h2");
+      heading.style.cssText = "height: 30px; margin: 0";
+      page.querySelector(".tutor")!.before(heading);
+      place.settle();
+      const redrawn = [...prose.children].find((each) => each.textContent === name)!.getBoundingClientRect().top;
+      pane.remove();
+      steady.redrawn = { name, moved: Math.round(redrawn - was) };
+      if (Math.abs(redrawn - was) > 1) throw new Error(`a paragraph redrawn with a heading added above it was not held: ${JSON.stringify(steady.redrawn)}`);
+
+      await actions.session()!.say(`${paragraphs("Earlier", 10)}\n\n**Task.** What is 7 + 7?`, "talk");
+      await until("the long reply that poses a task", () => idle() && actions.session()?.probe().task?.includes("7 + 7") === true, 15_000);
+
+      const copied = () => document.querySelector(".session.in-front .foot .parked") !== null;
+      const watchCopy = async (words: string, said: "talk" | "help" | "answer") => {
+        const before = copied();
+        void actions.session()!.say(words, said);
+        await until(`"${words}" sent`, () => session().live?.learner === words, 10_000);
+        const seen: { copy: boolean; streaming: boolean }[] = [];
+        while (!idle()) {
+          seen.push({ copy: copied(), streaming: session().live?.status === "writing" });
+          await frame();
+        }
+        for (let n = 0; n < 12; n++) {
+          seen.push({ copy: copied(), streaming: false });
+          await frame();
+        }
+        const ended = seen.map((each) => each.streaming).lastIndexOf(true);
+        const atEnd = ended >= 0 ? seen[ended].copy : null;
+        return {
+          before,
+          cameWhileStreaming: seen.some((each) => each.copy && each.streaming),
+          shownInLooks: seen.filter((each) => each.copy).length,
+          looks: seen.length,
+          changedAfterStreaming: atEnd === null ? 0 : seen.slice(ended + 1).filter((each) => each.copy !== atEnd).length,
+        };
+      };
+      const sideQuestion = await watchCopy("PACED SAVING LONGER A side question: why does the interval narrow?", "talk");
+      steady.copyForQuestion = sideQuestion;
+      if (sideQuestion.before || !sideQuestion.cameWhileStreaming || sideQuestion.changedAfterStreaming > 0)
+        throw new Error(`with the task on screen, a question's reply that pushed it away did not bring its copy in while it streamed, or the copy changed after: ${JSON.stringify(sideQuestion)}`);
+      const lost = await watchCopy("PACED SAVING LONGER I'm lost", "help");
+      steady.copyForHelp = lost;
+      if (!lost.before || lost.shownInLooks !== lost.looks) throw new Error(`"I'm lost" was not treated as a question: the task's copy went: ${JSON.stringify(lost)}`);
+      const answered = await watchCopy("PACED SAVING 14", "answer");
+      steady.copyForAnswer = answered;
+      if (!answered.before || answered.shownInLooks > 0) throw new Error(`after an answer the task's copy stayed or came back: ${JSON.stringify(answered)}`);
+
+      void actions.session()!.say(`PACED SAVING\n\n${paragraphs("Ending", 4)}\n\n**Task.** What is 7 + 7?`, "talk");
+      await until("the paced reply's last words", () => written("Ending paragraph 4 says") && written("What is 7 + 7?"), 15_000);
+      await frame();
+      const atEnd: number[] = [];
+      let sawSaving = false;
+      while (!idle()) {
+        atEnd.push(topOf("Ending paragraph 3 says"));
+        sawSaving ||= document.querySelector(".session.in-front .working")?.textContent?.includes("saving") === true;
+        await frame();
+      }
+      for (let n = 0; n < 10; n++) {
+        atEnd.push(topOf("Ending paragraph 3 says"));
+        await frame();
+      }
+      steady.atEnd = { sawSaving, spread: Math.round(Math.max(...atEnd) - Math.min(...atEnd)) };
+      if (!sawSaving) throw new Error("the stand-in's reply never showed that it was saving the work");
+      if (Math.max(...atEnd) - Math.min(...atEnd) > 1) throw new Error(`at the end of the page, the reply moved while the tutor saved and finished: ${JSON.stringify(steady.atEnd)}`);
+
+      const fromTheEnd = () => Math.round(view.scrollHeight - view.clientHeight - view.scrollTop);
+      const startedAt = fromTheEnd();
+      const slowly: number[] = [];
+      for (let n = 0; n < 4; n++) {
+        view.scrollTop -= 3;
+        await frame();
+        await frame();
+        slowly.push(fromTheEnd());
+      }
+      steady.slowScroll = { startedAt, slowly };
+      if (startedAt > 0 || slowly.join() !== "3,6,9,12") throw new Error(`a slow scroll up from the end was pulled back: ${JSON.stringify(steady.slowScroll)}`);
+      view.scrollTop = view.scrollHeight;
+      await frame();
+      await frame();
+
+      void actions.session()!.say(`PACED SAVING\n\n${paragraphs("Reading", 14)}\n\n**Task.** What is 8 + 8?`, "talk");
+      await until("the paced reply to run past a screen", () => written("Reading paragraph 8 says"), 15_000);
+      await frame();
+      const reading = [...document.querySelectorAll<HTMLElement>(".session.in-front .now > article.turn:last-of-type .tutor .prose > p")].find((each) => each.getBoundingClientRect().top > view.getBoundingClientRect().top + 60);
+      const held = reading?.textContent?.match(/Reading paragraph \d+ says/)?.[0] ?? "";
+      if (!held) throw new Error("no paragraph of the paced reply was in view to hold");
+      const before = topOf(held);
+      const spacer = document.createElement("div");
+      spacer.style.height = "120px";
+      view.scrollTop -= 300;
+      document.querySelector(".session.in-front .now > article.turn")!.prepend(spacer);
+      await frame();
+      await frame();
+      const sameFrame = Math.round(topOf(held) - (before + 300));
+      line().focus();
+      writeLine("w");
+      await frame();
+      const raised = document.querySelector(".session.in-front .foot.raised") !== null;
+      const kept: number[] = [];
+      let strip: { inside: boolean } | null = null;
+      while (!idle()) {
+        kept.push(topOf(held));
+        const working = document.querySelector<HTMLElement>(".session.in-front .foot.raised > .working");
+        if (working?.textContent?.includes("saving")) strip = { inside: working.getBoundingClientRect().top >= working.parentElement!.getBoundingClientRect().top };
+        await frame();
+      }
+      for (let n = 0; n < 10; n++) {
+        kept.push(topOf(held));
+        await frame();
+      }
+      spacer.remove();
+      await frame();
+      await frame();
+      kept.push(topOf(held));
+      const task = actions.session()?.probe().task ?? "";
+      steady.readingBack = { held, sameFrame, raised, strip, spread: Math.round(Math.max(...kept) - Math.min(...kept)), task };
+      if (Math.abs(sameFrame) > 1) throw new Error(`a change above the page in the frame the reader scrolled moved the paragraph read by ${sameFrame} px: ${JSON.stringify(steady.readingBack)}`);
+      if (!task.includes("8 + 8")) throw new Error(`the paced reply's task did not become the open one: ${JSON.stringify(steady.readingBack)}`);
+      if (Math.max(...kept) - Math.min(...kept) > 1) throw new Error(`scrolled up, the paragraph read moved while the reply set a new task, saved and ended: ${JSON.stringify(steady.readingBack)}`);
+      if (!raised || strip?.inside !== true) throw new Error(`with the line raised, "saving your work" was not inside the line's panel: ${JSON.stringify(steady.readingBack)}`);
+      await clearLine();
+
+      const passage = block("Reading paragraph 5 says")!;
+      select(passage);
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) passage.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+      await frame();
+      const afterClick = { selected: (window.getSelection()?.toString() ?? "").includes("Reading paragraph 5 says"), focus: document.activeElement?.getAttribute("data-drive") ?? document.activeElement?.tagName ?? null };
+      steady.afterClick = afterClick;
+      if (!afterClick.selected || afterClick.focus === "composer") throw new Error(`the click that ends a drag lost the selection: ${JSON.stringify(afterClick)}`);
+
+      select(block("Reading paragraph 5 says")!);
+      key({ key: "w" });
+      await frame();
+      await frame();
+      const quote = document.querySelector<HTMLElement>(".session.in-front .line.lesson .quote");
+      const field = document.querySelector<HTMLElement>(".session.in-front .foot .field-row")!.getBoundingClientRect();
+      const overPassage = {
+        page: actions.session()?.probe().page ?? null,
+        tex: quote?.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? null,
+        doubled: /t\s*∗\s*t\s*∗/.test(quote?.textContent ?? ""),
+        lineInView: field.bottom <= view.getBoundingClientRect().bottom + 1,
+      };
+      steady.overPassage = overPassage;
+      if (overPassage.page !== "open") throw new Error(`typing over a passage that is not the task folded the lesson: ${JSON.stringify(overPassage)}`);
+      if (overPassage.tex !== "t^*" || overPassage.doubled) throw new Error(`the quote did not keep the passage's formula as one formula: ${JSON.stringify(overPassage)}`);
+      if (!overPassage.lineInView) throw new Error(`the line holding the quote was left below the window: ${JSON.stringify(overPassage)}`);
+      await clearLine();
+
+      const asked = document.querySelector<HTMLElement>(".session.in-front .turn.open .prose p.task") ?? block("8 + 8");
+      if (!asked) throw new Error("the open task's paragraph is not on the page");
+      select(asked);
+      key({ key: "w" });
+      await frame();
+      const overTask = { page: actions.session()?.probe().page ?? null, quoted: document.querySelector(".session.in-front .line.lesson .quote") !== null };
+      steady.overTask = overTask;
+      if (overTask.page !== "folded" || !overTask.quoted) throw new Error(`typing over the whole task did not fold the lesson into the task: ${JSON.stringify(overTask)}`);
+      await clearLine();
+      actions.run("look-back");
+      await until("the lesson open again over the task", () => actions.session()?.probe().page === "open", 3000);
+
+      window.getSelection()!.removeAllRanges();
+      line().focus();
+      writeLine("draft");
+      line().blur();
+      key({ key: "ArrowDown" });
+      const reads = document.activeElement !== line();
+      key({ key: "v", metaKey: true });
+      const pastes = document.activeElement === line();
+      line().blur();
+      key({ key: "Backspace" });
+      const erases = document.activeElement === line();
+      line().blur();
+      key({ key: "Dead" });
+      const accents = document.activeElement === line();
+      steady.keys = { reads, pastes, erases, accents };
+      if (!reads || !pastes || !erases || !accents) throw new Error(`from the page, a key that writes did not reach the line, or a reading key did: ${JSON.stringify(steady.keys)}`);
+      await clearLine();
+
+      const longTask = Array.from({ length: 40 }, (_, n) => `part ${n + 1} of the long question asks for one more step written out in full`).join(", ");
+      await actions.session()!.say(`A long one.\n\n**Task.** ${longTask}.`, "talk");
+      await until("the long task open", () => idle() && actions.session()?.probe().task?.includes("part 40") === true, 15_000);
+      line().focus();
+      writeLine("x");
+      await frame();
+      await frame();
+      const taskView = document.querySelector<HTMLElement>(".session.in-front .answer-task");
+      const tall = { page: actions.session()?.probe().page ?? null, raised: false, taller: (taskView?.offsetHeight ?? 0) > view.clientHeight, moved: Number.NaN };
+      if (taskView) {
+        view.scrollTop = view.scrollHeight;
+        await frame();
+        await frame();
+        view.scrollTop -= 100;
+        await frame();
+        await frame();
+        tall.raised = document.querySelector(".session.in-front .foot.raised") !== null;
+        const was = taskView.getBoundingClientRect().top;
+        view.scrollTop -= 100;
+        await frame();
+        await frame();
+        tall.moved = Math.round(taskView.getBoundingClientRect().top - was);
+      }
+      steady.tallTask = tall;
+      if (tall.page !== "folded" || !tall.raised || !tall.taller || tall.moved !== 100) throw new Error(`in task view with the line raised, a 100 px scroll did not move the task by 100 px: ${JSON.stringify(tall)}`);
+      await clearLine();
+      actions.run("look-back");
+      await until("the lesson open again over the long task", () => actions.session()?.probe().page === "open", 3000);
+    }
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
 
