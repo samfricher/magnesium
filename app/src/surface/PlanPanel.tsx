@@ -1,10 +1,3 @@
-// The plan beside the lesson, from the logbook concept's agenda (#69): the
-// exam's date, the plan's items in order as a task list with the one in hand
-// marked, and this session's steps under them. What moved in this sitting says
-// so on its row, read from the plan before and after, never from the tutor's
-// words. It shows no file, no path and no Markdown: the plan is changed by
-// talking to the tutor. Hidden, the lesson is the surface alone.
-
 import { memo } from "react";
 
 import type { Plan } from "../types";
@@ -13,7 +6,6 @@ import { Line } from "./Rich";
 
 const MOVED_WORDS: Record<string, string> = { up: "moved up", down: "moved down", new: "new", day: "day moved" };
 
-/** This session's steps, under the plan's item in hand: done, the one in hand (in ink), to do. */
 function Steps({ steps }: { steps: Plan["steps"] }) {
   return (
     <ol className="panel-items steps" aria-label="This session's steps">
@@ -32,12 +24,10 @@ function Steps({ steps }: { steps: Plan["steps"] }) {
 }
 
 export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan | null; changed: PlanDiff | null }) {
-  // The item in hand: the one the plan marks doing, else the first not done.
   const current = plan ? (plan.items.find((item) => item.status === "doing")?.id ?? plan.items.find((item) => item.status !== "done")?.id) : undefined;
   const steps = plan?.goal && plan.steps.length > 0 ? plan.steps : [];
   const empty = plan !== null && plan.items.length === 0 && !plan.exam_date && steps.length === 0;
   return (
-    // Beside the lesson, not a dialog: no focus is moved or trapped, and it holds nothing to operate.
     <div className="plan-view" aria-label="The plan" data-role="plan-panel">
       {plan === null ? (
         <p className="panel-note">Reading the plan…</p>
@@ -85,7 +75,6 @@ export const PlanPanel = memo(function PlanPanel({ plan, changed }: { plan: Plan
               })}
             </ol>
           )}
-          {/* A session whose steps belong to no item of the plan: they stand on their own. */}
           {steps.length > 0 && (plan.items.length === 0 || current === undefined) && <Steps steps={steps} />}
           {empty && <p className="panel-note">No plan yet. Tell the tutor what this space is for, and it writes one.</p>}
         </>

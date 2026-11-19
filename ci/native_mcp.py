@@ -1,10 +1,3 @@
-"""Bounded test-only stdio MCP client for an explicitly selected native child.
-
-No installed assistant account or provider invocation. One outstanding request
-owns its entire write/read deadline. stderr is drained concurrently with bounded
-retained evidence and a flood limit. The context reaps only its owned child and
-private POSIX process group.
-"""
 from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
@@ -15,7 +8,7 @@ from typing import Any, Mapping, Sequence
 
 
 class NativeMcpError(RuntimeError):
-    """Bounded native transport/protocol/tool failure."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -159,7 +152,6 @@ class NativeMcpClient:
             self._failed = True
             raise
         except asyncio.CancelledError:
-            # A canceled exchange cannot safely share a later response ID.
             self._failed = True
             raise
         finally:
@@ -221,8 +213,6 @@ class NativeMcpClient:
             raise NativeMcpError(f"cannot signal owned native process group: {error}") from error
 
     def _owned_group_exists(self):
-        # start_new_session assigned precisely this invocation's private PGID.
-        # Never search by executable name or signal the caller's process group.
         try:
             os.killpg(self.proc.pid, 0)
             return True
@@ -244,8 +234,6 @@ class NativeMcpClient:
         if os.name != "posix":
             self._group_cleanup = "NOT_APPLICABLE (owned child only on this platform)"
             return
-        # A clean leader exit does not establish that its descendants exited.
-        # Redirected stdio makes proc.wait() complete while they remain alive.
         if self._owned_group_exists():
             self._signal_owned(signal.SIGTERM)
             if not await self._wait_owned_group():
@@ -279,8 +267,6 @@ class NativeMcpClient:
             self._cleanup_error = str(error)
             raise
         finally:
-            # Once this ownership lifetime ended, never target a potentially
-            # reused PGID during an accidental repeated close().
             self._closed = True
             if self._stderr_task:
                 if not self._stderr_task.done():

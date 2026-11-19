@@ -1,6 +1,3 @@
-//! A pass's receipt, end to end: the record's line under an answer that
-//! earned a pass, in `magnesium progress --json` for the study window and in
-//! the PostToolUse hook's output for a terminal.
 use crate::support::{
     TestEnvironment, clock, magnesium_version, run_hook_with_host_flag, test_binary, v2,
 };
@@ -46,9 +43,6 @@ fn progress(e: &TestEnvironment) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// The PostToolUse hook as Claude Code runs it after `tool`, with the tool's
-/// result handed over as its content. `surface` is the study window's mark
-/// on a Claude Code it starts.
 fn post_tool_use(e: &TestEnvironment, tool: &str, result: &Value, surface: Option<&str>) -> String {
     let input = json!({"session_id":THREAD,"cwd":e.workspace,"hook_event_name":"PostToolUse",
         "tool_name":tool,"tool_input":{},"tool_response":[{"type":"text","text":result.to_string()}]});
@@ -97,7 +91,6 @@ fn a_pass_after_a_miss_carries_its_receipt_to_the_window_and_the_terminal() {
         "b is 7",
         json!({"label":"sign of b","question":"In x² − 7x + 10 = 0, what is b?","first_try":"wrong","help":"none","cold":false}),
     );
-    // A miss on another skill whose label differs only by a symbol.
     answer(
         &e,
         "a-2",
@@ -125,7 +118,6 @@ fn a_pass_after_a_miss_carries_its_receipt_to_the_window_and_the_terminal() {
     };
     let (passed, other) = (id(&right), id(&symbol));
 
-    // The window's reading: the receipt under the pass, from the record.
     let printed = progress(&e);
     let receipt = &printed["pass_receipts"][&passed];
     assert_eq!(receipt["missed"], "sign of b", "{printed}");
@@ -137,20 +129,15 @@ fn a_pass_after_a_miss_carries_its_receipt_to_the_window_and_the_terminal() {
         text.ends_with(": sign of b. It held through the 3 days since you last answered it."),
         "{text}"
     );
-    // The first answer on "integral of e^{x}" names no other skill's miss.
     assert!(printed["pass_receipts"].get(&other).is_none(), "{printed}");
 
-    // A terminal: the same line after the learning_step that recorded it.
     let said: Value =
         serde_json::from_str(&post_tool_use(&e, LEARNING_STEP, &right, None)).unwrap();
     assert_eq!(
         said,
         json!({"systemMessage": format!("First of three days. {text}")})
     );
-    // A first answer with no receipt says nothing.
     assert_eq!(post_tool_use(&e, LEARNING_STEP, &symbol, None), "");
-    // A Claude Code the study window started: the window shows the line
-    // from the record, so the hook says nothing.
     assert_eq!(post_tool_use(&e, LEARNING_STEP, &right, Some("window")), "");
 }
 

@@ -1,11 +1,5 @@
 #![forbid(unsafe_code)]
 
-//! Internal composition boundary for the Magnesium runtime.
-//!
-//! Composes the native CLI, host adapters, local learner storage and source retrieval.
-//! Supported interfaces are the executable commands and host tool protocols; this
-//! library target is not a public Rust SDK commitment.
-
 mod adapter;
 mod attempts;
 mod cli;
@@ -32,8 +26,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use cli::command;
-/// Dispatch the single native executable. This function is an executable composition
-/// boundary, not a supported Rust SDK API.
 pub fn run() -> ExitCode {
     match command().get_matches().subcommand() {
         Some(("init", matches)) => {
@@ -143,7 +135,6 @@ pub fn run() -> ExitCode {
             _ => ExitCode::from(2),
         },
         Some(("_internal", matches)) => match matches.subcommand() {
-            // MCP binds workspace identity for this host connection.
             Some(("mcp-server", matches)) => mcp::run(
                 matches.get_one::<String>("plugin-version").cloned(),
                 matches

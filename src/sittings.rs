@@ -1,15 +1,3 @@
-//! Sittings.
-//!
-//! A sitting is one stretch of study. It begins with the first learner
-//! message after [`SITTING_GAP_MS`] without one, and opens with what is due:
-//! quick checks and paper redos. Both are practice items in the learner store
-//! (#30), and the runtime works out when each is due.
-//!
-//! This store sits beside the learner record, in `.magnesium/sittings.sqlite`,
-//! and holds only the sittings: when the last learner message came, which
-//! checks each sitting took, and what became of them. Nothing here is
-//! evidence about the learner. A failure here never fails the tool call or
-//! hook that triggered it.
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -22,11 +10,8 @@ use crate::workspace::{OpenerMode, Workspace};
 
 pub(crate) const STORE_FILE: &str = "sittings.sqlite";
 pub(crate) const LOG_FILE: &str = "sittings.log";
-/// Version 1 kept the quick checks here too; they moved to the learner store.
 const STORE_VERSION: i64 = 2;
-/// About three hours without a learner message ends a sitting.
 pub(crate) const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
-/// About a minute each, so about three minutes at the start of a sitting.
 pub(crate) const MAX_CHECKS_PER_SITTING: usize = 3;
 const MAX_MISS_CHARS: usize = 240;
 const MAX_QUESTION_CHARS: usize = 400;
@@ -71,8 +56,6 @@ CREATE TABLE IF NOT EXISTS checks_alone(
 );
 ";
 
-/// Version 1's sitting_items named its own items table. Version 2's names
-/// learner-store practice items, which keep the same IDs.
 const FROM_VERSION_1: &str = "
 CREATE TABLE sitting_items_v2(
   sitting_id TEXT NOT NULL REFERENCES sittings(sitting_id),
@@ -96,27 +79,18 @@ pub(crate) struct Sittings {
     log: PathBuf,
 }
 
-/// The quick-check counts a turn's notice states, while any is still open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Counts {
     pub(crate) due: i64,
     pub(crate) posed: i64,
 }
 
-/// Set to "1" on a tool server whose caller runs the lesson itself, such as
-/// the study window's direct engine: its results then carry the opener's
-/// quick checks and due paper redos as data, `sitting_checks` and
-/// `sitting_redos`. A tutor's results stay as they were, with the opener's
-/// text alone.
 pub(crate) const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
 
 pub(crate) fn checks_wanted() -> bool {
     std::env::var(CHECKS_ENV).is_ok_and(|value| value == "1")
 }
 
-/// What a sitting opens with: the opener's text for a tutor, and the same
-/// quick checks and due paper redos as data, `sitting_checks` and
-/// `sitting_redos`, for a caller that asks for them with [`CHECKS_ENV`].
 #[derive(Clone, Debug)]
 pub(crate) struct Opener {
     pub(crate) text: String,
@@ -135,8 +109,6 @@ impl Opener {
     }
 }
 
-/// The quick checks as data, whole: the opener's text may cut the misses and
-/// stored questions to fit, and this list does not.
 fn checks_json(checks: &[Check]) -> Value {
     Value::Array(
         checks
@@ -154,23 +126,15 @@ fn checks_json(checks: &[Check]) -> Value {
     )
 }
 
-/// The current sitting, and its end once one is recorded (see
-/// [`crate::closing`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SittingNow {
     pub(crate) id: String,
     pub(crate) started_ms: i64,
     pub(crate) ended_ms: Option<i64>,
-    /// The conversation that ended it, as the record names hosts.
     pub(crate) ended_by: Option<String>,
     pub(crate) shown_ms: Option<i64>,
 }
 
-/// The practice item of the quick check a reply of the current sitting has
-/// posed and no answer has settled yet (the one [`Sittings::open_check`]
-/// names), read without opening the store for writing, so a read from a
-/// command that changes nothing leaves an earlier version's store as it is.
-/// None when there is none, or the store cannot tell.
 pub(crate) fn open_check_item_read_only(workspace: &Workspace) -> Option<String> {
     let path = workspace.control().join(STORE_FILE);
     if !path.try_exists().ok()? {
@@ -192,8 +156,6 @@ pub(crate) fn open_check_item_read_only(workspace: &Workspace) -> Option<String>
     .flatten()
 }
 
-/// The current sitting, read without opening the store for writing: a store
-/// an earlier version made, with no table of ends, is left as it is.
 pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<SittingNow>, String> {
     let path = workspace.control().join(STORE_FILE);
     if !path.try_exists().map_err(error)? {
@@ -234,7 +196,6 @@ pub(crate) fn now_state_read_only(workspace: &Workspace) -> Result<Option<Sittin
     .map_err(error)
 }
 
-/// One quick check as the opener states it.
 #[derive(Clone, Debug)]
 struct Check {
     number: i64,
@@ -264,14 +225,12 @@ fn error(error: impl std::fmt::Display) -> String {
     format!("sittings: {error}")
 }
 
-/// The items worked out now, or none when the learner store cannot be read.
 fn items_now(workspace: &Workspace) -> Vec<Item> {
     crate::practice::open_store(workspace)
         .and_then(|store| crate::practice::snapshot(&store.conn, workspace.root()))
         .unwrap_or_default()
 }
 
-/// A sitting's outcome for a check, from what the answer did to it.
 pub(crate) fn outcome(effect: &str) -> Option<&'static str> {
     match effect {
         "passed" | "closed" => Some("passed"),
@@ -284,13 +243,10 @@ pub(crate) fn outcome(effect: &str) -> Option<&'static str> {
 }
 
 impl Sittings {
-    /// Open the store, creating it first. Only a write calls this, so a read
-    /// never leaves a new file in the study folder.
     pub(crate) fn open(workspace: &Workspace) -> Result<Self, String> {
         Self::open_with(workspace, true)?.ok_or_else(|| error("store missing"))
     }
 
-    /// Open the store if it exists.
     pub(crate) fn open_existing(workspace: &Workspace) -> Result<Option<Self>, String> {
         Self::open_with(workspace, false)
     }
@@ -343,8 +299,6 @@ impl Sittings {
             .map_err(error)
     }
 
-    /// Note a learner message. The first one after the gap begins a sitting,
-    /// which takes the quick checks due that day. Returns whether one began.
     pub(crate) fn note_learner_message(
         &mut self,
         workspace: &Workspace,
@@ -370,7 +324,6 @@ impl Sittings {
             .map_err(error)?;
         tx.execute("UPDATE meta SET last_learner_ms=?1", [now])
             .map_err(error)?;
-        // Another process may have begun it meanwhile.
         let begins = last.is_none_or(|last| now - last >= SITTING_GAP_MS);
         if begins {
             begin(&tx, now, &due)?;
@@ -393,9 +346,6 @@ impl Sittings {
             .map_err(error)
     }
 
-    /// The current sitting's quick check that a reply posed and no answer
-    /// has settled yet: its number and label. The lowest number when several
-    /// are.
     pub(crate) fn open_check(&self) -> Result<Option<(i64, String)>, String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
@@ -410,8 +360,6 @@ impl Sittings {
             .map_err(error)
     }
 
-    /// Quick checks of the current sitting, while any is neither posed nor
-    /// declined. An answer counts as posed.
     pub(crate) fn open_counts(&self) -> Result<Option<Counts>, String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
@@ -427,10 +375,6 @@ impl Sittings {
         Ok((due > posed).then_some(Counts { due, posed }))
     }
 
-    /// The opener for the first tool result of a sitting, once. It names the
-    /// quick checks taken at the start and the paper redos due today. Before
-    /// it reads them, gap logs the runtime has not taken over are brought in,
-    /// and what that did goes in `report`.
     pub(crate) fn take_opener(
         &mut self,
         workspace: &Workspace,
@@ -466,7 +410,6 @@ impl Sittings {
         Ok(opener)
     }
 
-    /// The current sitting's opener as it stands, without claiming it.
     pub(crate) fn opener_now(
         &self,
         workspace: &Workspace,
@@ -480,7 +423,6 @@ impl Sittings {
         Ok(Opener::new(&checks, &items, local_day(now)))
     }
 
-    /// The quick checks a sitting took, with what the record holds for each.
     fn checks(&self, sitting: &str, items: &[Item]) -> Result<Vec<Check>, String> {
         let mut statement = self
             .conn
@@ -514,10 +456,6 @@ impl Sittings {
             .collect())
     }
 
-    /// End the current sitting at `now`, for the conversation `by` that
-    /// ended it. Returns the sitting's id, or none when no sitting has begun.
-    /// Ending it again moves its end, so a learner who carries on and stops
-    /// again is shown the lines again.
     pub(crate) fn end(&mut self, by: Option<&str>, now: i64) -> Result<Option<String>, String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(None);
@@ -529,15 +467,12 @@ impl Sittings {
             params![sitting, now, by],
         )
         .map_err(error)?;
-        // Any end lifts a sitting of checks alone for good: the learner who
-        // carries on after it is taught as in any sitting.
         tx.execute("DELETE FROM checks_alone WHERE sitting_id=?1", [&sitting])
             .map_err(error)?;
         tx.commit().map_err(error)?;
         Ok(Some(sitting))
     }
 
-    /// The current sitting: when it began, and when and by whom it ended.
     pub(crate) fn now_state(&self) -> Result<Option<SittingNow>, String> {
         self.conn
             .query_row(
@@ -559,10 +494,6 @@ impl Sittings {
             .map_err(error)
     }
 
-    /// The learner wrote again after the end: the sitting goes on. An end a
-    /// Stop hook never claimed (the goodbye was stopped part way, or the
-    /// hook failed) is set aside here, so its lines never show later under
-    /// another reply. A learner who stops again ends it again.
     pub(crate) fn reopen(&mut self) -> Result<(), String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(());
@@ -573,8 +504,6 @@ impl Sittings {
         tx.commit().map_err(error)
     }
 
-    /// Claim the showing of a sitting's end that has not been shown yet.
-    /// Only one caller gets true for each end.
     pub(crate) fn claim_end_shown(&mut self, sitting: &str, now: i64) -> Result<bool, String> {
         let tx = self.write()?;
         let changed = tx
@@ -587,7 +516,6 @@ impl Sittings {
         Ok(changed > 0)
     }
 
-    /// The tutor's reply poses check n when it says "Quick check n".
     pub(crate) fn note_reply(&mut self, reply: &str) -> Result<(), String> {
         let Some((sitting, _)) = self.current()? else {
             return Ok(());
@@ -622,8 +550,6 @@ impl Sittings {
         Ok(())
     }
 
-    /// Settle the current sitting's checks that a committed update answered:
-    /// (item ID, outcome). Only a check still unsettled changes.
     pub(crate) fn settle(&mut self, outcomes: &[(String, &'static str)]) -> Result<(), String> {
         if outcomes.is_empty() {
             return Ok(());
@@ -648,7 +574,6 @@ impl Sittings {
         Ok(())
     }
 
-    /// Rewrite the local log, one JSON line per sitting, from this store.
     fn write_log(&self) {
         if let Ok(lines) = self.log_lines() {
             let _ = crate::workspace::write_private_atomic(&self.log, lines.as_bytes());
@@ -738,8 +663,6 @@ fn create_private(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Begin a sitting with the quick checks due, longest due first: it takes
-/// [`MAX_CHECKS_PER_SITTING`], and the rest wait for a later sitting.
 fn begin(tx: &Transaction<'_>, now: i64, due: &[(String, String)]) -> Result<(), String> {
     let today = local_day(now).to_string();
     let sitting = crate::learner::store::new_id("sitting").map_err(error)?;
@@ -759,10 +682,6 @@ fn begin(tx: &Transaction<'_>, now: i64, due: &[(String, String)]) -> Result<(),
     Ok(())
 }
 
-/// Move a version 1 store's quick checks into the learner store, once, as
-/// practice items with the same IDs and the state they had, then drop them
-/// here. The learner store's copy goes first, and inserting an ID twice
-/// changes nothing, so a failure between the two steps is safe to repeat.
 fn from_version_1(conn: &mut Connection, workspace: &Workspace) -> Result<(), String> {
     let checks = {
         let mut statement = conn
@@ -842,11 +761,6 @@ pub(crate) fn says_check(reply_lowercase: &str, number: i64) -> bool {
     })
 }
 
-/// The opener, within [`MAX_OPENER_BYTES`]. When the earlier misses and the
-/// stored questions make it too long, they are cut shorter first, so the
-/// instructions after them, which say how to pose and record each check,
-/// always arrive whole. If that is not enough, the redos lose their stored
-/// questions, and then the last plans are left out and counted.
 fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
     let mut text = String::new();
     let mut shortened: Vec<Check> = Vec::new();
@@ -921,7 +835,6 @@ fn opener_text(checks: &[Check], redos: &[DueRedos]) -> String {
     text
 }
 
-/// `unlisted` are plans with redos due that the opener has no room to list.
 fn opener_text_with(checks: &[Check], redos: &[DueRedos], unlisted: &[DueRedos]) -> String {
     let mut text = String::from(
         "Sitting opener. A new sitting has begun: open it with what is due, before new material. The learner may decline any of it at no cost, and a skip, no-quiz or stop request wins.",
@@ -977,8 +890,6 @@ fn opener_text_with(checks: &[Check], redos: &[DueRedos], unlisted: &[DueRedos])
     text
 }
 
-/// A committed update that carried learner input is a learner message, for
-/// hosts with no prompt hook.
 pub(crate) fn carries_learner_message(request: &Value, result: &Value) -> bool {
     result["update_status"] == "committed"
         && (request.get("native_capture").is_some_and(|v| !v.is_null())
@@ -987,11 +898,8 @@ pub(crate) fn carries_learner_message(request: &Value, result: &Value) -> bool {
                 .is_some_and(|events| events.iter().any(|e| e["speaker"] == "learner")))
 }
 
-/// The clause a turn's notice carries while a quick check is open, for the
-/// conversation `by`.
 pub(crate) fn notice_clause(workspace: &Workspace, by: Option<&str>) -> Option<String> {
     let sittings = Sittings::open_existing(workspace).ok()??;
-    // A sitting of checks alone was asked for, so it holds with the opener off.
     if let Ok(Some(left)) = sittings.checks_only_left(workspace, by, now_ms()) {
         return Some(checks_only::notice_clause(left));
     }
@@ -1005,7 +913,6 @@ pub(crate) fn notice_clause(workspace: &Workspace, by: Option<&str>) -> Option<S
     ))
 }
 
-/// `magnesium opener on|off|block` in the current study folder.
 pub(crate) fn set_opener(mode: OpenerMode) -> std::process::ExitCode {
     let result = std::env::current_dir()
         .and_then(|cwd| Workspace::discover(&cwd))

@@ -6,19 +6,10 @@ use std::{
 };
 pub const SCHEMA_VERSION: i64 = 5;
 pub(crate) const SCHEMA_SQL: &str = include_str!("schema.sql");
-/// The tables schema 3 added. A fresh store and the upgrade from schema 2
-/// both run it.
 pub(crate) const SCHEMA_V3_SQL: &str = include_str!("schema_v3.sql");
-/// The tables and columns schema 4 added. A fresh store and the upgrade from
-/// schema 2 or 3 run it.
 pub(crate) const SCHEMA_V4_SQL: &str = include_str!("schema_v4.sql");
-/// The tables and columns schema 5 added. A fresh store and every upgrade
-/// run it.
 pub(crate) const SCHEMA_V5_SQL: &str = include_str!("schema_v5.sql");
-/// The earlier schemas this runtime upgrades in place. Schema 2 is the last
-/// release's; schemas 3 and 4 were only ever on the main branch.
 const UPGRADEABLE_SCHEMA_VERSIONS: [i64; 3] = [2, 3, 4];
-/// Beside the store: the copy made before an upgrade, kept as the way back.
 pub const BACKUP_DIR: &str = "backups";
 pub struct LearnerStore {
     pub conn: Connection,
@@ -36,8 +27,6 @@ pub fn new_id(prefix: &str) -> Result<String> {
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
 }
-/// Reserve runtime-issued identity shapes from new request-local aliases only.
-/// This neither normalizes references nor decides whether a stored ID exists.
 pub(crate) fn resembles_persistent_id(name: &str) -> bool {
     let Some((prefix, suffix)) = name.split_once('-') else {
         return false;
@@ -71,9 +60,6 @@ impl LearnerStore {
     pub fn open(path: &Path, workspace_id: &str) -> Result<Self> {
         reject_symlinks(path)?;
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        // An empty file is a store whose first transaction never committed:
-        // this process is creating it, another one is, or one stopped
-        // part-way. Make it under the write lock unless another has by then.
         let length = std::fs::metadata(path)
             .map_err(|e| LearnerError::new("storage_error", e.to_string()))?
             .len();
@@ -112,12 +98,8 @@ impl LearnerStore {
         Ok(self.conn.query_row("SELECT session_id,learning_active,recording_enabled FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.unwrap_or((None,false,true)))
     }
 }
-/// Whether `open` would upgrade this store from an earlier schema. Read-only:
-/// it changes nothing and makes no copy, so a caller can ask first.
 pub fn needs_upgrade(path: &Path) -> Result<bool> {
     reject_symlinks(path)?;
-    // A missing or empty store is not an earlier version's. `open` reports
-    // or repairs it.
     match std::fs::metadata(path) {
         Ok(meta) if meta.len() > 0 => {}
         Ok(_) => return Ok(false),
@@ -158,15 +140,7 @@ fn read_meta(conn: &Connection) -> Result<Meta> {
     })
 }
 
-/// Upgrade a schema 2, 3 or 4 store in place, once. Under the write lock,
-/// copy it to `backups/` beside it, then add the tables of each later schema,
-/// read the help levels and readings the memories state in words, and raise
-/// the version in one transaction. The copy is a whole store of the
-/// old version, so the runtime that made it still opens it: put it back as
-/// `state.sqlite` to go back. If any step fails, the store is left as it was.
 fn upgrade(path: &Path, conn: &Connection) -> Result<()> {
-    // Another process may be upgrading too. Copying takes a while for a large
-    // store, so wait longer for the lock than an ordinary write does.
     conn.busy_timeout(Duration::from_secs(30))?;
     conn.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| -> Result<()> {
@@ -205,8 +179,6 @@ fn upgrade(path: &Path, conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// The version check lives in a table constraint, which SQLite cannot alter,
-/// so the one-row table is rebuilt with the same columns and data.
 const UPGRADE_META_SQL: &str = "
 CREATE TABLE workspace_meta_next (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -230,8 +202,6 @@ DROP TABLE workspace_meta;
 ALTER TABLE workspace_meta_next RENAME TO workspace_meta;
 ";
 
-/// Copy the store, as it is under the caller's write lock, to a new private
-/// file in `backups/`, and check the copy before anything changes.
 fn backup_before_upgrade(path: &Path, version: i64) -> Result<PathBuf> {
     let storage = |e: std::io::Error| LearnerError::new("storage_error", e.to_string());
     let directory = path
@@ -259,8 +229,6 @@ fn backup_before_upgrade(path: &Path, version: i64) -> Result<PathBuf> {
             .get(..8)
             .unwrap_or("0")
     ));
-    // VACUUM INTO writes only into a missing or empty file. Make it empty and
-    // private first, so the copy is never readable by others.
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -270,8 +238,6 @@ fn backup_before_upgrade(path: &Path, version: i64) -> Result<PathBuf> {
     }
     drop(options.open(&backup).map_err(storage)?);
     crate::workspace::restrict_private_path(&backup).map_err(storage)?;
-    // A second connection reads while the caller holds the write lock, so the
-    // copy is the store exactly as the upgrade finds it.
     let reader = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     reader.busy_timeout(Duration::from_secs(30))?;
     reader.execute(
@@ -347,7 +313,6 @@ mod schema_revision_tests {
                 .query_row("SELECT workspace_id FROM workspace_meta", [], |r| r.get(0))
                 .unwrap()
         };
-        // The way back in through init opens the file it finds.
         std::fs::File::create(&path).unwrap();
         let opened = LearnerStore::open(&path, "empty-store").unwrap();
         assert_eq!(workspace(&opened), "empty-store");
@@ -359,7 +324,6 @@ mod schema_revision_tests {
         std::fs::write(dir.join("other.sqlite"), b"").unwrap();
         let initialized = LearnerStore::initialize(&dir.join("other.sqlite"), "other").unwrap();
         assert_eq!(workspace(&initialized), "other");
-        // A store holding data is opened as it is, never made again.
         for store in [
             LearnerStore::initialize(&path, "empty-store").unwrap(),
             LearnerStore::open(&path, "empty-store").unwrap(),

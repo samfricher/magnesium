@@ -1,21 +1,4 @@
 #!/bin/sh
-# Check the real window end to end, without starting a model.
-#
-# The window opens for a few seconds, drives itself, writes a report and
-# quits. It talks to the stand-in agent in crates/core/tests, and it works in
-# a scratch study folder with a scratch home, so none of your study folders,
-# settings or agent sessions are touched.
-#
-#   scripts/selftest.sh          build first, then check
-#   scripts/selftest.sh --quick  check the window that is already built
-#
-# Set MAGNESIUM_APP_BIN to check another build, such as the one inside
-# target/release/bundle/macos/Magnesium.app/Contents/MacOS/.
-#
-# Keep other windows off it while it runs: WebKit stops animation frames for
-# a window that is covered. pdf.js draws a page on them and the step that
-# shortens the line waits for them, so either can time out under another
-# window. Each says so by name when it does.
 
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -32,7 +15,6 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/magnesium-window-check.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/Demo-Course" "$WORK/home" "$WORK/window" "$WORK/agent"
 
-# The stand-in agent, under the name the window looks for.
 cat > "$WORK/claude" <<EOF
 #!/bin/sh
 export STAND_IN_LOG='$WORK/agent.log'
@@ -41,11 +23,6 @@ exec python3 '$ROOT/crates/core/tests/stand_in_agent.py' "\$@"
 EOF
 chmod +x "$WORK/claude"
 
-# The real runtime, with a scratch home: the one MAGNESIUM_TEST_BINARY names,
-# else the one built at the root of this checkout (which is the one this
-# window's readers are written for, but may be older than the checkout), else
-# the one installed. Setting a folder up writes user settings, and those must
-# land in the scratch home.
 RUNTIME=""
 if [ -n "${MAGNESIUM_TEST_BINARY:-}" ]; then
   RUNTIME=$MAGNESIUM_TEST_BINARY
@@ -65,8 +42,6 @@ EOF
   export MAGNESIUM_APP_RUNTIME="$WORK/magnesium"
 fi
 
-# A PDF in the course material, with real text on two pages, for the check to
-# open beside the workspace's page.
 mkdir -p "$WORK/Demo-Course/Study/materials"
 python3 -I - "$WORK/Demo-Course/Study/materials/Week 1 slides.pdf" <<'PY'
 import sys

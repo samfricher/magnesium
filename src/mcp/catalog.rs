@@ -9,10 +9,6 @@ pub(crate) const CANONICAL_OPERATIONS: [&str; 5] = [
     "search_sources",
     "sources",
 ];
-/// The tool that carries the tutor's reply to the learner. It is offered only
-/// in a session the study window starts, which the window marks with
-/// [`SURFACE_ENV`]. Its input streams to the window as the tutor writes it,
-/// where text after a tool call would arrive in one piece.
 pub(crate) const REPLY_TOOL: &str = "reply";
 pub(crate) const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
 pub(crate) fn window_surface() -> bool {
@@ -76,11 +72,6 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
     Some(tool)
 }
 pub(crate) fn generated_schema<T: JsonSchema>() -> Arc<JsonObject> {
-    // MCP requires a root `inputSchema.type` of "object"; schemars omits it
-    // for tagged-enum roots whose alternatives live under `oneOf`. Inlining
-    // local definitions keeps every structured field's object shape at the
-    // point the client reads it, because some clients stringify `$ref`
-    // arguments and the runtime rejects the stringified payload.
     let settings = schemars::generate::SchemaSettings::default().with(|settings| {
         settings.inline_subschemas = true;
     });

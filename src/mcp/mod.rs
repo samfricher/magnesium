@@ -1,5 +1,3 @@
-//! The MCP server adapter exposing Magnesium services over JSON-RPC stdio.
-
 pub(crate) mod catalog;
 pub(crate) mod server;
 

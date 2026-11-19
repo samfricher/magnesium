@@ -1,23 +1,4 @@
 #!/bin/sh
-# The window's own checks. The runtime's check at the root of the repository
-# (python3 ci/check.py) neither builds nor tests the window, so run this after
-# a change under app/, or after a change to what the runtime writes.
-#
-#   scripts/check.sh            the pages and their checks, Rust format and
-#                               lints, the core tests, and the readers against
-#                               the runtime built from this checkout
-#   scripts/check.sh --window   all of that, then the real window against
-#                               the stand-in agent (scripts/selftest.sh)
-#   scripts/check.sh --pages    only the pages and their checks
-#   scripts/check.sh --rust     only the Rust format, lints and core tests
-#
-# scripts/prove.sh picks the parts from the files a change touches.
-#
-# It starts no model. The check against the real agent, on your own
-# subscription, is scripts/live-check.sh.
-#
-# The first run builds the runtime at the root and the window's shell, which
-# takes a few minutes.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -29,7 +10,6 @@ esac
 
 if [ "$PART" != "--rust" ]; then
   [ -d node_modules ] || npm ci
-  # The shell embeds the built pages, so they are built before any Rust check.
   npm run build
   node scripts/test-task-line.mjs
   node scripts/test-setup.mjs
@@ -43,7 +23,6 @@ if [ "$PART" != "--rust" ]; then
   node scripts/test-prove.mjs
 fi
 if [ "$PART" != "--pages" ]; then
-  # The shell does not compile without built pages to embed.
   [ -d dist ] || npm run build
   cargo fmt --all --check
   cargo clippy --locked --workspace --all-targets -- -D warnings

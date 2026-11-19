@@ -12,8 +12,6 @@ fn answered(_id: &str, key: &str, on: &str, declined: bool) -> Answered {
     }
 }
 
-/// A skill as `magnesium progress --json` prints it: its passes now and
-/// when today began.
 fn skill(name: &str, (passes, before): (i64, i64), proven: bool, next_on: Option<&str>) -> Value {
     json!({
         "skill": name,
@@ -41,11 +39,8 @@ fn nothing_shows_when_no_answer_was_marked_today() {
         vec![skill("slope and Km", (1, 1), false, Some("2026-11-18"))],
         vec![],
     );
-    // Answered on an earlier day only.
     let answers = [answered("a1", "slope and km", "2026-11-14", false)];
     assert_eq!(from_record(&progress, &answers, day(TODAY)), None);
-    // A decline is the learner's choice, not an answer: a day of declines
-    // ends with nothing.
     let declined = [answered("d1", "slope and km", TODAY, true)];
     assert_eq!(from_record(&progress, &declined, day(TODAY)), None);
 }
@@ -66,8 +61,6 @@ fn a_pass_today_and_the_first_day_another_can_count_make_two_lines() {
         answered("w1", "rate equation", TODAY, false),
     ];
     let closing = from_record(&progress, &answers, day(TODAY)).unwrap();
-    // The next line names the first day only; slope and Km's later day is
-    // on the workspace's page.
     assert_eq!(
         closing.lines(),
         [
@@ -115,7 +108,6 @@ fn a_skill_proved_today_leads_and_the_other_passes_are_counted() {
             "Can count from tomorrow: slope and Km.",
         ]
     );
-    // Proven alone: one line.
     let progress = record(vec![skill("rate equation", (3, 2), true, None)], vec![]);
     let lines = from_record(&progress, &answers[1..], day(TODAY))
         .unwrap()
@@ -125,7 +117,6 @@ fn a_skill_proved_today_leads_and_the_other_passes_are_counted() {
 
 #[test]
 fn a_pass_lost_to_a_later_miss_today_is_not_named() {
-    // Right this morning, wrong this afternoon: the skill holds no pass now.
     let progress = record(
         vec![],
         vec![skill("units of a rate", (0, 0), false, Some("2026-11-17"))],
@@ -203,7 +194,6 @@ fn names_that_fit_are_named_and_the_rest_counted() {
         ),
         "Earned today: a pass on pooled variance and 2 more."
     );
-    // A name too long for the line is cut at a word, and says so.
     assert_eq!(
         fit(
             "Earned today: a pass on ",
@@ -245,7 +235,6 @@ fn a_skill_in_a_plan_and_out_of_one_is_named_once_and_a_file_plan_is_skipped() {
 
 #[test]
 fn nothing_shows_when_there_is_no_pass_and_no_day() {
-    // A paper row waiting for its repair has no next day.
     let progress = record(vec![skill("Hill coefficient", (0, 0), false, None)], vec![]);
     let answers = [answered("w1", "hill coefficient", TODAY, false)];
     assert_eq!(from_record(&progress, &answers, day(TODAY)), None);
@@ -279,7 +268,6 @@ fn fixture() -> (std::path::PathBuf, Workspace) {
     (root, workspace)
 }
 
-/// A sitting begun by a learner message and ended by conversation "a".
 fn ended_sitting(workspace: &Workspace) -> Sittings {
     let mut sittings = Sittings::open(workspace).unwrap();
     sittings.note_learner_message(workspace, now_ms()).unwrap();
@@ -291,17 +279,14 @@ fn ended_sitting(workspace: &Workspace) -> Sittings {
 fn an_end_whose_lines_could_not_be_worked_out_is_not_claimed() {
     let (root, workspace) = fixture();
     let sittings = ended_sitting(&workspace);
-    // The read fails: nothing shows, and the end is still there to show.
     assert_eq!(stop_hook_lines_with(&workspace, "a", |_| None), None);
     assert_eq!(sittings.now_state().unwrap().unwrap().shown_ms, None);
     let lines = || Some(vec!["one".to_owned(), "two".to_owned()]);
-    // Another conversation's Stop hook says nothing and claims nothing.
     assert_eq!(stop_hook_lines_with(&workspace, "b", |_| lines()), None);
     assert_eq!(
         stop_hook_lines_with(&workspace, "a", |_| lines()).as_deref(),
         Some("one\ntwo")
     );
-    // Once.
     assert_eq!(stop_hook_lines_with(&workspace, "a", |_| lines()), None);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -310,13 +295,10 @@ fn an_end_whose_lines_could_not_be_worked_out_is_not_claimed() {
 fn the_learners_next_message_sets_an_unclaimed_end_aside() {
     let (root, workspace) = fixture();
     let mut sittings = ended_sitting(&workspace);
-    // The goodbye was stopped, so no Stop hook claimed the end. The next
-    // message reopens the sitting, and its Stop hook has nothing to show.
     sittings.reopen().unwrap();
     assert_eq!(sittings.now_state().unwrap().unwrap().ended_ms, None);
     let lines = || Some(vec!["one".to_owned()]);
     assert_eq!(stop_hook_lines_with(&workspace, "a", |_| lines()), None);
-    // Ending again in the same sitting shows the lines again.
     sittings.end(Some("a"), now_ms() + 1).unwrap();
     assert_eq!(
         stop_hook_lines_with(&workspace, "a", |_| lines()).as_deref(),

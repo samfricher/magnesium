@@ -1,6 +1,3 @@
-//! A message the host marks as talk is never an attempt (issue 65), and
-//! `magnesium lesson` prints the lesson and its open task from the record
-//! (issue 66).
 use crate::support::{TestEnvironment, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -68,8 +65,6 @@ fn lesson(e: &TestEnvironment, args: &[&str]) -> Value {
     serde_json::from_slice::<Value>(&output.stdout).unwrap()["lesson"].clone()
 }
 
-/// A lesson in conversation "conv" whose tutor posed `TASK` and saved it as
-/// the checkpoint's pending task, with two goal steps.
 fn lesson_with_a_task(e: &TestEnvironment) {
     v2::init(e);
     prompt(e, "p-1", "teach me quadratics");
@@ -131,7 +126,6 @@ fn talk_is_kept_without_the_windows_line_and_refuses_an_attempt() {
         "{refused}"
     );
     assert!(refused.to_string().contains("as talk"), "{refused}");
-    // The same message as context, with no attempt, is recorded.
     let noted = step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"question",
@@ -144,13 +138,11 @@ fn talk_is_kept_without_the_windows_line_and_refuses_an_attempt() {
         .query_row("SELECT count(*) FROM attempts", [], |r| r.get(0))
         .unwrap();
     assert_eq!(attempts, 0);
-    // The task is still open after talk.
     assert_eq!(
         lesson(&e, &["--conversation", "conv"])["open_task"]["text"],
         format!("Let's begin.\n\n{TASK}")
     );
 
-    // An answer sent as one is marked, and closes the task.
     let notice = prompt(&e, "p-3", "x = 2 or x = 5");
     let marked = step(&e, answer("on-answer", &current_event(&notice)));
     assert_eq!(marked["update_status"], "committed", "{marked}");
@@ -200,11 +192,8 @@ fn the_lesson_command_prints_goal_steps_and_the_open_task_and_writes_nothing() {
             .ends_with(TASK)
     );
     assert!(printed["open_task"]["posed_at_ms"].as_i64().is_some());
-    // "No help" is not in the reply, so the whole reply is the task.
     assert_eq!(printed["open_task"]["whole_reply"], true);
-    // Without a conversation, the most recently changed lesson.
     assert_eq!(lesson(&e, &[])["session_id"], printed["session_id"]);
-    // A conversation the record has no lesson for.
     assert!(lesson(&e, &["--conversation", "other"]).is_null());
 
     let text = e.command().arg("lesson").output().unwrap();
@@ -250,7 +239,6 @@ fn the_task_is_the_words_the_tutor_copied_when_the_reply_holds_them_exactly() {
     let exact = save("exact", TASK);
     assert_eq!(exact["text"], TASK);
     assert_eq!(exact["whole_reply"], false);
-    // Words close to the reply's but not the same are not marked.
     let near = save("near", "Task: solve x^2 - 7x + 10 = 0.");
     assert_eq!(near["text"], format!("Let's begin.\n\n{TASK}"));
     assert_eq!(near["whole_reply"], true);

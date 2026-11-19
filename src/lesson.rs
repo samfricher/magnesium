@@ -1,11 +1,3 @@
-//! `magnesium lesson`: the lesson a conversation is in, as the record holds
-//! it, for a host that shows it (issue 66). It reads and changes nothing.
-//!
-//! The open task is the record's, never a guess from the tutor's words: the
-//! task the checkpoint names, until an answer to it is recorded, or the
-//! sitting's quick check a reply posed, until its answer settles it. Which of
-//! the two is open is whichever was posed last.
-
 use std::process::ExitCode;
 
 use chrono::{Local, TimeZone};
@@ -16,14 +8,10 @@ use crate::adapter::host::HostIdentity;
 use crate::learner::LearnerStore;
 use crate::workspace::{Workspace, reject_symlink_components};
 
-/// A lesson as printed: `None` when the folder has no lesson yet, or none for
-/// the conversation asked about.
 fn lesson(workspace: &Workspace, conversation: Option<&str>) -> Result<Option<Value>, String> {
     let id = workspace.id().map_err(|e| e.to_string())?;
     reject_symlink_components(&workspace.store_path(), workspace.control())
         .map_err(|e| e.to_string())?;
-    // Opening an earlier version's record upgrades it, and this command
-    // changes nothing.
     if crate::learner::store::needs_upgrade(&workspace.store_path()).map_err(|e| e.to_string())? {
         return Err("this folder's record is from an earlier version: run magnesium init --upgrade-instructions first".into());
     }
@@ -78,7 +66,6 @@ fn read(
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
     let checkpoint: Value = serde_json::from_str(&checkpoint).unwrap_or(Value::Null);
-    // The conversations this lesson is bound to: the one asked about, or all.
     let threads: Vec<(String, bool, bool)> = {
         let mut statement = conn.prepare(
             "SELECT host_thread_id,learning_active,recording_enabled FROM host_bindings WHERE session_id=?1 AND (?2 IS NULL OR host_thread_id=?2) ORDER BY host_thread_id",
@@ -135,8 +122,6 @@ fn read(
     })))
 }
 
-/// A task as one of the tutor's captured messages posed it: the task's own
-/// words where the record can find them in the reply, else the whole reply.
 struct Posed {
     text: String,
     at_ms: i64,
@@ -159,10 +144,6 @@ impl Posed {
     }
 }
 
-/// The task the checkpoint names, while no answer since then has been
-/// recorded in this lesson. Its words are the checkpoint's `conditions` when
-/// the reply that posed it holds them exactly, and that whole reply when it
-/// does not: a host marks only words the learner was shown.
 fn pending_task(
     conn: &Connection,
     session: &str,
@@ -181,9 +162,6 @@ fn pending_task(
     else {
         return Ok(None);
     };
-    // An answer is dated by the learner's message, so the tutor's record of
-    // it, written after the reply that posed the next task, does not close
-    // that next task.
     let answered: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM attempts WHERE session_id=?1 AND answered_at_ms>=?2)",
         params![session, at_ms],
@@ -206,16 +184,12 @@ fn pending_task(
     }))
 }
 
-/// `words` as they stand in `reply`, when the reply holds them exactly. Ends
-/// of lines may differ, as a tutor's copy and the kept reply can.
 fn words_in(reply: &str, words: &str) -> Option<String> {
     let words = words.replace("\r\n", "\n");
     let words = words.trim();
     (!words.is_empty() && reply.replace("\r\n", "\n").contains(words)).then(|| words.to_owned())
 }
 
-/// The words of a reply from where it says "Quick check n" to its end, with
-/// the bold or italic marks just before them, or None when it does not say it.
 fn check_words(reply: &str, number: i64) -> Option<&str> {
     let needle = format!("quick check {number}");
     let bytes = reply.as_bytes();
@@ -229,8 +203,6 @@ fn check_words(reply: &str, number: i64) -> Option<&str> {
     Some(reply[start..].trim_end())
 }
 
-/// The latest tutor message in these conversations that says "Quick check
-/// n", as the runtime read it when it marked the check posed.
 fn posed_check(
     conn: &Connection,
     threads: &[(String, bool, bool)],
@@ -370,7 +342,6 @@ mod tests {
             words_in(reply, "Correct: 3 × 4 = 12.\n\nNow a step up.").as_deref(),
             Some("Correct: 3 × 4 = 12.\n\nNow a step up.")
         );
-        // Words the reply does not hold, or not exactly: the whole reply is the task.
         assert_eq!(words_in(reply, "Factorise x^2 - 8x + 15."), None);
         assert_eq!(words_in(reply, "No help"), None);
         assert_eq!(words_in(reply, "  "), None);

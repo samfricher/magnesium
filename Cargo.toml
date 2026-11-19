@@ -15,7 +15,6 @@ doctest = false
 [[bin]]
 name = "magnesium"
 path = "src/main.rs"
-# `main.rs` only calls the library, so it has no tests of its own to build.
 test = false
 
 [dependencies]
@@ -56,10 +55,6 @@ rusqlite = { version = "=0.40.2", default-features = false, features = ["trace"]
 serde_json = "=1.0.151"
 sha2 = "=0.11.0"
 
-# The tests start the debug build of `magnesium` hundreds of times. Optimized
-# dependencies (SQLite, hashing, PDF text) make it as fast there as the
-# release build, and they are compiled once and then cached. Line tables keep
-# backtraces readable while leaving less debug information to write and link.
 [profile.dev]
 debug = "line-tables-only"
 

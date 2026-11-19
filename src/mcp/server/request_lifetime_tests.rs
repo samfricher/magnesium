@@ -1,5 +1,3 @@
-//! Actual MCP handler regressions. Worker and SQLite boundaries use explicit
-//! synchronization; timeouts only bound failures, never establish ordering.
 use super::*;
 use serde_json::{Value, json};
 use std::sync::Condvar;
@@ -122,7 +120,6 @@ fn response_json(response: CallToolResponse) -> Value {
     serde_json::to_value(rmcp::model::ServerResult::from(response)).unwrap()
 }
 
-// RAII ensures assertions cannot leave blocking test jobs parked forever.
 #[derive(Default)]
 struct Gate {
     open: std::sync::Mutex<bool>,
@@ -183,8 +180,6 @@ fn saturated_ordinary_handlers_do_not_delay_control_or_async_frames() {
                 .unwrap();
         }
         assert_eq!(blocking_worker_available_permits(), 0);
-        // The actual service loop handles another JSON-RPC frame while all
-        // ordinary workers are held at the filesystem-routing boundary.
         incoming
             .send(
                 serde_json::from_value(json!({"jsonrpc":"2.0","id":100,"method":"tools/list"}))
@@ -245,8 +240,6 @@ fn cancelled_queued_handler_never_starts_ordinary_work() {
             ),
             context,
         ));
-        // Poll once to enter permit acquisition, then cancel without releasing
-        // any permit. This establishes queued order without timing sleeps.
         std::future::poll_fn(|cx| {
             assert!(call.as_mut().poll(cx).is_pending());
             std::task::Poll::Ready(())
@@ -383,8 +376,6 @@ fn dropped_admitted_control_finishes_safety_and_releases_reserved_permit() {
             .unwrap()
             .unwrap();
         assert!(!fixture.store.binding(&fixture.host).unwrap().2);
-        // Acquiring both reserved permits proves the detached worker released
-        // its permit only after finishing, without polling an elapsed timer.
         let one = control_worker_semaphore().acquire().await.unwrap();
         let two = control_worker_semaphore().acquire().await.unwrap();
         drop((one, two));

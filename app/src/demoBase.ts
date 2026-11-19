@@ -1,14 +1,3 @@
-// The demo's half of the shared core capabilities: the plan, what a message
-// with an intent may do, and the `plan_changed` and `marked` events. It is
-// kept apart from demo.ts, which each concept rewrites for its own screens:
-// demo.ts calls these, so every concept's demo behaves alike here.
-//
-// Everything here is made up. It mirrors what the window's core does:
-// - talk is never marked, and the open task stays open;
-// - "change the plan" moves the exam a week later and swaps two items, and
-//   `plan_changed` follows the reply;
-// - a mark is announced with `marked` once the record has its row.
-
 import type { AgentEvent, Intent, Mark, Plan, PlanItem, PlanPart } from "./types";
 
 type Emit = (event: AgentEvent) => void;
@@ -23,7 +12,6 @@ const isoDay = (ahead: number) => {
 const EXAM = "2026-11-17";
 const MOVED = "2026-11-24";
 
-// An item's id is a slug of its title, as the core makes it, so it survives a reorder.
 function firstItems(): PlanItem[] {
   return [
     { id: "diagnostic-paper", title: "Diagnostic paper", status: "done", day: isoDay(-6), note: "50 min, marked the same evening" },
@@ -60,7 +48,6 @@ let examDate = EXAM;
 let items = firstItems();
 let changedMs = Date.now() - 3 * 24 * 3600 * 1000;
 
-/** The demo's plan, as `plan()` returns it. */
 export function demoPlan(): Plan {
   return {
     target: "midterm-1",
@@ -81,18 +68,12 @@ export function demoPlan(): Plan {
   };
 }
 
-/** Put the demo's plan back as it started. */
 export function demoResetPlan(): void {
   examDate = EXAM;
   items = firstItems();
   changedMs = Date.now() - 3 * 24 * 3600 * 1000;
 }
 
-/**
- * The change the stand-in tutor makes when asked to change the plan: the exam
- * a week later, and the next two items swapped. Returns what changed. A
- * screen that opens straight on "after the change" (a URL hash) calls this.
- */
 export function demoChangePlan(): PlanPart[] {
   examDate = examDate === EXAM ? MOVED : EXAM;
   const next = items.findIndex((item) => item.status !== "done");
@@ -109,21 +90,12 @@ const asksForPlanChange = (lower: string) => lower.includes("change the plan") |
 const isOffPlan = (lower: string) => lower.includes("by the way");
 const isReturn = (lower: string) => lower.includes("back to");
 
-/**
- * Whether the record would get a mark for this message. Talk never does, and
- * neither does a request to change the plan, an off-plan question or a
- * return to the task, whatever the intent.
- */
 export function demoMayMark(text: string, intent?: Intent): boolean {
   if (intent === "talk") return false;
   const lower = text.toLowerCase();
   return !(asksForPlanChange(lower) || isOffPlan(lower) || isReturn(lower));
 }
 
-/**
- * The tutor's words for the shared scenarios, or null to let demo.ts answer.
- * The open task is the demo lesson's: what the y-intercept gives.
- */
 export function demoBaseReply(text: string): string | null {
   const lower = text.toLowerCase();
   if (asksForPlanChange(lower)) {
@@ -146,16 +118,11 @@ export function demoBaseReply(text: string): string | null {
   return null;
 }
 
-/**
- * Call when the reply to `text` has ended. A request to change the plan
- * changes it, and `plan_changed` is sent, as the core does after the turn.
- */
 export function demoAfterTurn(text: string, emit: Emit): void {
   if (!asksForPlanChange(text.toLowerCase())) return;
   emit({ type: "plan_changed", what: demoChangePlan() });
 }
 
-/** Call when the demo's record gets a row for the last message: `marked` is sent. */
 export function demoMarked(mark: Mark, emit: Emit): void {
   emit({ type: "marked", mark: { ...mark } });
 }

@@ -1,7 +1,3 @@
-//! The window's shell. It only passes messages between the page and
-//! `mg-core`: every decision about the agent and the study folder is made
-//! there, where it is tested.
-
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
@@ -32,8 +28,6 @@ mod occlusion;
 mod reveal;
 mod share;
 
-/// When set to a file path, the window runs a short check of itself, writes
-/// what it found to that file, and quits. See `scripts/selftest.sh`.
 const SELFTEST_ENV: &str = "MAGNESIUM_APP_SELFTEST";
 const FOLDER_ENV: &str = "MAGNESIUM_APP_FOLDER";
 
@@ -47,13 +41,10 @@ fn plain<T, E: std::fmt::Display>(result: Result<T, E>) -> Reply<T> {
     result.map_err(|error| error.to_string())
 }
 
-/// The folder a call names, if it names one. With none, the open folder.
 fn named(folder: &Option<String>) -> Option<&Path> {
     folder.as_deref().filter(|f| !f.is_empty()).map(Path::new)
 }
 
-/// A folder named on the command line or in the environment, to open at
-/// once. With none named, the window opens on the library.
 #[tauri::command(async)]
 fn initial_folder() -> Option<String> {
     std::env::args()
@@ -67,7 +58,6 @@ fn recent(shell: State<'_, Shell>) -> Vec<String> {
     shell.manager.recent()
 }
 
-/// Every folder in the library, read without opening any of them.
 #[tauri::command(async)]
 fn library(shell: State<'_, Shell>) -> Vec<Card> {
     shell.manager.library()
@@ -78,8 +68,6 @@ fn forget_folder(shell: State<'_, Shell>, path: String) -> Reply<()> {
     plain(shell.manager.forget_folder(Path::new(&path)))
 }
 
-/// Look for study folders set up in a terminal. Only on the learner's click:
-/// macOS may ask whether the app may read Documents or Desktop.
 #[tauri::command(async)]
 fn find_folders(shell: State<'_, Shell>) -> usize {
     shell.manager.find_folders()
@@ -100,27 +88,21 @@ fn home(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Home> {
     plain(shell.manager.home_at(named(&folder)))
 }
 
-/// Note that the learner opened a folder's page, without stopping a lesson
-/// in another one.
 #[tauri::command(async)]
 fn visit_folder(shell: State<'_, Shell>, path: String) -> Reply<Home> {
     plain(shell.manager.visit_folder(Path::new(&path)))
 }
 
-/// Every folder in the library, most recently opened first, from the
-/// window's own store: drawn without asking the runtime anything.
 #[tauri::command(async)]
 fn workspaces(shell: State<'_, Shell>) -> Vec<Workspace> {
     shell.manager.workspaces()
 }
 
-/// A folder's sessions, newest opened first.
 #[tauri::command(async)]
 fn lessons(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Vec<LessonInfo>> {
     plain(shell.manager.lessons(named(&folder)))
 }
 
-/// One session's saved turns, read without starting the tutor.
 #[tauri::command(async)]
 fn lesson_turns(
     shell: State<'_, Shell>,
@@ -135,7 +117,6 @@ fn touch_session(shell: State<'_, Shell>, folder: Option<String>, session: Strin
     plain(shell.manager.touch_session(named(&folder), &session))
 }
 
-/// How the window was left: its tabs, kept in its own state file.
 #[tauri::command(async)]
 fn window_state(shell: State<'_, Shell>) -> Option<serde_json::Value> {
     shell.manager.window_state()
@@ -146,14 +127,11 @@ fn set_window_state(shell: State<'_, Shell>, value: serde_json::Value) {
     shell.manager.set_window_state(value);
 }
 
-/// Close the window as its red button does: the page asks when the learner closes the last tab. Going through the
-/// window's own close keeps one way out: the lesson is shut down as the window goes, and the app quits with it.
 #[tauri::command]
 fn close_window(window: tauri::Window) {
     let _ = window.close();
 }
 
-/// What the menu bar holds now: the workspaces, the tabs, the learner's keys.
 #[tauri::command(async)]
 fn set_menu(app: tauri::AppHandle, spec: menu::Spec) -> Reply<()> {
     let bar = app.state::<menu::MenuBar>();
@@ -178,8 +156,6 @@ fn new_folder(shell: State<'_, Shell>, path: String) -> Reply<Home> {
     plain(shell.manager.new_folder(Path::new(&path)))
 }
 
-/// The `magnesium` program, Claude Code and the way of paying. Installs the
-/// app's own program first when none is installed.
 #[tauri::command(async)]
 fn setup(shell: State<'_, Shell>) -> Setup {
     shell.manager.setup()
@@ -205,8 +181,6 @@ fn set_payment(shell: State<'_, Shell>, payment: Payment) -> Account {
     shell.manager.set_payment(payment)
 }
 
-/// Choose who decides on a tool the tutor wants: saved at once, and a
-/// running lesson changes from its next tool on.
 #[tauri::command(async)]
 fn set_permissions(shell: State<'_, Shell>, permissions: Permissions) -> Reply<()> {
     plain(shell.manager.set_permissions(permissions))
@@ -217,8 +191,6 @@ fn sign_in(shell: State<'_, Shell>) -> Reply<()> {
     plain(shell.manager.sign_in())
 }
 
-/// The window's version and the commit it was built from. The download's
-/// build passes the commit in; a build from source has none.
 #[derive(Serialize)]
 struct About {
     version: String,
@@ -236,7 +208,6 @@ fn about(app: tauri::AppHandle) -> About {
     }
 }
 
-/// The engine picked for new lessons, and the open folder's conversation's.
 #[tauri::command(async)]
 fn engine(shell: State<'_, Shell>) -> EngineChoice {
     shell.manager.engine()
@@ -247,26 +218,21 @@ fn set_engine(shell: State<'_, Shell>, engine: Engine) -> EngineChoice {
     shell.manager.set_engine(engine)
 }
 
-/// The agent's models, as it last listed them, and the learner's pick.
 #[tauri::command(async)]
 fn models(shell: State<'_, Shell>) -> ModelChoice {
     shell.manager.models()
 }
 
-/// Ask the agent for its list of models now, without a lesson.
 #[tauri::command(async)]
 fn ask_models(shell: State<'_, Shell>) -> ModelChoice {
     shell.manager.ask_models()
 }
 
-/// Pick the model and effort new sessions start on.
 #[tauri::command(async)]
 fn set_pick(shell: State<'_, Shell>, model: String, effort: Option<String>) -> Reply<ModelChoice> {
     plain(shell.manager.set_pick(&model, effort.as_deref()))
 }
 
-/// The agent's models, the pick, and what the session in a tab is on: a
-/// running one is asked.
 #[tauri::command(async)]
 fn session_models(
     shell: State<'_, Shell>,
@@ -279,8 +245,6 @@ fn session_models(
         .models_at(named(&folder), session.as_deref(), live)
 }
 
-/// Change the model and effort of the session in a tab, at once when it
-/// runs, and make them the pick for new sessions.
 #[tauri::command(async)]
 fn set_session_model(
     shell: State<'_, Shell>,
@@ -299,8 +263,6 @@ fn set_session_model(
     ))
 }
 
-/// Open a conversation in a folder: the one `session` names, the folder's
-/// last one, or a new one, named `title` for the folder's list.
 #[tauri::command(async)]
 fn open_session(
     shell: State<'_, Shell>,
@@ -317,8 +279,6 @@ fn open_session(
     ))
 }
 
-/// Send the learner's words. `intent` says what they are: "talk" is never
-/// marked, "answer" is. With none, the tutor decides, as before.
 #[tauri::command(async)]
 fn send(shell: State<'_, Shell>, text: String, intent: Option<Intent>) -> Reply<()> {
     plain(shell.manager.send_with(&text, intent))
@@ -359,15 +319,11 @@ fn rail(shell: State<'_, Shell>) -> Reply<Rail> {
     plain(shell.manager.rail())
 }
 
-/// The open folder's saved conversation, as the window showed it, without
-/// starting it.
 #[tauri::command(async)]
 fn turns(shell: State<'_, Shell>) -> Reply<Vec<Turn>> {
     plain(shell.manager.saved_turns())
 }
 
-/// The open folder's study plan, read fresh from the runtime and the plan
-/// files.
 #[tauri::command(async)]
 fn plan(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Plan> {
     plain(shell.manager.plan_at(named(&folder)))
@@ -401,7 +357,6 @@ fn attach(
     )
 }
 
-/// Hand in an image the learner pasted: its bytes, as it has no file.
 #[tauri::command(async)]
 fn attach_bytes(
     shell: State<'_, Shell>,
@@ -417,8 +372,6 @@ fn attach_bytes(
     )
 }
 
-/// Copy what the learner dropped or picked into the study folder, and say
-/// what the tutor's search can read of it.
 #[tauri::command(async)]
 fn add_material(
     shell: State<'_, Shell>,
@@ -429,15 +382,11 @@ fn add_material(
     plain(shell.manager.add_material_at(named(&folder), &sources))
 }
 
-/// The runtime's marked answers in the open folder, or none when its
-/// runtime has no such command. The lesson shows a mark only from these.
 #[tauri::command(async)]
 fn marks(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Option<Vec<Mark>>> {
     plain(shell.manager.marks_at(named(&folder)))
 }
 
-/// What a course's material folder holds: names, newest first, and a count
-/// of answer keys that are never named.
 #[tauri::command(async)]
 fn material_list(shell: State<'_, Shell>, folder: Option<String>) -> Reply<Listed> {
     plain(shell.manager.material_list_at(named(&folder)))
@@ -448,14 +397,11 @@ fn add_pasted_text(shell: State<'_, Shell>, folder: Option<String>, text: String
     plain(shell.manager.add_pasted_text_at(named(&folder), &text))
 }
 
-/// A source a reply cited, for the panel beside the lesson. Kept inside the
-/// study folder, and never an answer key.
 #[tauri::command(async)]
 fn source(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply<Source> {
     plain(shell.manager.source_at(named(&folder), &path))
 }
 
-/// The bytes of a cited PDF, sent as they are and not as text.
 #[tauri::command(async)]
 fn source_pdf(
     shell: State<'_, Shell>,
@@ -465,9 +411,6 @@ fn source_pdf(
     plain(shell.manager.source_pdf_at(named(&folder), &path)).map(tauri::ipc::Response::new)
 }
 
-/// Hand a document to the Mac's share sheet, pointing from the control at
-/// `x`, `y` (its box in the page): the file itself, so AirDrop sends the
-/// original. An answer key, or a file outside the study folder, is refused.
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 fn share_file(
@@ -496,7 +439,6 @@ fn share_file(
     )
 }
 
-/// Name one of a folder's sessions anew: the goal it turned out to have.
 #[tauri::command(async)]
 fn rename_session(
     shell: State<'_, Shell>,
@@ -521,8 +463,6 @@ fn image(shell: State<'_, Shell>, folder: Option<String>, path: String) -> Reply
     plain(shell.manager.image_at(named(&folder), &path))
 }
 
-/// Open a web address in the learner's browser. Only web addresses: the page
-/// shows text the tutor wrote, and a link in it must not start a program.
 #[tauri::command(async)]
 fn open_url(url: String) -> Reply<()> {
     let lower = url.to_ascii_lowercase();
@@ -538,8 +478,6 @@ fn open_url(url: String) -> Reply<()> {
         .arg(&url)
         .spawn()
         .map_err(|error| error.to_string())?;
-    // Waited for, so no finished process is left behind. `open` returns at
-    // once; `xdg-open` can wait for the browser, so it is waited for apart.
     if cfg!(target_os = "macos") {
         let _ = child.wait();
     } else {
@@ -594,7 +532,6 @@ fn selftest_report(app: tauri::AppHandle, report: serde_json::Value) {
 }
 
 fn main() {
-    // Startup is timed from here, for the evidence harness.
     harness::mark_start();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -613,14 +550,10 @@ fn main() {
             )
             .with_direct(Arc::new(DirectTutor::new().with_store(store)));
             app.manage(Shell { manager });
-            // The list of models is the account's, and it changes as Claude Code does: ask for it as the window
-            // opens, off the main thread, so the first line already has it.
             let asker = app.handle().clone();
             std::thread::spawn(move || {
                 asker.state::<Shell>().manager.ask_models();
             });
-            // The menu bar, at first with the window's own keys; the page
-            // fills in the workspaces, the tabs and the learner's keys.
             let bar = menu::MenuBar::default();
             bar.apply(app.handle(), menu::Spec::default())?;
             app.manage(bar);
@@ -631,7 +564,6 @@ fn main() {
             harness::note("setup done");
             reveal::hold(app);
             if let Some(path) = std::env::var_os(SELFTEST_ENV).filter(|p| !p.is_empty()) {
-                // A check that never reports must still end.
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_secs(90));
@@ -737,8 +669,6 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the window could not start")
         .run(|app, event| {
-            // A click on the Dock icon while the page is still loading: the
-            // learner asked for the window, so it shows as it is.
             if let RunEvent::Reopen { .. } = event {
                 reveal::show(app, "window shown, Dock");
             }

@@ -1,4 +1,3 @@
-//! Real MCP schema loading and rejected/repaired UPDATE boundaries.
 use crate::support::{TestEnvironment, mcp::McpClient, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};

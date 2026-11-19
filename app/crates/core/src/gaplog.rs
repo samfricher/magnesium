@@ -1,9 +1,3 @@
-//! Reading the learner's plan and gap log, which are Markdown the tutor wrote.
-//!
-//! The tutor edits these files by hand, so every reader here is tolerant: a
-//! column that is missing gives an empty cell, and a row that cannot be read is
-//! counted and reported, never guessed at.
-
 use chrono::NaiveDate;
 use serde::Serialize;
 
@@ -14,8 +8,6 @@ pub struct Table {
 }
 
 impl Table {
-    /// The first column whose name matches one of `names`, without regard to
-    /// case, spaces or hyphens.
     pub fn column(&self, names: &[&str]) -> Option<usize> {
         let plain = |text: &str| {
             text.chars()
@@ -38,14 +30,11 @@ impl Table {
     }
 }
 
-/// A cell the template left unfilled, such as `<TAG>`.
 pub fn is_placeholder(cell: &str) -> bool {
     let cell = cell.trim();
     cell.is_empty() || (cell.starts_with('<') && cell.ends_with('>'))
 }
 
-/// The text under the heading `## name`, up to the next heading of that level.
-/// A heading may carry a number, as in `## 1. Facts`.
 pub fn section<'a>(text: &'a str, name: &str) -> &'a str {
     let mut start = None;
     let mut offset = 0;
@@ -95,7 +84,6 @@ fn is_separator(cells: &[String]) -> bool {
             .all(|cell| !cell.is_empty() && cell.chars().all(|c| matches!(c, '-' | ':' | ' ')))
 }
 
-/// The first table in a piece of Markdown.
 pub fn table(text: &str) -> Table {
     let mut header: Option<Vec<String>> = None;
     let mut rows = Vec::new();
@@ -152,7 +140,6 @@ fn first_number(text: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
-/// One row of the gap log: one lost mark and the proof that it was repaired.
 #[derive(Clone, Debug)]
 pub struct Gap {
     pub paper: String,
@@ -160,10 +147,7 @@ pub struct Gap {
     pub tag: String,
     pub wrong: String,
     pub confidence: String,
-    /// Unaided passes on separate days since the last failure, 0 to 3.
     pub passes: u8,
-    /// Passes made before a later failure. They are kept as history and do
-    /// not count.
     pub earlier_passes: u8,
     pub failed_on: Option<NaiveDate>,
     pub last_pass: Option<NaiveDate>,
@@ -177,7 +161,6 @@ pub struct Score {
     pub paper: String,
     pub date: String,
     pub score: String,
-    /// Right answers out of answers marked "sure", when the notes give them.
     pub sure_right: Option<u32>,
     pub sure_total: Option<u32>,
 }
@@ -186,7 +169,6 @@ pub struct Score {
 pub struct GapLog {
     pub gaps: Vec<Gap>,
     pub scores: Vec<Score>,
-    /// Rows of the Gaps table that could not be read.
     pub unreadable: usize,
 }
 
@@ -205,11 +187,6 @@ fn status_passes(status: &str) -> Option<(u8, bool)> {
     }
 }
 
-/// The dated passes and failures in a Passes cell, in the order written.
-/// The runtime writes each as `2026-11-05 pass` or `2026-11-08 fail`, and a
-/// pass in another paper as `2026-11-05 pass (MockA Q3)`. The word that comes
-/// first decides, so a paper whose name holds "fail" cannot turn a pass into
-/// a failure.
 fn pass_entries(cell: &str) -> Vec<(Option<NaiveDate>, bool)> {
     cell.split([';', ','])
         .flat_map(|part| part.split("<br>"))
@@ -235,7 +212,6 @@ pub fn read_gap_log(text: &str) -> GapLog {
         let wrong = cell(&["What went wrong", "What happened", "What"]);
         let status = cell(&["Status"]);
         if tag.is_empty() && wrong.is_empty() {
-            // The template's example row, or an empty line.
             continue;
         }
         let entries = pass_entries(&cell(&["Passes"]));
@@ -250,8 +226,6 @@ pub fn read_gap_log(text: &str) -> GapLog {
                 .min(3) as u8
         });
         let Some((passes, closed)) = status_passes(&status).or_else(|| {
-            // An older log may have no Status column a reader can use. The
-            // dated passes are then the only evidence.
             (!entries.is_empty() || status.is_empty()).then_some((counted, counted >= 3))
         }) else {
             log.unreadable += 1;
@@ -299,10 +273,8 @@ pub fn read_gap_log(text: &str) -> GapLog {
     log
 }
 
-/// "Conf right: S 8/11, U 4/6" gives (8, 11).
 fn sure_count(notes: &str) -> Option<(u32, u32)> {
     const LABEL: &str = "conf right";
-    // Lower-casing ASCII keeps every byte offset, so the offset holds in `notes`.
     let at = notes.to_ascii_lowercase().find(LABEL)?;
     let chars: Vec<char> = notes[at + LABEL.len()..].chars().collect();
     let s = (0..chars.len()).find(|&i| {
@@ -317,11 +289,9 @@ fn sure_count(notes: &str) -> Option<(u32, u32)> {
     Some((first_number(right)?, first_number(total)?))
 }
 
-/// The plan's facts the window shows.
 #[derive(Clone, Debug, Default)]
 pub struct PlanFacts {
     pub minutes: Option<u32>,
-    /// Minutes for each named paper, from the provenance table.
     pub paper_minutes: Vec<(String, u32)>,
 }
 
@@ -332,7 +302,6 @@ pub fn read_plan(text: &str) -> PlanFacts {
         .iter()
         .find(|row| facts.cell(row, &["Item"]).eq_ignore_ascii_case("Length"))
         .and_then(|row| first_number(facts.cell(row, &["Value"])));
-    // The provenance table sits under a third-level heading inside "Paper bank".
     let bank = section(text, "Paper bank");
     let provenance = bank
         .find("### Provenance")
@@ -353,8 +322,6 @@ pub fn read_plan(text: &str) -> PlanFacts {
     }
 }
 
-/// The course's tags and what each covers, from `graph.yaml`. The file is
-/// simple enough to read by its indentation, so no YAML library is needed.
 pub fn read_tags(text: &str) -> Vec<(String, String)> {
     let mut tags: Vec<(String, String)> = Vec::new();
     let mut inside = false;

@@ -1,4 +1,3 @@
-//! Select complete, fully annotated cards before packet admission.
 use super::{evidence, pages::*, records::*, requests::*};
 use crate::learner::search;
 use rusqlite::Connection;
@@ -43,8 +42,6 @@ fn browse_from_prepare(
     builder: &mut Builder,
     source_scope: &CursorScope,
 ) -> Result<(), String> {
-    // Fallback has a single public action/filter identity. The emitted call is
-    // this real browse request, including its original budget and topic.
     let request = Request::Browse(BrowseRequest {
         schema: r.schema,
         max_bytes: r.max_bytes,
@@ -206,8 +203,6 @@ pub(super) fn prepare(
             break;
         }
     }
-    // Every fixed field and priority annotation is known before session
-    // previews, optional ranked cards, or full bodies compete for space.
     let continuations = vec![NextCall::browse(r.topic.clone()), NextCall::topics()];
     let hints = result.truncated.iter().map(|id| format!(
         "Intent {id}: narrow or reformulate this intent, or browse; ranking is not exhaustive."
@@ -239,8 +234,6 @@ pub(super) fn prepare(
             id: card.memory_id.clone(),
             expected_revision: Some(card.revision),
         };
-        // These are optional ranked candidates, not directory keys. A rejected
-        // candidate must not prevent another intent's later whole card fitting.
         if builder.packet.memories.len() >= 16
             || !builder.optional(|p| {
                 p.memories.push(card);
@@ -250,8 +243,6 @@ pub(super) fn prepare(
             omitted.push(read_ref);
         }
     }
-    // Selection gets first claim on space; references get a bounded preview
-    // before optional bodies. The count includes every actual omission.
     for reference in omitted.into_iter().take(8) {
         if !builder.optional(|p| p.omitted_memory_refs.push(reference)) {
             break;

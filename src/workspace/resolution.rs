@@ -1,4 +1,3 @@
-//! Resolve learner ownership exclusively from the nearest native workspace.
 use super::{CONTROL_DIR, Workspace, config::WorkspaceConfig};
 use crate::learner::store::LearnerStore;
 use std::path::{Path, PathBuf};

@@ -1,12 +1,3 @@
-//! Concurrent source searches expose bounded snapshots, deadlines and source conflicts.
-//!
-//! Four independent MCP processes search the same initialized workspace at the
-//! same time. Every result must be a valid bounded search or an explicit
-//! partial/deferred snapshot, ranked deadline, or truthful source-revision
-//! conflict; no raw reconciliation cursor retry instruction may reach the model.
-//! A source conflict is terminal for that request and contains no old snapshot.
-//! Later explicitly requested bounded searches must recover the complete corpus.
-
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Barrier};
@@ -33,8 +24,6 @@ fn decode_search_outcome(response: &Value) -> SearchOutcome {
     let result = &response["result"];
     let text = result["content"][0]["text"].as_str().expect("tool text");
     if result["isError"] == true {
-        // Only these exact supported terminal errors are allowed. Revision
-        // conflict never borrows a current snapshot or returns old candidates.
         let outcome = match text {
             RANKED_TIMEOUT => SearchOutcome::RankedBudgetExhausted,
             SOURCE_SUPERSEDED => SearchOutcome::SourceSuperseded,
@@ -135,9 +124,6 @@ fn complete_corpus_with_bounded_requests(environment: &TestEnvironment, files: u
     loop {
         let outcome = search(&mut warm, 10 + requests);
         requests += 1;
-        // Resumption uses the ordinary per-request production budget. A valid
-        // deferred response alone is not success: every file must be indexed
-        // and the metadata cursor must be complete before this loop finishes.
         if let SearchOutcome::Snapshot(response) = &outcome
             && response["coverage"] == "complete"
         {
@@ -203,10 +189,6 @@ fn parallel_searches(environment: &TestEnvironment, phase: &str) -> Vec<SearchOu
                 let mut request_panicked = false;
                 for round in 0..3_u64 {
                     barrier.wait();
-                    // Every worker reaches every round barrier, even if an
-                    // MCP I/O assertion fails. Decode/assert tool outcomes only
-                    // after all workers have completed, so a truthful terminal
-                    // error cannot strand the other participants at a barrier.
                     if !request_panicked {
                         let response = catch_unwind(AssertUnwindSafe(|| client.request(
                             100 + round, "tools/call",
@@ -221,7 +203,6 @@ fn parallel_searches(environment: &TestEnvironment, phase: &str) -> Vec<SearchOu
             })
         })
         .collect::<Vec<_>>();
-    // Join every participant before any assertion or decoding can panic.
     let joined = searches
         .into_iter()
         .map(thread::JoinHandle::join)
@@ -274,9 +255,6 @@ fn four_parallel_searches_report_bounded_outcomes_then_explicit_requests_recover
     initialize_product(&environment);
     write_corpus(&environment, 320);
 
-    // Initialize the source-index schema and establish a saved snapshot. One
-    // query deliberately leaves this large corpus cold, preserving the real
-    // bounded reconciliation/extraction contention of the original fixture.
     let mut initial = McpClient::spawn(&environment, true);
     initial.initialize();
     search(&mut initial, 10);
@@ -302,14 +280,10 @@ fn four_parallel_searches_report_bounded_outcomes_then_explicit_requests_recover
     drop(conn);
     parallel_searches(&environment, "cold");
 
-    // Deferred snapshots and source-conflict requests can be followed by fresh
-    // explicitly requested searches. Verify actual complete indexing, then race
-    // again on a fully indexed corpus; the product does not retry a conflict.
     complete_corpus_with_bounded_requests(&environment, 320);
     for outcome in parallel_searches(&environment, "warm") {
         let response = match outcome {
             SearchOutcome::Snapshot(response) => response,
-            // A later explicit request must establish successful hits.
             SearchOutcome::RankedBudgetExhausted => continue,
             SearchOutcome::SourceSuperseded => {
                 panic!("unchanged fully indexed warm sources must not attempt extraction")

@@ -186,10 +186,6 @@ fn the_reply_tool_is_offered_only_in_a_session_the_window_starts() {
     assert!(tool_for(REPLY_TOOL, false).is_none());
 }
 
-/// Claude Code shows the model one merged shape for the four requests, with
-/// only the fields all four need marked as required. So the schema's own
-/// `required` never tells the tutor an update needs an ID; the field's
-/// description and the tool's description do.
 #[test]
 fn the_id_an_update_needs_is_said_where_the_tutor_reads_it() {
     let tool = get_tool("learning_step").unwrap();
@@ -208,7 +204,6 @@ fn the_id_an_update_needs_is_said_where_the_tutor_reads_it() {
     }
     assert_eq!(needing, ["update", "control"]);
 
-    // The start the description shows whole is one the runtime decodes.
     let description = tool.description.as_deref().unwrap();
     let at = description
         .find(r#"{"schema":"learner-model/v2","action":"update""#)

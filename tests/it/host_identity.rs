@@ -1,4 +1,3 @@
-//! Actual native-hook identity/capture tests; no provider model is invoked.
 use crate::support::mcp::McpClient;
 use crate::support::v2::*;
 use crate::support::{
@@ -78,9 +77,6 @@ fn a_prompt_without_a_prompt_id_allocates_distinct_events() {
     assert_eq!(count(&e, "learning_events"), 2);
 }
 
-/// Only the Claude Code plugin's command line names a host. A hook that names
-/// none, or another one, is not supported: it stays fail-open and captures
-/// nothing.
 #[test]
 fn a_hook_that_names_no_host_or_another_host_captures_nothing() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -157,9 +153,6 @@ fn explicit_bound_root_cannot_follow_a_different_workspace() {
     mcp.close_cleanly();
 }
 
-/// Claude Code 2.1.293 traffic as observed on the wire: MCP 2026-07-28
-/// stateless requests carrying no conversation identity, the session in
-/// `CLAUDE_CODE_SESSION_ID`, and hooks that name the turn only by `prompt_id`.
 #[test]
 fn claude_code_wire_traffic_binds_the_lesson_and_captures_both_sides_of_a_turn() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -177,7 +170,6 @@ fn claude_code_wire_traffic_binds_the_lesson_and_captures_both_sides_of_a_turn()
             .is_some_and(|versions| versions.contains(&json!("2026-07-28"))),
         "{discovered}"
     );
-    // Claude Code drops every tool when a modern list result lacks cache hints.
     let listed = mcp.request(3, "tools/list", json!({"_meta": meta}));
     assert_eq!(listed["result"]["ttlMs"], 0, "{listed}");
     assert_eq!(listed["result"]["cacheScope"], "private", "{listed}");
@@ -230,8 +222,6 @@ fn claude_code_wire_traffic_binds_the_lesson_and_captures_both_sides_of_a_turn()
     );
 }
 
-/// The Claude plugin names its host on the MCP command line, and a
-/// conversation left by /clear is refused.
 #[test]
 fn claude_launched_server_binds_claude_identity_and_refuses_a_cleared_conversation() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -283,7 +273,6 @@ fn claude_launched_server_binds_claude_identity_and_refuses_a_cleared_conversati
         "{refused}"
     );
 
-    // Resuming that conversation makes it current again.
     hook("session-start", "SessionStart", "conv", "source", "resume");
     let allowed = mcp.request(
         4,
@@ -294,8 +283,6 @@ fn claude_launched_server_binds_claude_identity_and_refuses_a_cleared_conversati
     mcp.close_cleanly();
 }
 
-/// Magnesium is built for Claude Code only. A tool server launched for any
-/// other host stops at once with a plain message and touches no study folder.
 #[test]
 fn a_server_launched_for_another_host_says_it_is_not_supported() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -325,11 +312,6 @@ fn a_server_launched_for_another_host_says_it_is_not_supported() {
     assert_eq!(count(&e, "host_bindings"), 0);
 }
 
-/// Claude's desktop app wraps pasted text in `pasted_content` tag lines that
-/// reach the prompt hook but that the model is told not to repeat. A tutor's
-/// echo starts a lesson from the native ticket whether it copies the whole
-/// prompt or only the learner's words, and both capture routes store the
-/// learner's words without the markup.
 #[test]
 fn claude_desktop_paste_markup_neither_blocks_native_capture_nor_reaches_storage() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
@@ -349,7 +331,6 @@ fn claude_desktop_paste_markup_neither_blocks_native_capture_nor_reaches_storage
             "claude",
         ))
     };
-    // Magnesium reports a refused update in the receipt, not as an MCP error.
     let start = |conv: &str, prompt: &str, echo: &str| {
         let notice = hook(conv, "p-1", prompt);
         let ticket = notice
@@ -381,7 +362,6 @@ fn claude_desktop_paste_markup_neither_blocks_native_capture_nor_reaches_storage
     start("whole", &wrap("b185", words), &wrap("b185", words));
     start("inner", &wrap("c0de", code), code);
 
-    // While the lesson is active the hook records the turn itself.
     assert!(
         hook(
             "whole",

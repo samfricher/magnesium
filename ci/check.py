@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run Magnesium's local checks. They install nothing and call no model."""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +14,6 @@ SCOPES = ("core", "python", "docs")
 
 
 def commands(scope: str) -> list[list[str]]:
-    """The commands of one scope, in the order they run."""
     python = sys.executable
     return {
         "core": [
@@ -42,8 +40,6 @@ def selected_scopes(requested: list[str]) -> list[str]:
 
 def environment(*, offline: bool) -> dict[str, str]:
     env = os.environ.copy()
-    # The tests start the `magnesium` that Cargo builds for them. A leftover
-    # override would test some other build.
     env.pop("MAGNESIUM_TEST_BINARY", None)
     if offline:
         env["CARGO_NET_OFFLINE"] = "true"
@@ -51,7 +47,6 @@ def environment(*, offline: bool) -> dict[str, str]:
 
 
 def run(command: list[str], env: dict[str, str]) -> str | None:
-    """Run one command from the repository root. Return what failed, or None."""
     shown = shlex.join(command)
     print(f"\n$ {shown}", flush=True)
     started = time.monotonic()

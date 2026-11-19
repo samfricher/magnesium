@@ -69,9 +69,6 @@ pub(crate) struct ReconcileProgress<'a> {
     pub(crate) cancellation: &'a crate::retrieval::OperationCancellation,
     pub(crate) report: ManifestReport,
     pub(crate) hashed: std::collections::HashMap<Vec<u8>, reconcile::HashedContent>,
-    /// Whether each known path was missing when this pass first asked. Many
-    /// new files with the same content would otherwise each check every
-    /// known file with that content again.
     pub(crate) missing: std::collections::HashMap<Vec<u8>, bool>,
     pub(crate) after_open: &'a mut dyn FnMut(&Path) -> Result<(), ManifestError>,
 }
@@ -129,10 +126,6 @@ pub(crate) enum ManifestError {
     Pdf(String),
     PdfContent(String),
     PdfContentPublished(PublishedPdfContentFailure),
-    /// Extraction failed and already recorded the file as `failed`, so a
-    /// search skips it. The wrapped error is what an explicit request for the
-    /// file reports. Every recorded failure except typed PDF content arrives
-    /// this way, including a PDF over a size, page or text limit.
     SourceFailurePublished(Box<ManifestError>),
     PdfTimeout,
 }
@@ -219,9 +212,6 @@ pub(crate) struct ExistingRecord {
 }
 
 impl ExistingRecord {
-    /// Whether this row holds the verdict for a file discovered as `kind`. A
-    /// file excluded for its content keeps that verdict until it changes;
-    /// reading it again on every recheck would only exclude it again.
     pub(crate) fn describes(&self, kind: &str) -> bool {
         self.present
             && (self.source_kind == kind

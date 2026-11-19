@@ -1,5 +1,3 @@
-//! Each answer the tutor marks is stored as its own row, in chat and on a
-//! paper, and `magnesium attempts` lists them.
 use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -67,7 +65,6 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
     v2::init(&e);
     v2::start(&e, "claude", THREAD);
 
-    // A marked paper: one observation, one attempt per answered part.
     let answers = prompt(
         &e,
         "p-1",
@@ -87,10 +84,8 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
     ]);
     let marked = step(&e, update("paper", paper));
     assert_eq!(marked["update_status"], "committed", "{marked}");
-    // A paper's lost marks have their gap-log redos, so they make no quick check.
     assert!(marked.get("quick_checks").is_none(), "{marked}");
 
-    // A chat lesson: a wrong first try, then a right one after a hint.
     let wrong = prompt(&e, "p-2", "b is 7");
     let mut chat = observation(&wrong, "Took b as 7 in x² − 7x + 10, dropping its sign.");
     chat["attempt"] = json!({"label":"sign of b in the quadratic formula","question":"In x² − 7x + 10 = 0, what is b?",
@@ -172,7 +167,6 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
             ),
         ]
     );
-    // Each row links the learner's own words and has a date.
     let conn = store(&e);
     for attempt in &listed {
         let text: String = conn
@@ -191,7 +185,6 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
     }
     assert_eq!(listed[3]["seconds"], 40);
 
-    // The plain listing gives one line per answer.
     let output = e.command().arg("attempts").output().unwrap();
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(
@@ -205,7 +198,6 @@ fn after_a_marked_paper_and_a_chat_lesson_every_answer_is_listed() {
         "{text}"
     );
 
-    // Export carries them, because the record is the learner's.
     let destination = e.root.join("export");
     let output = e
         .command()
@@ -232,7 +224,6 @@ fn an_attempt_whose_facts_contradict_is_refused_and_nothing_is_stored() {
     };
     let cases = [
         (
-            // Helped work stays helped.
             chat(
                 json!({"label":"sign of b","question":"What is b?","first_try":"right","help":"hint","cold":true}),
             ),
@@ -271,7 +262,6 @@ fn an_attempt_whose_facts_contradict_is_refused_and_nothing_is_stored() {
         let value = refused(&e, update(&format!("bad-{index}"), observation));
         assert_eq!(value["error"]["recovery"]["field_path"], path, "{value}");
     }
-    // The fields are required: an attempt without question or cold is refused.
     let value = refused(
         &e,
         update(
@@ -296,7 +286,6 @@ fn a_later_answer_on_a_label_the_same_day_is_never_cold() {
             "first_try":"right","help":"none","cold":cold});
         o
     };
-    // Yesterday's answer does not stop today's first one being cold.
     let first = prompt(&e, "p-1", "b is -7");
     step(
         &e,
@@ -309,8 +298,6 @@ fn a_later_answer_on_a_label_the_same_day_is_never_cold() {
         update("check", chat(&check, "Solve x² − 5x + 4 = 0", true)),
     );
 
-    // A later answer on that label the same day is refused as cold, and
-    // accepted as not cold.
     let later = prompt(&e, "p-3", "b is -3");
     let value = refused(&e, update("later", chat(&later, "b in x² − 3x?", true)));
     assert_eq!(
@@ -325,14 +312,12 @@ fn a_later_answer_on_a_label_the_same_day_is_never_cold() {
         "{value}"
     );
     step(&e, update("later-2", chat(&later, "b in x² − 3x?", false)));
-    // Another label the same day is unaffected.
     let other = prompt(&e, "p-4", "the discriminant is 1");
     let mut o = observation(&other, "Found the discriminant.");
     o["attempt"] = json!({"label":"discriminant","question":"b² − 4ac for x² − 3x + 2?",
         "first_try":"right","help":"none","cold":true});
     step(&e, update("other", o));
 
-    // A paper's parts on one tag, sent together, are all cold.
     let answers = prompt(&e, "p-5", "MockB: 1a x=2, 1b x=-1");
     let mut paper = observation(&answers, "MockB, timed.");
     paper["attempts"] = json!([

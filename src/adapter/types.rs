@@ -8,8 +8,9 @@ pub(crate) struct SearchRequest {
     pub(crate) query: String,
     #[serde(default)]
     pub(crate) limit: Option<usize>,
-    /// Optional relative path prefix below the workspace (for example `src`);
-    /// omit to search the workspace root.
+    #[schemars(
+        description = "Optional relative path prefix below the workspace (for example `src`);\nomit to search the workspace root."
+    )]
     #[serde(default)]
     pub(crate) path_prefix: Option<String>,
 }
@@ -48,15 +49,15 @@ pub(crate) struct SourcesRequest {
     pub(crate) anchor_end: Option<u32>,
 }
 
-/// The tutor's reply, sent through the window's `reply` tool.
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[schemars(description = "The tutor's reply, sent through the window's `reply` tool.")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReplyRequest {
-    /// The whole reply, as it would be written in chat.
+    #[schemars(description = "The whole reply, as it would be written in chat.")]
     pub(crate) text: String,
-    /// True when a memory edit or a checkpoint is due after this answer. The
-    /// turn then goes on to that one learning_step after the reply, instead
-    /// of ending at the reply.
+    #[schemars(
+        description = "True when a memory edit or a checkpoint is due after this answer. The\nturn then goes on to that one learning_step after the reply, instead\nof ending at the reply."
+    )]
     #[serde(default)]
     pub(crate) save_after: bool,
 }

@@ -1,4 +1,3 @@
-"""Tests for the local check runner. No test here starts Cargo."""
 import contextlib
 import io
 import subprocess
@@ -14,7 +13,6 @@ from ci import check
 
 
 class FakeRun:
-    """Stands in for subprocess.run: records each command and fails the ones named."""
 
     def __init__(self, failing=(), missing=()):
         self.failing, self.missing, self.calls = set(failing), set(missing), []

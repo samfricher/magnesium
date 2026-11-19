@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Generate the fixed 12-document fidelity sample (LEARN-208).
-
-Every file is generated from authored sources with independently known
-text and locations (recorded in manifest.json); nothing is downloaded.
-PDFs render through headless Chrome print-to-pdf except the scanned
-page, which rasterizes real glyph pixels (Chrome screenshot decoded
-with stdlib zlib, re-encoded as a PDF image with no text layer).
-DOCX/PPTX/EPUB are hand-rolled minimal Office/OpenDocument packages.
-
-Usage: python3 workers/docling/sample/generate.py [--chrome PATH] OUT_DIR
-"""
 
 import argparse
 import os
@@ -75,7 +64,6 @@ def screenshot_png(chrome, html, out_path, width=1000, height=1250):
 
 
 def decode_png_8bit_rgb(path):
-    """Decode a non-interlaced 8-bit RGB PNG with stdlib only."""
     data = open(path, "rb").read()
     assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
     pos, width, height, idat = 8, None, None, bytearray()
@@ -130,7 +118,6 @@ def decode_png_8bit_rgb(path):
 
 
 def scanned_pdf_from_text(chrome, lines, out_path):
-    """Render text, screenshot it, and embed the pixels with no text layer."""
     words = " ".join(lines)
     html = (
         "<html><body style='margin:120px;font:48px monospace;background:white;color:black'>"
@@ -143,7 +130,6 @@ def scanned_pdf_from_text(chrome, lines, out_path):
     finally:
         if os.path.exists(shot):
             os.unlink(shot)
-    # Downscale 2x by pixel-picking to keep the fixture small.
     width //= 2
     height //= 2
     stride = width * 3

@@ -143,7 +143,6 @@ fn whole_record_formulation_keeps_bounds_and_active_row_filter() {
     }
     memory(&c, "retired", "coefficient", "evidence", "[]");
     rebuild_indexes(&c).unwrap();
-    // Even a stale document cannot bypass current canonical lifecycle.
     c.execute(
         "UPDATE learner_memories SET lifecycle='retired' WHERE memory_id='retired'",
         [],

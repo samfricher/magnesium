@@ -1,14 +1,9 @@
-//! The library: every folder the window knows, most urgent first.
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use mg_core::study::{self, HomeState};
 use mg_core::{runtime, Store};
 
-/// A stand-in for `magnesium digest`: it reports an exam as many days away as
-/// the file `days` in the folder says, or no plan when there is no such file.
-/// A folder with a file `plain` was never set up for Magnesium.
 const RUNTIME: &str = r#"#!/bin/sh
 if [ -f plain ]; then
   printf '{"active":false}\n'
@@ -45,7 +40,6 @@ fn the_library_lists_every_folder_with_the_nearest_exam_first() {
     let recent = [latest, none, past, soon, plain];
     let cards = study::library(&recent, &store);
     let names: Vec<&str> = cards.iter().map(|card| card.name.as_str()).collect();
-    // The exam in 3 days, then the one in 20, then the rest as last opened.
     assert_eq!(
         names,
         [

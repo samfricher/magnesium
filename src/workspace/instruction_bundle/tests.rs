@@ -157,8 +157,6 @@ fn every_runtime_host_and_operation_has_a_manifest_consumer() {
     }
 }
 
-/// Skills such as papers need tool_recipes on every turn, so a workflow
-/// that grows past the remaining budget must fail here, not defer recipes.
 #[test]
 fn every_stage_serves_tool_recipes_without_deferral() {
     let bundle = compiled_bundle().unwrap();
@@ -480,8 +478,6 @@ fn one_hundred_workspace_loads_share_immutable_bundle_storage() {
         assert!(Arc::ptr_eq(&loaded_bundle.files, &bundle.files));
         assert!(loaded.immutable_bytes_reused);
         assert_eq!(loaded.bundle_hash, bundle.hash);
-        // One active-pointer read plus the 14 instructions and manifest; the
-        // ordinary path must not reopen the pointer it already verified.
         assert_eq!(loaded.validation_file_count, 16);
         match validation_bytes_per_workspace {
             Some(bytes) => assert_eq!(loaded.validation_bytes, bytes),
@@ -490,8 +486,6 @@ fn one_hundred_workspace_loads_share_immutable_bundle_storage() {
         total_validation_bytes += loaded.validation_bytes;
         fs::remove_dir_all(control).unwrap();
     }
-    // Full local validation remains uncached; immutable bundle storage is
-    // shared even as every workspace's installed files are reread.
     assert_eq!(
         total_validation_bytes,
         validation_bytes_per_workspace.unwrap() * 100
@@ -852,8 +846,6 @@ fn an_earlier_active_bundle_is_seen_without_a_change() {
         "looking stages nothing"
     );
     assert!(!super::earlier_known_bundle_active(&control, &old));
-    // An edited pointer is not an earlier version's, and the upgrade
-    // would refuse it, so it is not reported as one.
     fs::write(&pointer, b"{\"bundle_version\":2, \"bundle_hash\":\"x\"}").unwrap();
     assert!(!super::earlier_known_bundle_active(&control, &current));
     fs::remove_dir_all(control).unwrap();
@@ -925,7 +917,6 @@ fn explicit_upgrade_moves_the_pointer_from_an_unedited_previous_bundle_only() {
     );
     fs::remove_dir_all(control).unwrap();
 
-    // Local edits to the earlier bundle keep it active and untouched.
     for edit in ["MAGNESIUM.md", "extra.md"] {
         let control = temp_control("edited-upgrade");
         install_known_bundle(&control, &old).unwrap();

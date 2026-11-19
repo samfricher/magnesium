@@ -1,4 +1,3 @@
-//! Real writer/read regressions for bounded checkpoint basis and task event facts.
 use super::*;
 use serde_json::{Value, json};
 

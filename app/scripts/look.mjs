@@ -1,48 +1,3 @@
-// Look at one state of the real window, in one command: build what changed,
-// open the window on the made-up course, go to a place, do a few things there
-// and photograph it. Lessons run through the runtime built from this checkout,
-// never the installed one. Starts no model.
-//
-//   node scripts/look.mjs                                  Home
-//   node scripts/look.mjs --at task                        a lesson with its first task open
-//   node scripts/look.mjs --at task click:stuck            ... with Stuck's row open
-//   node scripts/look.mjs --at task --base origin/main     ... and the same in the window built from main:
-//                                                          <name>-before-*.png beside <name>-after-*.png
-//
-// It prints the photographs' paths, one a line. They go to shots/look/ unless
-// --out names a folder; git ignores shots/.
-//
-//   --at <place>    home (the default), workspace, session (a new session, not begun), task (its first task
-//                   open), marked (an answer marked, the next task open) or settings
-//   --line <look>   the line a learner writes on: bare (the default), soft, ruled, or all for one photograph of
-//                   each. A new window draws the soft field; the look is chosen in Settings before going anywhere.
-//   --size <WxH>    the window's size, such as 720x560
-//   --big           the largest text
-//   --scheme <s>    light, dark or both (the default)
-//   --name <stem>   the photographs' name (look)
-//   --out <dir>     where they go
-//   --base <ref>    photograph the same steps in the window as of that commit too, on the runtime as of that
-//                   commit (scripts/window-build.sh --ref)
-//   --bin <path>    a window already built, in place of building this checkout's
-//   --keep          leave the window open afterwards and print its drive folder, to send it more ops with
-//                   scripts/drive.mjs and photograph it with scripts/capture.sh <pid> <png>. Its copy of the
-//                   program (target/debug/magnesium-window-run-*) and that copy's settings are then left too.
-//
-// Each further argument is a step, done in order once the place is reached:
-//
-//   click:<target>        a data-drive name, else the words on it (scripts/harness.md lists both)
-//   focus:<target>
-//   type:<text>
-//   key:<Key>             with modifiers before it: key:meta+ArrowUp, key:alt+Enter
-//   wait:<ms>
-//   idle                  wait for the tutor's reply to end
-//   shot:<stem>           photograph now, under this name; with no shot step, one photograph is taken at the end
-//   text | session | ...  any op of scripts/harness.md by its name, its answer printed
-//   '{"op": ...}'         any op as JSON, its answer printed
-//
-// A step that fails is said and the rest still run, so "before" can be photographed in a window that lacks what
-// the change adds. The exit code is 1 when any step failed.
-
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -58,7 +13,9 @@ function usage(problem) {
   if (problem) console.error(`look: ${problem}`);
   console.error("usage: node scripts/look.mjs [--at <place>] [--line bare|soft|ruled|all] [--size WxH] [--big] [--scheme light|dark|both]");
   console.error("                             [--name <stem>] [--out <dir>] [--base <ref>] [--bin <path>] [--keep] [step ...]");
-  console.error("       the top of scripts/look.mjs says what each does");
+  console.error(`       places: ${PLACES.join(", ")}`);
+  console.error("       steps, done in order once the place is reached: click:<target> focus:<target> type:<text>");
+  console.error("              key:<Key> (key:meta+ArrowUp) wait:<ms> idle shot:<stem> <op name> '<op json>'");
   process.exit(64);
 }
 
@@ -87,7 +44,6 @@ const schemes = { light: ["light"], dark: ["dark"], both: ["dark", "light"] }[op
 const size = options.size ? /^(\d+)x(\d+)$/.exec(options.size) ?? usage("--size is written 720x560") : null;
 if (options.keep && (options.base || options.line === "all")) usage("--keep leaves one window open, so it goes with neither --base nor --line all");
 
-/** A step as the op it sends, or {shot: stem}. */
 function parse(text) {
   if (text.startsWith("{")) return { op: JSON.parse(text), say: true };
   const at = text.indexOf(":");
@@ -108,7 +64,6 @@ function parse(text) {
 }
 const steps = options.steps.map(parse);
 
-/** The window's program, or with `runtime` the magnesium program lessons run through: this checkout's, or as of `ref`. */
 function built(ref, runtime = false) {
   const args = [join(APP, "scripts/window-build.sh"), ...(runtime ? ["--runtime"] : []), ...(ref ? ["--ref", ref] : [])];
   try {
@@ -122,7 +77,6 @@ function built(ref, runtime = false) {
 const photographs = [];
 const failed = [];
 
-/** One window: the look chosen, the place reached, the steps done and photographed. `tag` goes into each name. */
 async function look({ binary, runtimeProgram }, tag, lineName) {
   const stem = (name) => [name, tag, options.line === "all" ? lineName : null].filter(Boolean).join("-");
   const { run, scratch, launch, step, shoot, quit, settle, lineLook } = openRun({ binary, out: options.out, stem, keep: options.keep, runtimeProgram });
@@ -131,7 +85,6 @@ async function look({ binary, runtimeProgram }, tag, lineName) {
 
   if (size) await step(w, options.size, { op: "frame", width: Number(size[1]), height: Number(size[2]) });
   if (options.big) for (let n = 0; n < 11; n++) await w.op({ op: "menu_click", path: ["View", "Bigger Text"] });
-  // A new window draws the soft field, so only another look is chosen; and only where a line is drawn.
   if (lineName !== "soft" && !["home", "workspace"].includes(options.at)) {
     await lineLook(w, LOOKS[lineName]);
     await step(w, "back to the first tab", { op: "click", target: "tab-1", by: "drive" });
@@ -187,8 +140,6 @@ async function look({ binary, runtimeProgram }, tag, lineName) {
 }
 
 mkdirSync(options.out, { recursive: true });
-// Each window with the runtime of its own commit: a lesson's replies and the record come from it, so a change to
-// the runtime shows only if "before" runs on the runtime as it was.
 console.error("look: building what changed…");
 const after = { binary: options.bin ?? built(), runtimeProgram: built(null, true) };
 if (!existsSync(after.binary)) usage(`no window program at ${after.binary}`);
@@ -208,5 +159,4 @@ if (failed.length > 0) {
   console.error(`look: ${failed.length} step(s) failed:`);
   for (const what of failed) console.error(`  ${what}`);
 }
-// With --keep the window outlives this process, which would otherwise wait on it.
 process.exit(failed.length > 0 ? 1 : 0);

@@ -1,21 +1,3 @@
-//! Original-source inspection with trustworthy anchors (LEARN-206).
-//!
-//! The `sources` domain operation exposes the exact cited physical PDF page
-//! or text/code anchor alongside the extracted excerpt, using the original
-//! file version. It returns file identity/hash, page/line location, source
-//! authority scope, extraction method/version, coverage and any
-//! missing/unreadable portions. Opening a source for inspection creates no
-//! learner state: this handler performs no canonical-store write, promotes
-//! no concept, and imports no book into model context (bounded excerpt plus
-//! bounded original only).
-//!
-//! Physical page indices are used internally with explicit display labels;
-//! printed page numbers are never silently treated as file-page indices. An
-//! extracted formula is text-layer output only, never certified correct.
-//! Empty/image-only or suspicious extraction yields `text_unavailable` or
-//! `partial` plus an original-page option, never 'no relevant content
-//! exists'. The runtime never claims visual analysis from returned text.
-
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
@@ -42,15 +24,8 @@ use crate::retrieval::{
 };
 use crate::workspace::ResolvedWorkspace;
 
-/// Bounded original cap for one `sources` response: it keeps one anchor's raw
-/// bytes inspectable without importing a whole book into model context.
 pub(crate) const SOURCES_ORIGINAL_BYTE_CAP: usize = 64 * 1024;
-/// Text sources above this size are excluded at discovery (`too_large`); the
-/// value mirrors `retrieval::MAX_SOURCE_BYTES` for status reporting.
 const SOURCES_TEXT_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
-/// Native extraction provenance labels. PDF text comes from the isolated
-/// five-second `pdf_extract` worker (`pdf-extract 0.12.0`); that is text-layer
-/// extraction, not layout/figure/formula understanding.
 const TEXT_EXTRACTION_METHOD: &str = "native-text/v1";
 const PDF_EXTRACTION_METHOD: &str = "native-pdf-worker/v1";
 
@@ -103,9 +78,6 @@ fn sources_resolved(
         ));
     }
     let mut anchor = resolve_anchor(reference)?;
-    // Reconciliation is bounded and may leave a previously indexed row in
-    // place. Enforce current source policy independently before inspecting
-    // either cached excerpts or original bytes, with or without a hash.
     if crate::retrieval::source_relative_path_is_excluded(&root, &anchor.relative)
         .map_err(|error| error.to_string())?
     {
@@ -311,8 +283,6 @@ fn validated_relative_path(path: &str) -> Result<PathBuf, String> {
 }
 
 fn row_present(row: &ManifestRow) -> bool {
-    // Deleted rows keep their last known hash/kind for truthful reporting
-    // but must never authorize bytes; the caller checks this first.
     row.present && row.index_status != "deleted"
 }
 

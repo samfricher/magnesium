@@ -1,5 +1,3 @@
-//! A22 real CLI adapter proof against a disposable workspace recreated by its
-//! owner. No live account, model, migration, import, or user's control directory is used.
 use crate::support::{TestEnvironment, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -75,9 +73,6 @@ fn recreated_workspace_rejects_old_memory_session_observation_event_and_receipt_
     }
     assert_eq!(v2::count(&environment, "learner_memories"), 1);
 
-    // Every CLI process has exited and no connection is retained. This exact
-    // directory belongs to TestEnvironment; the test never discovers a real
-    // user workspace or deletes outside its disposable root.
     let owned_control = environment.workspace.join(crate::support::CONTROL_DIR);
     assert!(owned_control.starts_with(&environment.root));
     std::fs::remove_dir_all(&owned_control).unwrap();

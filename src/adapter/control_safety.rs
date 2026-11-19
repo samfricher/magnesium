@@ -1,6 +1,3 @@
-//! Deny-only recovery for controls whose canonical SQLite write fails.
-//! No learner text, history, expiry, permissions, or interpretation lives here.
-//! Short host/thread admission locks serialize actual side effects with controls.
 use crate::{learner::HostContext, workspace::Workspace};
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,9 +27,6 @@ impl Guard {
         let directory = workspace
             .private_dir(Path::new(DIRECTORY))
             .map_err(failure)?;
-        // Atomic marker publication flushes this directory, but a newly created
-        // directory also needs its entry in the control directory flushed. Do this even when
-        // another process won creation, before claiming a durable shared deny.
         #[cfg(unix)]
         ensure_entry_flushed(workspace.control(), &directory)?;
         let key = Sha256::digest(
@@ -105,8 +99,6 @@ impl Guard {
     pub(crate) fn capture_blocked(&self) -> bool {
         self.flags != 0
     }
-    /// Persist the deny before attempting canonical stop/off. Keep the guard alive
-    /// through the SQL outcome so a concurrent hook cannot admit stale settings.
     pub(crate) fn before_control(&mut self, action: &str) -> Result<(), String> {
         let bit = match action {
             "recording_off" => RECORDING,
@@ -116,8 +108,6 @@ impl Guard {
         };
         self.write(self.flags | bit)
     }
-    /// SQLite committed: its setting is canonical, so remove this operation's
-    /// recovery deny. A cleanup error stays fail-closed and must be disclosed.
     pub(crate) fn after_control(&mut self, action: &str) -> Result<(), String> {
         let bit = match action {
             "recording_off" | "recording_on" => RECORDING,
@@ -126,8 +116,6 @@ impl Guard {
         };
         self.write(self.flags & !bit)
     }
-    /// Receipt replay has no new authority. Undo only this invocation's
-    /// provisional deny, preserving every deny that existed on admission.
     pub(crate) fn after_replay(&mut self) -> Result<(), String> {
         if self.flags == self.initial_flags {
             return Ok(());
@@ -152,9 +140,6 @@ impl Guard {
                         .ok_or_else(|| failure("invalid marker path"))?,
                 )?;
             }
-            // Portable deletion has no write-through equivalent. Keep a bounded,
-            // text-free zero-flag marker through the existing atomic writer;
-            // Windows uses MoveFileExW(MOVEFILE_WRITE_THROUGH) for publication.
             #[cfg(not(unix))]
             crate::workspace::write_private_atomic(&self.marker, &[1, 0]).map_err(failure)?;
         } else {
@@ -165,12 +150,6 @@ impl Guard {
     }
 }
 
-/// Flush `directory`'s entry in `control` once per directory pair, not on
-/// every call. After a flush succeeds, a record inside `directory` names both
-/// directories' identities. A process that reads a matching record knows a
-/// flush already completed, because the record is written only after one
-/// returns. Replacing either directory changes an identity, so the next call
-/// flushes again. A missing or unreadable record also flushes again.
 #[cfg(unix)]
 fn ensure_entry_flushed(control: &Path, directory: &Path) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
@@ -188,8 +167,6 @@ fn ensure_entry_flushed(control: &Path, directory: &Path) -> Result<(), String> 
         .is_ok_and(|_| found == expected.as_bytes());
     if !recorded {
         sync_directory(control)?;
-        // The flush above is what this call needs. A record that fails to
-        // write only means a later call flushes again.
         let _ = crate::workspace::write_private_atomic(&record, expected.as_bytes());
     }
     Ok(())

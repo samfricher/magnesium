@@ -1,17 +1,3 @@
-//! Claude Code, driven through the program the learner installed.
-//!
-//! The window starts `claude` as Anthropic publishes it, in the study folder,
-//! and talks to it over its own standard input and output. It never reads a
-//! credential and never changes how Claude Code signs in. The session loads
-//! Magnesium's plugin, with its hooks, skills and tool server, as a terminal
-//! session does, so `--bare` is never passed and the first report is checked
-//! for the Magnesium plugin. Of the learner's own setup it loads nothing else:
-//! see [`lesson_args`].
-//!
-//! The wire format is the one the open-source Agent SDKs use: one JSON object
-//! per line each way, with `control_request` and `control_response` objects for
-//! permission prompts and interrupts.
-
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -30,46 +16,22 @@ use crate::agent::{
 };
 use crate::paths;
 
-/// Set this to use another program in place of `claude`. The tests set it to
-/// a stand-in that speaks the same lines.
 pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_AGENT";
 
-/// Set this to a file path to keep every line that passes between the window
-/// and the agent. It holds the whole conversation, so it is off unless asked
-/// for. The live check turns it on, to settle what the real program sends.
 pub const TRACE_ENV: &str = "MAGNESIUM_APP_TRACE";
 
 const PLUGIN: &str = "magnesium";
-/// Claude Code's name for auto mode, as `--permission-mode` and its first
-/// report give it.
 const AUTO: &str = "auto";
 const NAME: &str = "Claude Code";
-/// Anthropic's page for installing Claude Code. The window links to it and
-/// never runs an installer itself.
 const INSTALL_PAGE: &str = "https://code.claude.com/docs/en/setup";
-/// How long a sign-in may wait for the learner in the browser.
 const SIGN_IN_LIMIT: Duration = Duration::from_secs(15 * 60);
 
-/// Set on every Claude Code the window starts, and so on Magnesium's hooks
-/// and tool server under it. The tool server then offers its `reply` tool,
-/// whose input the window draws as the tutor's words while they are written.
 pub const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
 const SURFACE: &str = "window";
-/// Added to Claude Code's own prompt in a window lesson. The plugin's
-/// instructions, the same in a terminal, say nothing of how to write
-/// mathematics, and a window lesson's tutor wrote it as plain text, such as
-/// `1/(1 + e^(−s))`, which the window draws as typed (seen on 2026-11-16: a
-/// lesson of 17 replies with TeX in none). The direct engine's prompt says
-/// the same.
 pub const DRAWS: &str = "This lesson is shown in Magnesium's study window, which draws your replies as Markdown and draws mathematics with KaTeX. Write every formula in TeX, even a short one inside a sentence: inline as `$\\frac{1}{1+e^{-s}}$` (no space after the opening dollar), display as `$$...$$` on its own lines. Maths written as plain text, such as 1/(1 + e^(−s)), is shown as typed, never as a formula. A diagram is a fenced `mermaid` block.";
 
-/// Claude Code's switch for the tool servers of the learner's Claude account.
 pub const CONNECTORS_ENV: &str = "ENABLE_CLAUDEAI_MCP_SERVERS";
 
-/// Claude Code's own tools a lesson may use. Everything else Claude Code
-/// offers is left out, and so is the learner's own setup: no other tool
-/// server, account connector, plugin or skill. Magnesium's five tools come
-/// from its plugin, which is loaded by itself.
 pub const TOOLS: [&str; 9] = [
     "Read",
     "Write",
@@ -82,8 +44,6 @@ pub const TOOLS: [&str; 9] = [
     "Bash",
 ];
 
-/// `--model` and `--effort`, for each the learner picked and the agent may
-/// be passed; the rest is left to Claude Code.
 pub(crate) fn push_pick(args: &mut Vec<String>, model: Option<&str>, effort: Option<&str>) {
     if let Some(model) = model.filter(|m| crate::models::usable_model(m)) {
         args.push("--model".into());
@@ -95,7 +55,6 @@ pub(crate) fn push_pick(args: &mut Vec<String>, model: Option<&str>, effort: Opt
     }
 }
 
-/// Where `magnesium init` keeps the plugin for Claude Code on this Mac.
 fn plugin_dir() -> Option<PathBuf> {
     let dir = paths::home().join("Library/Application Support/magnesium/claude-plugin");
     dir.join(".claude-plugin/plugin.json")
@@ -103,30 +62,6 @@ fn plugin_dir() -> Option<PathBuf> {
         .then_some(dir)
 }
 
-/// What a lesson loads, beyond the pipe itself.
-///
-/// - Settings come from the study folder only (`project,local`), so the
-///   learner's user settings, with their plugins, hooks and skills, stay out.
-///   Tool servers and account connectors from the learner's account come
-///   with those settings, and are left out with them.
-/// - Magnesium's plugin is loaded from where `magnesium init` put it, so its
-///   hooks, skills and tool server load as in a terminal. Its tools are in
-///   the session from the first turn, as there are too few to defer.
-/// - Bash runs inside Claude Code's sandbox, and Write and Edit never touch
-///   `.magnesium/`.
-/// - Edit and Write on the study root's plan files (`Study/<plan>/plan.md`
-///   and `graph.yaml`) are allowed, so "change the plan" asks nothing.
-/// - With [`Permissions::Auto`], Claude Code's auto mode decides on every
-///   other tool, and a card comes only when it does not decide: after it has
-///   refused several in a row. With [`Permissions::Ask`], every other write,
-///   and every sandboxed command, asks. The window's card answers either way
-///   (`--permission-prompt-tool stdio`). Never `bypassPermissions`.
-/// - The model and effort are the learner's pick, each left out when it is
-///   Claude Code's own, as in a terminal. Both are pinned by name, so a
-///   later change of Claude Code's default cannot change the tutor unseen.
-///
-/// Without the plugin on this Mac, the folder's settings still name it, and
-/// the first report then says the plugin did not load.
 pub fn lesson_args(
     folder: &Path,
     plugin: Option<&Path>,
@@ -157,7 +92,6 @@ pub fn lesson_args(
             folders.push(real);
         }
     }
-    // The study root, where the plans are, may be a parent of the folder.
     let root = crate::direct::study_root(folder);
     let mut roots = vec![root.clone()];
     if let Ok(real) = std::fs::canonicalize(&root) {
@@ -191,11 +125,6 @@ pub fn lesson_args(
     args
 }
 
-/// Start Claude Code so that the learner's choice of payment holds. Started
-/// by another program, Claude Code uses an API key in its environment over
-/// the learner's plan, and does not ask. With the plan chosen, it gets none.
-/// Keys Claude Code keeps itself, such as a Console sign-in, stay as they
-/// are: `account` reports them, so the window never claims the plan wrongly.
 pub(crate) fn apply_payment(command: &mut std::process::Command, payment: Payment) {
     if payment == Payment::Plan {
         command.env_remove("ANTHROPIC_API_KEY");
@@ -203,7 +132,6 @@ pub(crate) fn apply_payment(command: &mut std::process::Command, payment: Paymen
     }
 }
 
-/// What `claude auth status --json` says, in the window's words.
 fn read_account(status: &Value, payment: Payment) -> Account {
     let mut account = Account {
         name: NAME.into(),
@@ -271,7 +199,6 @@ fn read_account(status: &Value, payment: Payment) -> Account {
     account
 }
 
-/// Where an API key came from, in plain words. Never the key itself.
 fn key_words(source: Option<&str>) -> String {
     match source {
         Some("ANTHROPIC_API_KEY") => "an API key set in ANTHROPIC_API_KEY, per use".to_owned(),
@@ -293,7 +220,6 @@ impl ClaudeCode {
         Self::default()
     }
 
-    /// Use this program and ignore the environment. For tests.
     pub fn with_program(program: PathBuf) -> Self {
         Self {
             program: Some(program),
@@ -328,10 +254,6 @@ impl Harness for ClaudeCode {
             .current_dir(&options.folder)
             .env("PWD", &options.folder)
             .env(SURFACE_ENV, SURFACE)
-            // The learner's account connectors (mail, calendar, drive) come
-            // from their Claude account, not their settings, so the setting
-            // sources alone leave them in: a live check on 2026-11-11 found
-            // 62 of their tools in a window lesson without this.
             .env(CONNECTORS_ENV, "false")
             .args([
                 "-p",
@@ -355,7 +277,6 @@ impl Harness for ClaudeCode {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if let Some(id) = options.resume.as_deref().filter(|id| is_session_id(id)) {
-            // One token, so an id can never be read as another flag.
             command.arg(format!("--resume={id}"));
         }
         let mut child = command
@@ -438,10 +359,6 @@ impl Harness for ClaudeCode {
             thread::spawn(move || read_loop(&shared, stdout));
         }
 
-        // The SDKs open every conversation this way. Its reply is not judged
-        // for the plugin: it can come before a folder's plugin has finished
-        // installing, so it cannot say the plugin is missing. The first
-        // `system/init` can. The reply's list of models is kept.
         let id = shared.next_id();
         *lock(&shared.opening.initialize) = Some(id.clone());
         shared.write(&json!({
@@ -464,8 +381,6 @@ impl Harness for ClaudeCode {
         let program = self.locate()?;
         let mut command = paths::command(&program);
         apply_payment(&mut command, payment);
-        // Not a study folder: the list is the account's, and this reads nothing of the learner's. Nothing is
-        // kept of a conversation that never starts.
         let folder = env::temp_dir();
         command
             .current_dir(&folder)
@@ -494,12 +409,9 @@ impl Harness for ClaudeCode {
                 ..Account::default()
             };
         };
-        // A short question: the PATH a terminal has is not needed, and the
-        // start screen does not wait for the shell to give it.
         let mut command = paths::light_command(&program);
         apply_payment(&mut command, payment);
         command.args(["auth", "status", "--json"]);
-        // Signed out, it ends with 1 and still prints its answer.
         let answer =
             paths::run_to_end(command, Duration::from_secs(20)).and_then(|(_, out, err)| {
                 serde_json::from_str::<Value>(out.trim()).map_err(|_| {
@@ -543,8 +455,6 @@ impl Harness for ClaudeCode {
                 "The window could not start Claude Code's sign-in: {e}."
             ))
         })?;
-        // It opens Anthropic's page and waits for the browser to report
-        // back. It is left to finish, and stopped if nobody ever does.
         thread::spawn(move || {
             let started = Instant::now();
             loop {
@@ -589,76 +499,40 @@ struct Shared {
     child: Mutex<Option<Child>>,
     session_id: Mutex<Option<String>>,
     pending: Mutex<HashMap<String, Pending>>,
-    /// Exact calls the learner allowed for the rest of the sitting.
     allowed: Mutex<HashSet<String>>,
-    /// Text blocks already shown, by the id of the message they belong to.
     seen_text: Mutex<HashMap<String, Vec<String>>>,
-    /// The `reply` calls being written, by their block's index.
     reply_blocks: Mutex<HashMap<u64, ReplyStream>>,
-    /// The replies already shown this turn.
     replies: Mutex<Vec<String>>,
-    /// This turn's plain text, outside the `reply` tool. The tutor writes
-    /// notes to itself there ("Fresh topic, no history."), and a note before
-    /// the reply comes before the window can know a reply will follow. So
-    /// it waits for the turn's end, and reaches the page only when the turn
-    /// sent no reply through the tool (Magnesium issue 142).
     held: Mutex<Vec<String>>,
-    /// The held text of the block still being written, from its pieces. The
-    /// finished block replaces it. A turn stopped, or a program that ends,
-    /// inside a block never sends the finished block, and this is then all
-    /// there is of what the tutor wrote.
     held_writing: Mutex<String>,
-    /// Words of a `reply` call reached the page this turn, whole or, when
-    /// the turn was stopped, in part.
     replied: AtomicBool,
-    /// Claude Code's report of what it loaded leaves room for the `reply`
-    /// tool. Without the tool, plain text is the only reply there can be,
-    /// and is shown as it is written.
     reply_tool: AtomicBool,
-    /// The study folder, to name the files the tutor works on.
     folder: PathBuf,
     stderr_tail: Mutex<String>,
     closing: AtomicBool,
     interrupting: AtomicBool,
-    /// A message was sent and its turn has not ended. True before the tutor's
-    /// first word, when `in_turn` is still false.
     awaiting: AtomicBool,
     in_turn: AtomicBool,
     ready_sent: AtomicBool,
     counter: AtomicU64,
-    /// Counts interrupts, so a watchdog only acts on the one that set it.
     interrupts: AtomicU64,
-    /// How the learner chose to pay, to check against what the agent uses.
     payment: Payment,
-    /// Who the learner chose to decide on a tool, for the first report to
-    /// be checked against.
     permissions: Mutex<Permissions>,
     trace: Option<Mutex<std::fs::File>>,
     started: Instant,
     opening: Opening,
-    /// Control requests the window sent and waits on.
     asked: crate::models::Asked,
-    /// Claude Code's own code for the request that failed this turn
-    /// ("model_not_found"), from its line in the reply's place.
     failed_code: Mutex<Option<String>>,
 }
 
-/// What the window watches for while a conversation opens.
 #[derive(Default)]
 struct Opening {
-    /// The id of the `initialize` request, whose reply lists the models.
     initialize: Mutex<Option<String>>,
-    /// A new lesson, whose first reply is watched. A resumed one is not.
     new: bool,
-    /// The effort the learner picked for it; none for Claude Code's own.
     effort: Mutex<Option<String>>,
-    /// The model Claude Code says it runs on, from its first message.
     model: Mutex<Option<String>>,
-    /// The list from the reply to `initialize`, to name that model.
     models: Mutex<Vec<crate::models::ModelOption>>,
-    /// The first reply has ended, and was looked at.
     looked: AtomicBool,
-    /// The tutor called Magnesium's context tool, which opens the record.
     record_opened: AtomicBool,
 }
 
@@ -682,8 +556,6 @@ impl Shared {
         format!("req_{n}_{nanos:08x}")
     }
 
-    /// One line of the trace: its direction, the milliseconds since the
-    /// conversation started, and the line as it passed.
     fn trace(&self, direction: &str, line: &str) {
         if let Some(file) = &self.trace {
             let ms = self.started.elapsed().as_millis();
@@ -691,12 +563,10 @@ impl Shared {
         }
     }
 
-    /// Whether a turn is under way, from the learner's message to its result.
     fn turn_active(&self) -> bool {
         self.awaiting.load(Ordering::SeqCst) || self.in_turn.load(Ordering::SeqCst)
     }
 
-    /// Send a signal by name, with the system's own `kill`.
     fn signal(&self, name: &str) {
         if let Some(child) = lock(&self.child).as_ref() {
             let _ = std::process::Command::new("kill")
@@ -720,7 +590,6 @@ impl Shared {
             .map_err(|e| AgentError(format!("The tutor stopped listening: {e}.")))
     }
 
-    /// Send a control request and wait for its answer.
     fn ask(&self, request: Value) -> Result<Value, String> {
         self.asked
             .ask(self.next_id(), request, |line| self.write(line))
@@ -747,8 +616,6 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
     let mut bytes = Vec::new();
     loop {
         bytes.clear();
-        // Read bytes, not text: one byte that is not UTF-8 must not end the
-        // lesson.
         match reader.read_until(b'\n', &mut bytes) {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
@@ -759,13 +626,11 @@ fn read_loop(shared: &Arc<Shared>, stdout: impl Read) {
             continue;
         }
         shared.trace("<", line);
-        // A line that is not JSON is noise from a tool, not a message.
         if let Ok(value) = serde_json::from_str::<Value>(line) {
             handle(shared, &value);
         }
     }
 
-    // The pipe closed, so the process is ending.
     let status = {
         let mut guard = lock(&shared.child);
         guard.take().and_then(|mut child| {
@@ -829,31 +694,20 @@ pub(crate) fn looks_signed_out(text: &str) -> bool {
         || text.contains("not logged in")
         || text.contains("authentication_error")
         || text.contains("oauth token")
-        // A sign-in that ran out, in Claude Code 2.1.322: "Failed to
-        // authenticate: OAuth session expired and could not be refreshed".
         || text.contains("failed to authenticate")
         || text.contains("oauth session")
 }
 
-/// Whether a failed result is a sign-in that no longer holds: Anthropic
-/// refused the request's credentials (401), or the words say so.
 pub(crate) fn ended_signed_out(result: &Value, said: &str) -> bool {
     result["api_error_status"].as_i64() == Some(401) || looks_signed_out(said)
 }
 
-/// Whether a message is Claude Code's own line about a request that failed
-/// ("Failed to authenticate: …", "API Error: …"), sent where the tutor's
-/// reply would be. It is not the tutor's words: shown as a reply, it was
-/// also kept as one, and the message it answered counted as received.
 pub(crate) fn is_own_error(value: &Value) -> bool {
     value["is_api_error_message"].as_bool() == Some(true) || value["error"].is_string()
 }
 
 pub(crate) const BILLING: &str = "Claude Code reports a billing problem on your account. Fix it in a terminal or on the web, then send your message again.";
 
-/// A failed turn in the window's words, from Claude Code's own code for the
-/// failure: the `error` on its line in the reply's place. None for one the
-/// window has no plainer words for, whose own words are then the turn's error.
 pub(crate) fn failure_notice(
     code: Option<&str>,
     said: &str,
@@ -876,10 +730,6 @@ pub(crate) fn failure_notice(
     }
 }
 
-/// A model the account cannot use, by the name Claude Code's list gives it.
-/// Claude Code 2.1.322 names it by id in its own line: "There's an issue with
-/// the selected model (claude-opus-4-6). It may not exist or you may not have
-/// access to it. Run --model to pick a different model."
 pub(crate) fn unavailable_words(said: &str, models: &[crate::models::ModelOption]) -> String {
     let named = said
         .split_once("model (")
@@ -929,8 +779,6 @@ fn handle(shared: &Arc<Shared>, value: &Value) {
     }
 }
 
-/// A tool result that says a sitting ended, from the runtime's JSON in the
-/// result's text: the window then reads the closing lines.
 fn on_tool_results(shared: &Arc<Shared>, value: &Value) {
     if value["message"]["content"]
         .as_array()
@@ -953,8 +801,6 @@ fn says_sitting_ended(content: &Value) -> bool {
     }
 }
 
-/// The reply to `initialize` lists the models Claude Code offers. A reply
-/// the window waits on goes to it; any other needs nothing more.
 fn on_control_response(shared: &Arc<Shared>, value: &Value) {
     if shared.asked.deliver(value) {
         return;
@@ -986,7 +832,6 @@ fn names(list: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// What is wrong with what the agent loaded, in plain sentences.
 fn init_problems(value: &Value) -> Vec<String> {
     let mut problems = Vec::new();
     let plugins = names(&value["plugins"]);
@@ -997,8 +842,6 @@ fn init_problems(value: &Value) -> Vec<String> {
     let tools = names(&value["tools"]);
     let has_plugin = plugins.iter().any(|name| name.contains(PLUGIN))
         || commands.iter().any(|name| name.contains("magnesium:"));
-    // A report that lists neither plugins nor commands cannot say the plugin
-    // is missing, so it is not called missing.
     let can_tell = value.get("plugins").is_some() || !commands.is_empty();
     if can_tell && !has_plugin {
         problems.push(
@@ -1006,8 +849,6 @@ fn init_problems(value: &Value) -> Vec<String> {
                 .to_owned(),
         );
     }
-    // An error that names the plugin counts only when the plugin is absent.
-    // A second copy at another scope can complain while the first one works.
     if !has_plugin {
         for error in value["plugin_errors"].as_array().into_iter().flatten() {
             if error.to_string().contains(PLUGIN) {
@@ -1036,12 +877,8 @@ fn init_problems(value: &Value) -> Vec<String> {
     problems
 }
 
-/// The status Claude Code's report gives Magnesium's tool server:
-/// "connected", "pending", "failed", or none when it lists no such server.
 fn server_status(init: &Value) -> Option<&str> {
     let servers = init["mcp_servers"].as_array()?;
-    // The plugin's own server is named plugin:<plugin>:<server>. It is looked
-    // for first, so another server with a similar name cannot decide this.
     let named = |test: &dyn Fn(&str) -> bool| {
         servers
             .iter()
@@ -1052,10 +889,6 @@ fn server_status(init: &Value) -> Option<&str> {
         .and_then(|s| s["status"].as_str())
 }
 
-/// Whether Claude Code's report leaves room for the `reply` tool: it names
-/// the tool, or Magnesium's server is still connecting, or the report lists
-/// no tools to tell by. A server that failed, or a plugin or server that
-/// does not offer the tool, leaves plain text as the only reply.
 fn can_reply_by_tool(init: &Value) -> bool {
     init.get("tools").is_none()
         || names(&init["tools"])
@@ -1068,8 +901,6 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
     if let Some(id) = value["session_id"].as_str() {
         *lock(&shared.session_id) = Some(id.to_owned());
     }
-    // Claude Code reports again at each turn's start, so a server that was
-    // still connecting at the first is judged again once it has.
     shared
         .reply_tool
         .store(can_reply_by_tool(value), Ordering::SeqCst);
@@ -1101,8 +932,6 @@ fn on_init(shared: &Arc<Shared>, value: &Value) {
     }
 }
 
-/// Auto mode asked for and not given, in one line. Claude Code turns it off
-/// for some plans and models, and its first report names the mode it runs in.
 pub(crate) fn auto_notice(permissions: Permissions, init: &Value) -> Option<String> {
     let mode = init["permissionMode"].as_str()?;
     (permissions == Permissions::Auto && mode != AUTO).then(|| {
@@ -1110,7 +939,6 @@ pub(crate) fn auto_notice(permissions: Permissions, init: &Value) -> Option<Stri
     })
 }
 
-/// The model Claude Code's first message says the conversation runs on.
 pub(crate) fn runs_on(init: &Value) -> Option<String> {
     init["model"]
         .as_str()
@@ -1118,8 +946,6 @@ pub(crate) fn runs_on(init: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// A lesson paid another way than the learner chose, in one line. Claude
-/// Code's first report names the key it uses, or "none" for the plan.
 pub(crate) fn payment_notice(payment: Payment, init: &Value) -> Option<String> {
     let source = init["apiKeySource"].as_str()?;
     let plan = source == "none";
@@ -1183,8 +1009,6 @@ fn on_retry(shared: &Arc<Shared>, value: &Value) {
     shared.emit(AgentEvent::Notice { kind, text });
 }
 
-/// What a turn that ended at a usage limit says: Claude Code's own words, as
-/// a sentence, then what to do.
 pub(crate) fn limit_words(said: &str) -> String {
     let said = clip(said, 200);
     let said = said.trim_end();
@@ -1201,7 +1025,6 @@ fn on_rate_limit(shared: &Arc<Shared>, value: &Value) {
     if info["status"].as_str() != Some("rejected") {
         return;
     }
-    // Past the limit with extra usage still allowed, the lesson goes on.
     if info["overageStatus"]
         .as_str()
         .is_some_and(|status| status.starts_with("allowed"))
@@ -1211,8 +1034,6 @@ fn on_rate_limit(shared: &Arc<Shared>, value: &Value) {
     let resets = info["resetsAt"]
         .as_i64()
         .or_else(|| info["resets_at"].as_i64())
-        // Seconds, in the live trace of 2026-11-10. A stamp in milliseconds
-        // is still read, in case a later version changes it.
         .map(|stamp| {
             if stamp > 100_000_000_000 {
                 stamp / 1000
@@ -1241,7 +1062,6 @@ fn is_main_thread(value: &Value) -> bool {
 }
 
 fn on_stream(shared: &Arc<Shared>, value: &Value) {
-    // A helper agent's words are never shown as the tutor's.
     if !is_main_thread(value) {
         return;
     }
@@ -1250,15 +1070,11 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
     match event["type"].as_str() {
         Some("message_start") => {
             lock(&shared.reply_blocks).clear();
-            // A block left unfinished belongs to a request Claude Code gave
-            // up on, and its retry writes it again.
             lock(&shared.held_writing).clear();
             begin_turn(shared);
         }
         Some("content_block_start") => match event["content_block"]["type"].as_str() {
             Some("text") => {
-                // A message sent whole replaces the pieces of each of its
-                // blocks at once, so blocks still in pieces are kept apart.
                 let mut writing = lock(&shared.held_writing);
                 if !writing.is_empty() {
                     writing.push_str("\n\n");
@@ -1270,9 +1086,6 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
                 shared.reply_tool.store(true, Ordering::SeqCst);
                 lock(&shared.reply_blocks).insert(index, ReplyStream::default());
             }
-            // Each step is named when it starts, from the tool's name alone,
-            // so the line moves while a long record is still being written.
-            // The finished block names the file, where there is one.
             Some("tool_use" | "server_tool_use") => {
                 begin_turn(shared);
                 shared.emit(AgentEvent::Working {
@@ -1295,8 +1108,6 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
                     return;
                 };
                 begin_turn(shared);
-                // Plain text waits for the turn's end while a reply may still
-                // come through the tool; see `held`.
                 if shared.reply_tool.load(Ordering::SeqCst) {
                     lock(&shared.held_writing).push_str(text);
                 } else {
@@ -1322,10 +1133,6 @@ fn on_stream(shared: &Arc<Shared>, value: &Value) {
     }
 }
 
-/// The work a tool call does, in a few plain words for the line the lesson
-/// shows while the tutor works, or None when the window cannot tell. A file
-/// is named only when it is inside the study folder and outside
-/// `.magnesium/`; a tool's name, a command and an outside path never are.
 pub fn doing(tool: &str, input: &Value, folder: &Path) -> Option<String> {
     let file = || {
         input["file_path"]
@@ -1366,8 +1173,6 @@ pub fn doing(tool: &str, input: &Value, folder: &Path) -> Option<String> {
     Some(line)
 }
 
-/// A file's name in plain words, as "paper 2" for `Study/stats/paper-2.md`,
-/// when the file is in the study folder and outside `.magnesium/`.
 fn file_words(path: &str, folder: &Path) -> Option<String> {
     let path = Path::new(path);
     let inside = |root: &Path| path.strip_prefix(root).ok().map(Path::to_path_buf);
@@ -1395,19 +1200,14 @@ fn file_words(path: &str, folder: &Path) -> Option<String> {
     (!words.is_empty() && words.len() <= 60).then_some(words)
 }
 
-/// The line while the tutor thinks, before it starts any step.
 const THINKING: &str = "thinking";
 
-/// Magnesium's `reply` tool, under whichever name Claude Code gives it:
-/// `mcp__plugin_magnesium_magnesium__reply` when it comes from the plugin.
 fn is_reply_tool(name: Option<&str>) -> bool {
     name.is_some_and(|name| {
         name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__reply")
     })
 }
 
-/// A `reply` call as it streams: the input so far, and how much of its text
-/// is already on screen.
 #[derive(Default)]
 struct ReplyStream {
     input: String,
@@ -1415,7 +1215,6 @@ struct ReplyStream {
 }
 
 impl ReplyStream {
-    /// Take more of the call's input, and give back the text not yet shown.
     fn push(&mut self, more: &str) -> String {
         self.input.push_str(more);
         let text = partial_text(&self.input);
@@ -1425,8 +1224,6 @@ impl ReplyStream {
     }
 }
 
-/// The `text` field of a JSON object that is still being written, decoded as
-/// far as it is whole. An escape cut off at the end waits for the rest.
 pub fn partial_text(input: &str) -> String {
     let Some(key) = input.find("\"text\"") else {
         return String::new();
@@ -1498,7 +1295,6 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
         return;
     }
     if is_own_error(value) {
-        // The result that follows says the turn failed; this says why.
         *lock(&shared.failed_code) = value["error"].as_str().map(str::to_owned);
         match value["error"].as_str() {
             Some("authentication_failed") => shared.emit(AgentEvent::Notice {
@@ -1524,8 +1320,6 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
                 let Some(text) = block["text"].as_str().filter(|t| !t.trim().is_empty()) else {
                     continue;
                 };
-                // The agent may send a message once per block or once whole.
-                // Either way each block counts one time.
                 let fresh = {
                     let mut seen = lock(&shared.seen_text);
                     let texts = seen.entry(id.clone()).or_default();
@@ -1588,9 +1382,6 @@ fn on_assistant(shared: &Arc<Shared>, value: &Value) {
     }
 }
 
-/// At a turn's end, the plain text held back in it: shown when no reply came
-/// through the tool, so a reply written as plain text is never lost; beside
-/// a reply, kept off the page and written to the trace alone.
 fn release_held(shared: &Arc<Shared>) {
     let mut held = std::mem::take(&mut *lock(&shared.held));
     let unfinished = std::mem::take(&mut *lock(&shared.held_writing));
@@ -1664,24 +1455,16 @@ fn on_result(shared: &Arc<Shared>, value: &Value) {
     look_at_first_reply(shared, !failed && !interrupted);
 }
 
-/// Magnesium's context tool, from its plugin: the call that opens the
-/// learner's record at the start of a lesson.
 fn is_context_tool(name: &str) -> bool {
     name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__context")
 }
 
-/// `learning_step` `just_checks` reads the record's due checks and starts the
-/// lesson their answers are recorded in, so a lesson of quick checks alone
-/// opens the record with it, and needs no context read.
 fn asks_for_checks(block: &Value) -> bool {
     block["name"].as_str().is_some_and(|name| {
         name.starts_with("mcp__") && name.contains(PLUGIN) && name.ends_with("__learning_step")
     }) && block["input"]["action"] == "just_checks"
 }
 
-/// After a new lesson's first reply, at an effort the learner picked: a
-/// reply that never opened the record is said, once. Low effort was tried
-/// on 2026-11-11 and called the context tool at 1 of 11 lesson starts.
 fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
     let opening = &shared.opening;
     if !opening.new
@@ -1693,8 +1476,6 @@ fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
     }
     let unopened =
         "This lesson started without opening your record, so its answers may not be marked.";
-    // Each names what most likely kept the record shut: the effort the
-    // learner picked, or else the model.
     let effort = lock(&opening.effort).clone();
     let (kind, text) = match effort.as_deref() {
         Some(effort) => (
@@ -1721,7 +1502,6 @@ fn look_at_first_reply(shared: &Arc<Shared>, finished: bool) {
     shared.emit(AgentEvent::Notice { kind, text });
 }
 
-/// An effort level in the words the window shows it in.
 pub(crate) fn effort_words(level: &str) -> String {
     match level {
         "xhigh" => "extra high".into(),
@@ -1729,7 +1509,6 @@ pub(crate) fn effort_words(level: &str) -> String {
     }
 }
 
-/// The words a failed result gives for its failure, for the learner.
 pub(crate) fn what_went_wrong(value: &Value) -> String {
     value["result"]
         .as_str()
@@ -1740,8 +1519,6 @@ pub(crate) fn what_went_wrong(value: &Value) -> String {
                 errors
                     .iter()
                     .filter_map(Value::as_str)
-                    // A line such as "[ede_diagnostic] result_type=user" is
-                    // for the program's makers, not the learner.
                     .filter(|error| !error.trim_start().starts_with("[ede_diagnostic]"))
                     .collect::<Vec<_>>()
                     .join(" ")
@@ -1756,7 +1533,6 @@ fn on_control_request(shared: &Arc<Shared>, value: &Value) {
     };
     let request = &value["request"];
     if request["subtype"].as_str() != Some("can_use_tool") {
-        // The window registers no hooks and no in-process tool servers.
         shared.refuse_request(id, "the Magnesium window does not handle this request");
         return;
     }
@@ -1783,7 +1559,6 @@ fn on_control_request(shared: &Arc<Shared>, value: &Value) {
         return;
     }
     let ask = crate::asks::describe(&tool, &input, request, &shared.folder);
-    // Only what the choice's label says is saved when it is chosen.
     let grant = crate::asks::grant(request, &shared.folder);
     let suggestions = Value::Array(grant.as_ref().map(|g| g.rules.clone()).unwrap_or_default());
     lock(&shared.pending).insert(
@@ -1815,7 +1590,6 @@ fn parse_questions(input: &Value) -> Vec<Question> {
             questions
                 .iter()
                 .filter_map(|q| {
-                    // Kept exactly as written: the answer is keyed by it.
                     let question = q["question"].as_str()?.to_owned();
                     if question.trim().is_empty() {
                         return None;
@@ -1863,11 +1637,6 @@ struct ClaudeConversation {
     shared: Arc<Shared>,
 }
 
-/// The plain words put before a message the learner sent as talk. The tutor
-/// reads them as words; the runtime's prompt hook reads this exact line as
-/// the window saying the message is talk, keeps the message without it, and
-/// refuses an attempt on it (Magnesium issue 65). The runtime's copy is
-/// `TALK_LEAD` in `src/adapter/native_capture.rs`.
 pub const TALK_LEAD: &str = "(This is not an answer to the task, so please don't mark it.)";
 
 impl Conversation for ClaudeConversation {
@@ -1879,8 +1648,6 @@ impl Conversation for ClaudeConversation {
     }
 
     fn send(&mut self, text: &str) -> AgentResult<()> {
-        // An interrupt marked just after the last turn ended belongs to no
-        // turn, and must not mark this one.
         self.shared.interrupting.store(false, Ordering::SeqCst);
         self.shared.write(&json!({
             "type": "user",
@@ -1893,20 +1660,14 @@ impl Conversation for ClaudeConversation {
     }
 
     fn interrupt(&mut self) -> AgentResult<()> {
-        // A turn is under way from the moment the message is sent, which is
-        // well before the tutor's first word.
         if !self.shared.turn_active() {
             return Ok(());
         }
         let id = self.shared.next_id();
-        // Marked before it is sent: the agent can end the turn before this
-        // thread runs again, and that end must read as an interrupt, not a
-        // failure.
         self.shared.interrupting.store(true, Ordering::SeqCst);
         let sent = self.shared.write(&json!({
             "type": "control_request",
             "request_id": id,
-            // Also drop a message the agent has taken but not started on.
             "request": {"subtype": "interrupt", "cancel_queued": true},
         }));
         if let Err(error) = sent {
@@ -1914,9 +1675,6 @@ impl Conversation for ClaudeConversation {
             return Err(error);
         }
         let mine = self.shared.interrupts.fetch_add(1, Ordering::SeqCst) + 1;
-        // An agent that does not answer is sent the signal that ends a turn,
-        // and after that the one that ends the process. The conversation is
-        // on disk and continues by its id.
         let shared = Arc::clone(&self.shared);
         thread::spawn(move || {
             for signal in ["INT", "TERM"] {
@@ -1945,11 +1703,6 @@ impl Conversation for ClaudeConversation {
         let response = match decision {
             Decision::AllowOnce => json!({"behavior": "allow", "updatedInput": input}),
             Decision::AllowAlways => {
-                // The agent's own suggestion is the rule a terminal would
-                // save for "don't ask again". Only a rule for this folder or
-                // this sitting is echoed back, never one for every folder.
-                // Without one, the window remembers this exact call until the
-                // sitting ends.
                 let rules: Vec<Value> = suggestions
                     .as_array()
                     .map(|list| {
@@ -2004,7 +1757,6 @@ impl Conversation for ClaudeConversation {
     ) -> AgentResult<crate::agent::Applied> {
         let shared = &self.shared;
         let changed = crate::models::change(|request| shared.ask(request), model, effort)?;
-        // A notice on a new lesson's first reply names what it ran on.
         *lock(&shared.opening.model) = Some(changed.model.clone());
         *lock(&shared.opening.effort) = effort.map(str::to_owned);
         Ok(changed)
@@ -2029,12 +1781,7 @@ impl Conversation for ClaudeConversation {
 
     fn close(&mut self) {
         self.shared.closing.store(true, Ordering::SeqCst);
-        // Once the reply is on screen, what is left of the turn is the save
-        // of its notes, the memory edit and the checkpoint. It is let finish:
-        // the agent ends the turn on its own once the input is closed.
         let saving_notes = self.shared.turn_active() && !lock(&self.shared.replies).is_empty();
-        // Closing the input does not stop a reply under way, so the reply is
-        // interrupted first.
         if self.shared.turn_active() && !saving_notes {
             self.shared.interrupting.store(true, Ordering::SeqCst);
             let id = self.shared.next_id();
@@ -2044,10 +1791,6 @@ impl Conversation for ClaudeConversation {
                 "request": {"subtype": "interrupt", "cancel_queued": true},
             }));
         }
-        // Closing the input is how the agent is told the conversation is over.
-        // It then runs its session-end hooks and writes the last of the
-        // transcript, so it is given time before it is told to stop, and more
-        // time before it is stopped.
         *lock(&self.shared.stdin) = None;
         let shared = Arc::clone(&self.shared);
         let grace = Duration::from_secs(if saving_notes { 30 } else { 6 });
@@ -2111,20 +1854,17 @@ mod tests {
         assert_eq!(plan.paid_with, Some(Payment::Plan));
         assert_eq!(plan.detail.as_deref(), Some("your Claude Pro plan"));
         assert_eq!(plan.problem, None);
-        // The plan in use when the learner chose an API key.
         let wanted_key = read_account(
             &json!({"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "max"}),
             Payment::ApiKey,
         );
         assert!(wanted_key.problem.unwrap().contains("found no API key"));
-        // A Console sign-in pays per use.
         let console = read_account(
             &json!({"loggedIn": true, "authMethod": "api_key", "apiKeySource": "/login managed key"}),
             Payment::Plan,
         );
         assert_eq!(console.paid_with, Some(Payment::ApiKey));
         assert!(console.detail.unwrap().contains("Console"));
-        // Signed out, and a free account.
         let out = read_account(
             &json!({"loggedIn": false, "authMethod": "none"}),
             Payment::ApiKey,
@@ -2149,7 +1889,6 @@ mod tests {
         assert!(payment_notice(Payment::ApiKey, &plan)
             .unwrap()
             .contains("Claude plan"));
-        // An older Claude Code that does not say is not guessed at.
         assert_eq!(payment_notice(Payment::Plan, &json!({})), None);
     }
 
@@ -2205,7 +1944,6 @@ mod tests {
 
     #[test]
     fn the_programs_own_diagnostics_are_not_shown() {
-        // As the real program ended a turn interrupted before its first word.
         let ended = json!({
             "type": "result",
             "subtype": "error_during_execution",
@@ -2223,8 +1961,6 @@ mod tests {
         let (shared, seen) = listening();
         *lock(&shared.opening.models) =
             crate::models::parse(&crate::models::tests::fourteen()).unwrap();
-        // The two lines Claude Code 2.1.322 sent on 2026-11-15 for a model the
-        // account cannot use, with what they carried that the window reads.
         let said = "There's an issue with the selected model (claude-opus-4-6). It may not exist or you may not have access to it. Run --model to pick a different model.";
         handle(
             &shared,
@@ -2254,7 +1990,6 @@ mod tests {
             "{seen:#?}"
         );
         assert!(!format!("{seen:?}").contains("--model"), "{seen:#?}");
-        // A model the list does not name is not named by its id.
         assert_eq!(
             unavailable_words("There's an issue with the selected model (claude-nope-1).", &[]),
             "This session’s model isn’t available to you. Pick another model, then send your message again."
@@ -2304,7 +2039,6 @@ mod tests {
         let mut conversation = ClaudeConversation {
             shared: Arc::clone(&shared),
         };
-        // The last turn ended just before the interrupt was marked.
         shared.interrupting.store(true, Ordering::SeqCst);
         conversation.send("next").unwrap();
         on_result(
@@ -2338,8 +2072,6 @@ mod tests {
         let whole = r#"{"text": "Right: $\\frac{3}{4}$.\n\n**Task.** Say \"why\" é 😀"}"#;
         let decoded = "Right: $\\frac{3}{4}$.\n\n**Task.** Say \"why\" é 😀";
         assert_eq!(partial_text(whole), decoded);
-        // Fed a few bytes at a time, the pieces add up to the whole text, and
-        // an escape cut in two waits for its other half.
         let mut stream = ReplyStream::default();
         let mut shown = String::new();
         let bytes = whole.as_bytes();
@@ -2395,7 +2127,6 @@ mod tests {
             line("Read", json!({"file_path": "Study/midterm/answer_key.md"})).as_deref(),
             Some("reading answer key")
         );
-        // Outside the study folder, in .magnesium, or up and out: no name.
         for path in [
             "/Users/me/secret-plans.md",
             "/study/stats/.magnesium/config.toml",
@@ -2499,7 +2230,6 @@ mod tests {
             deny.contains(&"Edit(//study/stats/.magnesium/**)"),
             "{deny:?}"
         );
-        // The plan files are written without a card; nothing else is.
         let allow: Vec<&str> = settings["permissions"]["allow"]
             .as_array()
             .unwrap()
@@ -2518,7 +2248,6 @@ mod tests {
         assert!(!args.iter().any(|a| a == "--bare"));
         let asking = lesson_args(folder, None, None, None, Permissions::Ask);
         assert!(!asking.iter().any(|a| a == "--plugin-dir"));
-        // Auto mode is Claude Code's own; the card answers what it leaves.
         assert_eq!(after("--permission-mode"), "auto");
         assert!(!asking.iter().any(|a| a == "--permission-mode"));
         assert!(!args.iter().any(|a| a.contains("bypassPermissions")));
@@ -2532,7 +2261,6 @@ mod tests {
         assert!(auto_notice(Permissions::Auto, &init("default"))
             .is_some_and(|text| text.contains("not available")));
         assert_eq!(auto_notice(Permissions::Ask, &init("default")), None);
-        // A report that names no mode says nothing about it.
         assert_eq!(auto_notice(Permissions::Auto, &json!({})), None);
     }
 
@@ -2550,7 +2278,6 @@ mod tests {
         assert_eq!(args[at + 1], "claude-sonnet-4-6");
         let at = args.iter().position(|a| a == "--effort").unwrap();
         assert_eq!(args[at + 1], "high");
-        // No pick: Claude Code's own model and effort.
         let own = lesson_args(folder, None, None, None, Permissions::Ask);
         assert!(!own.iter().any(|a| a == "--model" || a == "--effort"));
         let odd = lesson_args(folder, None, Some("--bare"), Some("--x"), Permissions::Ask);
@@ -2580,10 +2307,8 @@ mod tests {
         };
         assert_eq!(models.len(), 2);
         assert_eq!(models[1].efforts, ["low", "high"]);
-        // Said once: a second reply with the same id is not another list.
         handle(&shared, &reply("req_1", "success"));
         assert_eq!(lock(&seen).len(), 1);
-        // A refused request is a list that did not come.
         let (shared, seen) = listening();
         *lock(&shared.opening.initialize) = Some("req_1".into());
         handle(
@@ -2598,10 +2323,6 @@ mod tests {
 
     #[test]
     fn a_hooks_message_to_the_terminal_is_not_drawn_on_the_page() {
-        // Claude Code 2.1.227 and later pass a hook's systemMessage on as an
-        // informational line. In a terminal the runtime's PostToolUse hook
-        // says a pass's receipt this way; the window draws it from the record
-        // under the answer, so a line like this must add nothing.
         let (shared, seen) = listening();
         handle(
             &shared,
@@ -2656,7 +2377,6 @@ mod tests {
                 .collect();
             notices
         };
-        // At a picked effort: the effort is named.
         assert_eq!(
             said(true, Some("low"), &["Read"]),
             [(
@@ -2664,7 +2384,6 @@ mod tests {
                 "This lesson started without opening your record, so its answers may not be marked. It ran at low effort.".to_owned()
             )]
         );
-        // At Claude Code's own effort: the model is named, as the list names it.
         assert_eq!(
             said(true, None, &["Read"]),
             [(
@@ -2672,7 +2391,6 @@ mod tests {
                 "This lesson started without opening your record, so its answers may not be marked. It ran on Haiku at Claude Code’s usual effort.".to_owned()
             )]
         );
-        // The record opened, or the lesson was resumed: nothing to say.
         assert!(said(true, None, &["mcp__plugin_magnesium_magnesium__context"]).is_empty());
         assert!(said(
             true,
@@ -2694,7 +2412,6 @@ mod tests {
             lock(&seen).iter().find(|e| matches!(e, AgentEvent::Ready { .. })),
             Some(AgentEvent::Ready { model: Some(model), .. }) if model == "claude-opus-5-5"
         ));
-        // A name that could be read as a flag is not kept.
         let (shared, seen) = listening();
         handle(
             &shared,
@@ -2708,7 +2425,6 @@ mod tests {
         ));
     }
 
-    /// A conversation with no program behind it, and the events it shows.
     fn listening() -> (Arc<Shared>, Arc<Mutex<Vec<AgentEvent>>>) {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&seen);
@@ -2776,8 +2492,6 @@ mod tests {
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [
             {"type": "tool_use", "name": name, "input": {"text": reply}}]}}),
         );
-        // The tutor writes the same words again as ordinary text: nothing new
-        // is shown, not even while it streams.
         stream(json!({"type": "message_start"}));
         stream(
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}}),
@@ -2790,7 +2504,6 @@ mod tests {
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
             {"type": "text", "text": "Two thirds."}]}}),
         );
-        // Nor is text that says something else beside the reply.
         handle(
             &shared,
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m2", "content": [
@@ -2807,13 +2520,10 @@ mod tests {
                 .any(|e| matches!(e, AgentEvent::Working { .. })),
             "{events:?}"
         );
-        // The next turn starts with no replies remembered.
         assert!(lock(&shared.replies).is_empty());
         assert!(!shared.replied.load(Ordering::SeqCst));
     }
 
-    /// The words a turn put on the page: the pieces as they were written,
-    /// and the finished blocks.
     fn words(events: &[AgentEvent]) -> (String, Vec<String>) {
         let deltas = events
             .iter()
@@ -2834,8 +2544,6 @@ mod tests {
 
     const REPLY: &str = "mcp__plugin_magnesium_magnesium__reply";
 
-    /// One plain text block as Claude Code sends it: its pieces as they are
-    /// written, then the finished message.
     fn plain(shared: &Arc<Shared>, id: &str, text: &str) {
         let stream = |event: Value| {
             handle(
@@ -2859,8 +2567,6 @@ mod tests {
         );
     }
 
-    /// One tool call as Claude Code sends it, the reply tool's input written
-    /// in a few pieces.
     fn call(shared: &Arc<Shared>, id: &str, name: &str, input: Value) {
         let stream = |event: Value| {
             handle(
@@ -2891,8 +2597,6 @@ mod tests {
         );
     }
 
-    /// Whether the page was sent words that contain `line`, as they were
-    /// written or finished. The lines tested are from issue 142's live lesson.
     fn shown(events: &[AgentEvent], line: &str) -> bool {
         events.iter().any(|e| match e {
             AgentEvent::TextDelta { text } | AgentEvent::TextDone { text } => text.contains(line),
@@ -2965,7 +2669,6 @@ mod tests {
         let first = "Two thirds, because the remaining third is the one you left out.";
         let second = "**Task.** Why is it not three quarters?";
         plain(&shared, "m1", first);
-        // Claude Code may send the message again, whole.
         handle(
             &shared,
             &json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [
@@ -2978,13 +2681,11 @@ mod tests {
             json!({"action": "update"}),
         );
         plain(&shared, "m2", second);
-        // Nothing is on the page while a reply may still come through the tool.
         assert_eq!(words(&lock(&seen)), (String::new(), vec![]));
         on_result(&shared, &json!({"type": "result", "subtype": "success"}));
         let events = lock(&seen).clone();
         let (_, done) = words(&events);
         assert_eq!(done, [first, second], "{events:?}");
-        // Shown before the turn ends, so the turn is kept with its words.
         let at = |wanted: fn(&AgentEvent) -> bool| events.iter().position(wanted).unwrap();
         assert!(
             at(|e| matches!(e, AgentEvent::TextDone { .. }))
@@ -3014,8 +2715,6 @@ mod tests {
         let finished = line(
             json!({"type": "assistant", "parent_tool_use_id": null, "message": {"id": "m1", "content": [{"type": "text", "text": text}]}}),
         );
-        // The program ends after the block is finished, and inside it, when
-        // Claude Code never sends the finished block.
         for whole in [true, false] {
             let (shared, seen) = listening();
             shared.awaiting.store(true, Ordering::SeqCst);
@@ -3052,9 +2751,6 @@ mod tests {
                 json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": piece}}),
             );
         }
-        // Stop: the result Claude Code sent for a turn interrupted before its
-        // reply ended (the live trace of 2026-11-10, which the stand-in agent
-        // plays). No finished block comes.
         shared.interrupting.store(true, Ordering::SeqCst);
         handle(
             &shared,
@@ -3074,7 +2770,6 @@ mod tests {
                 ..
             })
         ));
-        // The next turn starts with nothing held.
         assert!(lock(&shared.held_writing).is_empty() && lock(&shared.held).is_empty());
     }
 
@@ -3094,7 +2789,6 @@ mod tests {
         stream(
             json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Two th"}}),
         );
-        // The request failed and Claude Code tried again: a new message.
         plain(&shared, "m2", "Two thirds.");
         on_result(&shared, &json!({"type": "result", "subtype": "success"}));
         assert_eq!(words(&lock(&seen)).1, ["Two thirds."]);
@@ -3103,7 +2797,6 @@ mod tests {
     #[test]
     fn without_the_reply_tool_plain_text_is_the_reply_and_streams() {
         let (shared, seen) = listening();
-        // Magnesium's server failed, so the tutor has no reply tool.
         handle(
             &shared,
             &json!({"type": "system", "subtype": "init", "session_id": "s1",
@@ -3130,20 +2823,16 @@ mod tests {
             json!(["Read", REPLY]),
             server("connected")
         )));
-        // Still connecting: its tools are not listed yet.
         assert!(can_reply_by_tool(&init(json!(["Read"]), server("pending"))));
-        // A report that lists no tools cannot say.
         assert!(can_reply_by_tool(
             &json!({"mcp_servers": server("connected")})
         ));
-        // Failed, absent, or a server that does not offer the tool.
         assert!(!can_reply_by_tool(&init(json!(["Read"]), server("failed"))));
         assert!(!can_reply_by_tool(&init(json!(["Read"]), json!([]))));
         assert!(!can_reply_by_tool(&init(
             json!(["Read", "mcp__plugin_magnesium_magnesium__learning_step"]),
             server("connected")
         )));
-        // Another plugin's reply tool is not Magnesium's.
         assert!(!can_reply_by_tool(&init(
             json!(["mcp__other__reply"]),
             server("connected")

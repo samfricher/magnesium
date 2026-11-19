@@ -93,7 +93,6 @@ fn a_declined_question_is_not_an_answer() {
 
 #[test]
 fn the_skill_is_the_one_the_pass_count_takes_case_and_spaces_aside() {
-    // Case and spaces fold, as the record's label key does.
     let answers = [
         answer("a1", "Sign of  b", "wrong", "2026-11-02"),
         answer("a2", "sign of b", "right", "2026-11-04"),
@@ -172,8 +171,6 @@ fn a_row_brought_in_from_a_gap_log_file_is_the_miss_when_no_answer_made_it() {
 
 #[test]
 fn a_failed_redo_a_gap_log_file_held_is_the_later_miss() {
-    // Logged on 1 Nov, its Passes cell "2026-11-03 pass, 2026-11-06 fail",
-    // and a pass in the record on 10 Nov.
     let answers = [answer("a2", "slope and Km", "right", "2026-11-10")];
     let links = BTreeMap::from([("a2".to_owned(), BTreeSet::from(["g1".to_owned()]))]);
     let items = BTreeMap::from([(
@@ -222,7 +219,6 @@ fn a_quick_check_an_earlier_version_kept_names_no_miss() {
 
 #[test]
 fn no_word_counts_days_away() {
-    // Whatever the gap, the line says what the answer held through.
     for days in [1, 2, 9, 40] {
         let text = Receipt {
             miss: None,
@@ -255,15 +251,12 @@ fn a_terminal_line_says_which_pass_and_the_receipt() {
             "Second of three days. Not right on Tue 10 Nov: sign of b. It held through the 4 days since you last answered it."
         )
     );
-    // With no miss to name the skill, the line names it.
     assert_eq!(
         terminal_lines(&progress, &wanted(&["a1"])).as_deref(),
         Some(
             "First of three days on sign of b. It held through the day since you last answered it."
         )
     );
-    // A pass brought in from a gap-log file has no answer: it is counted
-    // in which pass the next one is, and says nothing itself.
     let brought_in = json!({
         "plans": [{"plan": "midterm-1", "from": "record", "skills": [
             {"skill": "slope and Km", "passed_by": [null, "r2"]},
@@ -275,7 +268,6 @@ fn a_terminal_line_says_which_pass_and_the_receipt() {
         terminal_lines(&brought_in, &wanted(&["r2"])).as_deref(),
         Some("Second of three days. Lost marks on Midterm 2023, Mon 2 Nov: slope and Km.")
     );
-    // A pass with no receipt, and an answer that earned none, say nothing.
     assert_eq!(terminal_lines(&progress, &wanted(&["u1", "x"])), None);
 }
 

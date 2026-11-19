@@ -1,4 +1,3 @@
-//! Direct read helpers for unit regressions; production uses explicit snapshot/trace phases.
 use rusqlite::Connection;
 use serde_json::Value;
 

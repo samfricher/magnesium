@@ -1,4 +1,3 @@
-//! Subprocess helpers for actual v2 host hooks and adapter tools.
 use super::TestEnvironment;
 use rusqlite::Connection;
 use serde_json::{Value, json};

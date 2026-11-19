@@ -1,10 +1,3 @@
-//! A folder an earlier Magnesium set up, opened with the runtime built from
-//! this checkout. The window asks once before it upgrades the folder, and
-//! until then neither it nor the agent it would start changes the record.
-//!
-//! It never touches the learner's own home or study folders: the runtime runs
-//! with a scratch home and a scratch study folder.
-
 #![cfg(unix)]
 
 use std::fs;
@@ -24,8 +17,6 @@ fn repo_root() -> PathBuf {
         .expect("the repository root")
 }
 
-/// Build the runtime from this checkout. `MAGNESIUM_TEST_BINARY` names one
-/// already built instead.
 fn runtime_binary() -> PathBuf {
     if let Some(binary) = std::env::var_os("MAGNESIUM_TEST_BINARY").filter(|v| !v.is_empty()) {
         return PathBuf::from(binary);
@@ -78,7 +69,6 @@ fn a_folder_an_earlier_version_set_up_is_upgraded_only_after_a_yes() {
     fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
     std::env::set_var(runtime::PROGRAM_ENV, &wrapper);
 
-    // Set up as today, then given the record the release of 21 October made.
     runtime::init(&folder).unwrap();
     let store_path = folder.join(".magnesium/state.sqlite");
     let id: String = rusqlite::Connection::open(&store_path)
@@ -105,14 +95,12 @@ fn a_folder_an_earlier_version_set_up_is_upgraded_only_after_a_yes() {
         Arc::new(ClaudeCode::with_program(root.join("no-agent-needed"))),
         Arc::new(|_| {}),
     );
-    // Opening it asks, and so does every page that reads it.
     let home = manager.open_folder(&folder).unwrap();
     assert_eq!(home.state, HomeState::NeedsUpgrade, "{home:?}");
     assert!(home.message.unwrap().contains("keeps a copy"));
     assert!(manager.progress(None).unwrap().message.is_some());
     let refused = manager.open_session(false).unwrap_err().to_string();
     assert!(refused.contains("Upgrade it"), "{refused}");
-    // The library reads every folder in it, and must not upgrade one either.
     let cards = manager.library();
     assert_eq!(cards.len(), 1, "{cards:?}");
     assert_eq!(cards[0].state, HomeState::NeedsUpgrade);
@@ -123,7 +111,6 @@ fn a_folder_an_earlier_version_set_up_is_upgraded_only_after_a_yes() {
     );
     assert_eq!(record_copies(&folder), 0);
 
-    // After the yes: upgraded, with a copy of the record as it was.
     let home = manager.upgrade_folder().unwrap();
     assert_eq!(home.state, HomeState::Empty, "{home:?}");
     assert_eq!(record_copies(&folder), 1);

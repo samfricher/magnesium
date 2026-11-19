@@ -13,12 +13,8 @@ pub mod snapshot;
 pub mod sources;
 pub mod v2;
 
-/// The per-workspace control directory that `magnesium init` creates.
 pub const CONTROL_DIR: &str = ".magnesium";
 
-/// How long a test keeps repeating a request that the runtime deferred for
-/// lack of time. A deferred request usually succeeds on the next try, but a
-/// busy machine can need many tries.
 pub const DEFERRED_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
 
 static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
@@ -66,8 +62,6 @@ impl TestEnvironment {
 
     pub fn command_with(&self, executable: impl AsRef<Path>, current_dir: &Path) -> Command {
         let mut command = Command::new(executable.as_ref());
-        // Start from a small process configuration, never the caller's host identity,
-        // provider credentials, workspace binding or optional-worker capabilities.
         command.env_clear();
         for variable in [
             "PATH",
@@ -104,13 +98,10 @@ impl TestEnvironment {
             .env("TMPDIR", &self.temp)
             .env("TEMP", &self.temp)
             .env("TMP", &self.temp)
-            // A flush on a Mac waits for the drive. No test checks what
-            // survives a power cut, so none waits.
             .env("MAGNESIUM_UNSAFE_NO_SYNC", "1");
         command
     }
 
-    /// The per-user Magnesium data directory, where `init` writes the plugin copies.
     pub fn data_dir(&self) -> PathBuf {
         #[cfg(target_os = "macos")]
         return self.fake_home.join("Library/Application Support/magnesium");
@@ -119,9 +110,6 @@ impl TestEnvironment {
         self.global_data.join("magnesium")
     }
 
-    /// Entries in the data directory other than the plugin copy that `init`
-    /// manages. Magnesium keeps learner state in the workspace, never in a
-    /// global store.
     pub fn unmanaged_data_entries(&self) -> Vec<String> {
         let Ok(entries) = fs::read_dir(self.data_dir()) else {
             return Vec::new();
@@ -160,8 +148,6 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// The `magnesium` program under test: the one Cargo built for this test
-/// run, unless `MAGNESIUM_TEST_BINARY` names another.
 pub fn test_binary() -> PathBuf {
     match env::var_os("MAGNESIUM_TEST_BINARY").map(PathBuf::from) {
         Some(configured) if configured.is_absolute() => configured,
@@ -184,14 +170,10 @@ pub fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Hook invocation as the installed Claude Code plugin runs it: its command
-/// line supplies `--host-kind claude`, because Claude Code's event JSON
-/// carries no kind field of its own.
 pub fn run_hook(environment: &TestEnvironment, event: &str, input: Value) -> process::Output {
     run_hook_with_host_flag(environment, &environment.workspace, event, input, "claude")
 }
 
-/// Hook invocation with no `--host-kind` flag, as no installed plugin runs it.
 pub fn run_hook_without_host_flag(
     environment: &TestEnvironment,
     event: &str,
@@ -200,7 +182,6 @@ pub fn run_hook_without_host_flag(
     spawn_hook(environment, &environment.workspace, event, &[], input)
 }
 
-/// Hook invocation with the given `--host-kind` flag.
 pub fn run_hook_with_host_flag(
     environment: &TestEnvironment,
     current_dir: &Path,
@@ -250,7 +231,6 @@ fn spawn_hook(
     child.wait_with_output().expect("wait for hook process")
 }
 
-/// Magnesium's own version.
 pub fn magnesium_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }

@@ -1,12 +1,3 @@
-//! What the window itself remembers, kept on this computer and nowhere else:
-//! which folders are in the library, which conversation each one was in, the
-//! line the learner stopped at, the turns the window showed, the days the
-//! learner studied in it, how the learner chose to pay for lessons, the
-//! model they picked and the last list of models the agent sent, and an
-//! installed `magnesium` they chose to keep. Never a credential.
-//!
-//! None of it is learning state. The learner record belongs to the runtime.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -22,10 +13,8 @@ use crate::agent::{Intent, Payment, Permissions};
 use crate::models::{ModelOption, Pick};
 use crate::paths;
 
-/// How many folders the library keeps.
 const LIBRARY_SIZE: usize = 24;
 
-/// Set this to keep the window's files somewhere else. For tests.
 pub const HOME_ENV: &str = "MAGNESIUM_APP_HOME";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -39,15 +28,10 @@ pub struct PaperSitting {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FolderState {
-    /// The agent's id of the conversation this folder was last in.
     #[serde(default)]
     pub session_id: Option<String>,
-    /// The engine that started that conversation. None for one an earlier
-    /// window started, which was the plugin engine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<Engine>,
-    /// The learner turned recording off in a direct lesson in this study
-    /// folder, and has not turned it on again. Kept by study root.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub recording_off: bool,
     #[serde(default)]
@@ -56,42 +40,26 @@ pub struct FolderState {
     pub stopped_ms: Option<i64>,
     #[serde(default)]
     pub paper: Option<PaperSitting>,
-    /// What a direct lesson keeps between window starts about its sitting:
-    /// when the learner last wrote, what the sitting taught, and the
-    /// repairs and checks it listed. Kept by the direct engine, opaque here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direct: Option<serde_json::Value>,
-    /// When the learner last opened this folder in the window, in ms since
-    /// the epoch. Added after the first windows: an older state has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opened_ms: Option<i64>,
-    /// What the window knows of each of this folder's conversations, by the
-    /// agent's id: its name, when it was last opened, and its engine.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sessions: BTreeMap<String, SessionNote>,
-    /// Fields another window build wrote that this one does not know. They are
-    /// kept as they are, so the state file can be shared between builds.
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
 }
 
-/// What the window keeps about one conversation, beside its turns.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SessionNote {
-    /// What it is about: the goal it began with, as the window named it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// When the learner last opened it, in ms since the epoch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opened_ms: Option<i64>,
-    /// The engine it runs on, so it resumes on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<Engine>,
-    /// The model it runs on, so it resumes on its own. None for one an
-    /// earlier window began, which ran on `models::EARLIER`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// The effort it runs at; none for the agent's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
 }
@@ -104,42 +72,24 @@ struct Data {
     folders: BTreeMap<String, FolderState>,
     #[serde(default)]
     block_minutes: Option<u32>,
-    /// Answers the learner sent from the window on each day, by "2026-11-10".
-    /// Used for the run only when the runtime cannot say which days had a
-    /// marked answer.
     #[serde(default)]
     days: BTreeMap<String, u32>,
-    /// Whether `days` was filled once from the turns kept before it existed.
     #[serde(default)]
     days_filled: bool,
     #[serde(default)]
     payment: Option<Payment>,
-    /// Who decides on a tool the tutor wants. None until the learner picks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     permissions: Option<Permissions>,
-    /// The engine the learner picked for new conversations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     engine: Option<Engine>,
-    /// The model and effort new sessions start on. A state an earlier window
-    /// kept has no such field, and keeps the model every lesson ran on then.
-    /// A new window's state has it empty until the agent first sends its
-    /// list, when it takes the agent's default. It is always written, empty
-    /// or not, so the two are never confused.
     #[serde(default = "earlier_pick")]
     pick: Option<Pick>,
-    /// The last list of models the agent sent, when it was sent, and
-    /// whether the last time it was asked it sent none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     models: Option<ModelList>,
-    /// What `--version` printed for an installed `magnesium` the learner chose
-    /// to keep over the one inside the app. Asked again for any other.
     #[serde(default)]
     kept_runtime: Option<String>,
-    /// How the window was left: its open tabs and which one was in front.
-    /// Opaque here; the page reads and writes it whole.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     window: Option<serde_json::Value>,
-    /// Fields another window build wrote that this one does not know, kept.
     #[serde(flatten)]
     other: BTreeMap<String, serde_json::Value>,
 }
@@ -148,15 +98,12 @@ fn earlier_pick() -> Option<Pick> {
     Some(Pick::earlier())
 }
 
-/// The agent's list of models as the window last had it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelList {
     #[serde(default)]
     pub models: Vec<ModelOption>,
-    /// When the list came, in ms since the epoch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at_ms: Option<i64>,
-    /// The last time the agent was asked, it sent no list.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub failed: bool,
 }
@@ -169,45 +116,22 @@ pub struct Turn {
     pub tutor: String,
     #[serde(default)]
     pub interrupted: bool,
-    /// How the window sent the learner's words: an answer to the open task,
-    /// or talk. None for the window's own words, help, or a turn an earlier
-    /// window kept. Additive: an older window reads the line without it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<Intent>,
-    /// The task open after this turn, as the engine said it, and whether this
-    /// turn's reply posed it. Kept beside the turns, in a file of its own, as
-    /// the engine says it only once the turn's record is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub posed: bool,
-    /// The engine said which task was open after this turn (`task` none
-    /// means none was). False for an engine that does not say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub noted: bool,
-    /// The ids of the record's marked answers that appeared for this turn's
-    /// message: the marks the window showed under it. Empty when the record
-    /// was read and had none; none when it was not read to the end, as for a
-    /// turn an earlier window kept. Kept beside the turns, in a file of its
-    /// own, as the record is read only once the turn is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_ids: Option<Vec<String>>,
-    /// The closing lines the window drew under this turn's reply, as the
-    /// runtime worked them out when this turn ended the sitting. Kept in a
-    /// file of their own beside the turns: they say what the record held on
-    /// that day, which a later reading would not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closing: Option<Vec<String>>,
-    /// The step of the lesson's route this turn's reply moved on to, as the
-    /// record had the route then. Kept in a file of its own beside the turns:
-    /// the record keeps only the route as it stands now, so where each step
-    /// began is known only from what the window read after each turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<StepBegun>,
 }
 
-/// A step of a lesson's route, as it stood when a turn moved on to it: its
-/// place in the route, counted from 1, the route's length, and its name.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepBegun {
     pub n: usize,
@@ -215,9 +139,6 @@ pub struct StepBegun {
     pub name: String,
 }
 
-/// The step in hand after a turn, as the record said once the turn was kept:
-/// none when the lesson had no step in hand. `began` when it is not the step
-/// in hand after the turn before, so the turn's reply moved on to it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StepNote {
     session: String,
@@ -226,7 +147,6 @@ struct StepNote {
     step: Option<StepBegun>,
     #[serde(default)]
     began: bool,
-    /// False when the reading could not tell which step was in hand.
     #[serde(default = "yes")]
     known: bool,
 }
@@ -235,7 +155,6 @@ fn yes() -> bool {
     true
 }
 
-/// The closing lines drawn under a turn, kept beside it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ClosingNote {
     session: String,
@@ -244,7 +163,6 @@ struct ClosingNote {
     lines: Vec<String>,
 }
 
-/// What the engine said of a turn's task, kept beside the turn.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct TaskNote {
     session: String,
@@ -255,7 +173,6 @@ struct TaskNote {
     posed: bool,
 }
 
-/// Which of the record's marked answers appeared for a turn, kept beside it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct MarksNote {
     session: String,
@@ -264,14 +181,11 @@ struct MarksNote {
     ids: Vec<String>,
 }
 
-/// Which engine runs a lesson.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Engine {
-    /// Claude Code runs the lesson through Magnesium's plugin.
     #[default]
     Plugin,
-    /// The window runs the lesson, and Claude Code only reaches the model.
     Direct,
 }
 
@@ -286,9 +200,6 @@ fn default_root() -> PathBuf {
     }
     let home = paths::home();
     if cfg!(target_os = "macos") {
-        // Named after the app's identifier. The runtime keeps its own files
-        // in "Application Support/magnesium", and macOS ignores case, so a
-        // folder called "Magnesium" would be the same folder.
         home.join("Library/Application Support/dev.magnesium.window")
     } else if let Some(data) = env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty()) {
         PathBuf::from(data).join("magnesium-window")
@@ -305,7 +216,6 @@ fn key(folder: &Path) -> String {
         .into_owned()
 }
 
-/// A short stable name for a folder's transcript file.
 fn file_name(folder_key: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in folder_key.bytes() {
@@ -350,8 +260,6 @@ impl Store {
         if fs::create_dir_all(&self.root).is_err() {
             return;
         }
-        // Written beside the real file, then moved over it, so a crash leaves
-        // the old state whole.
         let temp = self.root.join("state.json.tmp");
         if fs::write(&temp, text).is_ok() {
             let _ = fs::rename(&temp, self.root.join("state.json"));
@@ -377,7 +285,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// Change what the window keeps about one of a folder's conversations.
     pub fn note_session(
         &self,
         folder: &Path,
@@ -393,7 +300,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// How the window was left, as the page last wrote it.
     pub fn window(&self) -> Option<serde_json::Value> {
         self.lock().window.clone()
     }
@@ -404,8 +310,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// Put folders in the library without opening them, after the ones
-    /// already there. Returns how many were new.
     pub fn add_folders(&self, folders: &[PathBuf]) -> usize {
         let mut data = self.lock();
         let mut added = 0;
@@ -422,9 +326,6 @@ impl Store {
         added
     }
 
-    /// Take a folder out of the library. The folder itself is not touched,
-    /// and what the window remembers of it stays, so a lesson continues if
-    /// the folder is opened again.
     pub fn forget(&self, folder: &Path) {
         let key = key(folder);
         let plain = folder.to_string_lossy();
@@ -457,7 +358,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// Count one answer the learner sent on `day`.
     pub fn count_turn(&self, day: NaiveDate) {
         let mut data = self.lock();
         self.fill_days(&mut data);
@@ -465,7 +365,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// The days on which the learner sent an answer from the window.
     pub fn days(&self) -> BTreeSet<NaiveDate> {
         let mut data = self.lock();
         if !data.days_filled {
@@ -479,8 +378,6 @@ impl Store {
             .collect()
     }
 
-    /// Once, count the days from the turns the window kept before it counted
-    /// days, so a learner's first run is not lost.
     fn fill_days(&self, data: &mut Data) {
         if data.days_filled {
             return;
@@ -536,8 +433,6 @@ impl Store {
         self.save(&data);
     }
 
-    /// The model and effort new sessions start on; none on a new window
-    /// before the agent has sent its list.
     pub fn pick(&self) -> Option<Pick> {
         self.lock().pick.clone()
     }
@@ -548,15 +443,10 @@ impl Store {
         self.save(&data);
     }
 
-    /// The agent's list of models, as it last sent it.
     pub fn models(&self) -> ModelList {
         self.lock().models.clone().unwrap_or_default()
     }
 
-    /// Keep the list the agent just sent, or note that it sent none: the
-    /// last list it did send is kept. A new window with no pick yet takes
-    /// the agent's default from the list, by its full id, so that a later
-    /// change of that default does not change it.
     pub fn received_models(&self, models: Option<Vec<ModelOption>>) {
         let mut data = self.lock();
         let mut kept = data.models.clone().unwrap_or_default();
@@ -598,20 +488,14 @@ impl Store {
         self.root.join("transcripts").join(file_name(&key(folder)))
     }
 
-    /// The file beside a folder's transcript that holds what the engine said
-    /// of each turn's task.
     fn task_notes(&self, folder: &Path) -> PathBuf {
         self.transcript(folder).with_extension("tasks.jsonl")
     }
 
-    /// The file beside a folder's transcript that holds which of the
-    /// record's marked answers appeared for each turn.
     fn marks_notes(&self, folder: &Path) -> PathBuf {
         self.transcript(folder).with_extension("marks.jsonl")
     }
 
-    /// Keep what the engine said of a kept turn's task: the task open after
-    /// it, and whether the turn's reply posed it.
     pub fn note_task(
         &self,
         folder: &Path,
@@ -629,11 +513,6 @@ impl Store {
         append_line(&self.task_notes(folder), &note);
     }
 
-    /// Keep which of the record's marked answers appeared for a kept turn's
-    /// message, by their ids: none when the record was read and had no new
-    /// row. A reopened lesson shows these rows under the turn, so a mark
-    /// stays on the answer it was shown on, also when several answers fall
-    /// in one minute. Only ids are kept; the marks are read from the record.
     pub fn note_marks(&self, folder: &Path, session: &str, ms: i64, ids: &[String]) {
         let note = MarksNote {
             session: session.to_owned(),
@@ -643,13 +522,10 @@ impl Store {
         append_line(&self.marks_notes(folder), &note);
     }
 
-    /// The file beside a folder's transcript that holds the closing lines
-    /// drawn under the turn that ended a sitting.
     fn closing_notes(&self, folder: &Path) -> PathBuf {
         self.transcript(folder).with_extension("closing.jsonl")
     }
 
-    /// Keep the closing lines drawn under a kept turn.
     pub fn note_closing(&self, folder: &Path, session: &str, ms: i64, lines: &[String]) {
         let note = ClosingNote {
             session: session.to_owned(),
@@ -659,8 +535,6 @@ impl Store {
         append_line(&self.closing_notes(folder), &note);
     }
 
-    /// The file beside a folder's transcript that holds the step in hand
-    /// after each turn.
     fn step_notes(&self, folder: &Path) -> PathBuf {
         self.transcript(folder).with_extension("steps.jsonl")
     }
@@ -675,21 +549,6 @@ impl Store {
             .collect()
     }
 
-    /// Keep the step in hand after a kept turn, as the record had it once
-    /// that turn's record was saved, and say whether the turn's reply moved
-    /// on to it: Some with the step when it did. `step` is None when the
-    /// reading could not tell (the runtime did not answer, or the next turn
-    /// may already have written to the record): that turn begins nothing.
-    ///
-    /// A turn began its step when the conversation's turn just before it
-    /// was read and had another step in hand, or none, or when it is the
-    /// conversation's first turn. When the turn before was not read, or could
-    /// not tell, nothing is known of where this step began, and it begins
-    /// nowhere: so a reading that was missed never moves a head onto a later
-    /// turn. This also covers a conversation kept by a window that did not
-    /// note steps. Noted again for the same turn, the later note stands,
-    /// unless it could not tell and an earlier one for that turn could: a
-    /// reading that could not tell never replaces one that could.
     pub fn note_step(
         &self,
         folder: &Path,
@@ -741,14 +600,10 @@ impl Store {
         }
     }
 
-    /// Keep one finished turn. The agent keeps its own full transcript; this
-    /// copy only lets the window show earlier turns after it is reopened.
     pub fn append_turn(&self, folder: &Path, turn: &Turn) {
         append_line(&self.transcript(folder), turn);
     }
 
-    /// Every turn the window kept for a folder, of every conversation, oldest
-    /// first: what a workspace lists as its sessions.
     pub fn all_turns(&self, folder: &Path) -> Vec<Turn> {
         let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
             return Vec::new();
@@ -759,7 +614,6 @@ impl Store {
             .collect()
     }
 
-    /// The turns the window showed in one conversation, oldest first.
     pub fn turns(&self, folder: &Path, session: &str) -> Vec<Turn> {
         let Ok(text) = fs::read_to_string(self.transcript(folder)) else {
             return Vec::new();
@@ -771,7 +625,6 @@ impl Store {
             .collect();
         let extra = turns.len().saturating_sub(400);
         turns.drain(..extra);
-        // What the engine said of each turn's task, by the turn's time.
         if let Ok(notes) = fs::read_to_string(self.task_notes(folder)) {
             let by_ms: BTreeMap<i64, TaskNote> = notes
                 .lines()
@@ -787,7 +640,6 @@ impl Store {
                 }
             }
         }
-        // Which marked answers appeared for each turn, by the turn's time.
         if let Ok(notes) = fs::read_to_string(self.marks_notes(folder)) {
             let mut by_ms: BTreeMap<i64, Vec<String>> = BTreeMap::new();
             for note in notes
@@ -808,7 +660,6 @@ impl Store {
                 }
             }
         }
-        // The closing lines drawn under a turn, the last kept for it.
         if let Ok(notes) = fs::read_to_string(self.closing_notes(folder)) {
             let by_ms: BTreeMap<i64, Vec<String>> = notes
                 .lines()
@@ -822,7 +673,6 @@ impl Store {
                 }
             }
         }
-        // The step each turn's reply moved on to, the last note kept for it.
         let mut began: BTreeMap<i64, Option<StepBegun>> = BTreeMap::new();
         for note in self.step_notes_of(folder, session) {
             began.insert(note.ms, note.step.filter(|_| note.began));
@@ -836,11 +686,6 @@ impl Store {
     }
 }
 
-/// A turn a window before 2026-11-15 kept for a message that reached no
-/// tutor: Claude Code was signed out, and its own line saying so was kept as
-/// the reply. Such a turn is no longer kept, and one kept then is left out
-/// when the turns are read: drawn again, it showed that line as the tutor's
-/// words and closed the task the message answered.
 fn reached_no_tutor(turn: &Turn) -> bool {
     let reply = turn.tutor.trim();
     reply.starts_with("Failed to authenticate")
@@ -848,9 +693,6 @@ fn reached_no_tutor(turn: &Turn) -> bool {
         || reply.starts_with("Not logged in ·")
 }
 
-/// Add one line of JSON to the end of a file of the window's own, making its
-/// folder first. Nothing is shown when it cannot be written: the copy is the
-/// window's, and the agent and the runtime keep their own.
 fn append_line(path: &Path, value: &impl Serialize) {
     let Some(parent) = path.parent() else { return };
     if fs::create_dir_all(parent).is_err() {
@@ -891,7 +733,6 @@ mod tests {
         .unwrap();
         let store = Store::at(home.path().to_path_buf());
         assert_eq!(store.pick().unwrap().model, EARLIER);
-        // The agent's list, with another default, changes nothing.
         store.received_models(Some(vec![listed(
             "default",
             "claude-opus-5-5",
@@ -905,11 +746,9 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let store = Store::at(home.path().to_path_buf());
         assert_eq!(store.pick(), None);
-        // Asked and sent nothing: still no pick, and the window says so.
         store.received_models(None);
         assert_eq!(store.pick(), None);
         assert!(store.models().failed);
-        // Kept empty, a new window is not taken for an older one.
         let again = Store::at(home.path().to_path_buf());
         assert_eq!(again.pick(), None);
         again.received_models(Some(vec![
@@ -920,7 +759,6 @@ mod tests {
         assert_eq!(pick.model, "claude-opus-5-5");
         assert_eq!(pick.name.as_deref(), Some("Opus"));
         assert!(!again.models().failed);
-        // A later list with another default does not move it.
         again.received_models(Some(vec![listed(
             "default",
             "claude-opus-5-6",
@@ -928,7 +766,6 @@ mod tests {
         )]));
         assert_eq!(again.pick().unwrap().model, "claude-opus-5-5");
         assert_eq!(again.models().models[0].id(), "claude-opus-5-6");
-        // A list that does not come keeps the last one that did.
         again.received_models(None);
         let kept = again.models();
         assert!(kept.failed && kept.models.len() == 1);
@@ -994,7 +831,6 @@ mod tests {
             ..Turn::default()
         };
         store.append_turn(folder.path(), &turn(1, "**Your turn.** What is 3 + 3?"));
-        // As a window before 2026-11-15 kept them, twice in one session.
         let said = "Failed to authenticate: OAuth session expired and could not be refreshed";
         store.append_turn(folder.path(), &turn(2, said));
         store.append_turn(folder.path(), &turn(3, said));
@@ -1021,8 +857,6 @@ mod tests {
             store.append_turn(folder.path(), &turn("abc", ms));
         }
         store.append_turn(folder.path(), &turn("other", 2));
-        // The record read after each message: two rows for the first, none
-        // for the second, and nothing kept for the third (looking cut short).
         store.note_marks(folder.path(), "abc", 1, &["a-1".into(), "a-2".into()]);
         store.note_marks(folder.path(), "abc", 2, &[]);
         store.note_marks(folder.path(), "other", 2, &["a-9".into()]);
@@ -1037,10 +871,8 @@ mod tests {
                 None
             ]
         );
-        // The turn's own line is as an older window wrote it.
         let text = fs::read_to_string(store.transcript(folder.path())).unwrap();
         assert!(!text.contains("mark_ids"), "{text}");
-        // And the notes are no turn when the days are counted from the files.
         let notes = fs::read_to_string(store.marks_notes(folder.path())).unwrap();
         assert!(notes
             .lines()
@@ -1062,7 +894,6 @@ mod tests {
         store.opened(first.path());
         store.update(first.path(), |state| state.session_id = Some("abc".into()));
 
-        // A found folder goes after the opened one, and only once.
         let found = [second.path().to_path_buf(), first.path().to_path_buf()];
         assert_eq!(store.add_folders(&found), 1);
         assert_eq!(store.add_folders(&found), 0);
@@ -1071,7 +902,6 @@ mod tests {
         store.forget(first.path());
         assert_eq!(store.recent(), vec![key(second.path())]);
         assert!(first.path().is_dir());
-        // Opened again, the lesson is still there.
         store.opened(first.path());
         assert_eq!(
             store.folder(first.path()).session_id.as_deref(),
@@ -1099,11 +929,9 @@ mod tests {
             tutor: "…".into(),
             ..Turn::default()
         };
-        // Turns kept by a window that did not count days yet.
         let before = Store::at(home.path().to_path_buf());
         before.append_turn(folder.path(), &turn(at_noon("2026-11-08"), "an answer"));
         before.append_turn(folder.path(), &turn(at_noon("2026-11-09"), "another"));
-        // The tutor's own opening line, with no words from the learner.
         before.append_turn(folder.path(), &turn(at_noon("2026-11-05"), " "));
 
         let store = Store::at(home.path().to_path_buf());
@@ -1117,7 +945,6 @@ mod tests {
         assert_eq!(activity.run, 3);
         assert!(activity.studied_today);
 
-        // Reopened, the earlier turns are not counted a second time.
         let again = Store::at(home.path().to_path_buf());
         again.count_turn(day("2026-11-10"));
         assert_eq!(again.lock().days["2026-11-08"], 1);
@@ -1129,7 +956,6 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let folder = tempfile::tempdir().unwrap();
         let folder_key = key(folder.path());
-        // A state file written by another build, with a field this one does not know.
         let older = serde_json::json!({
             "recent": [folder_key],
             "folders": { folder_key.clone(): { "session_id": "abc", "stopped_at": null, "stopped_ms": null, "paper": null, "later": 7 } },
@@ -1156,7 +982,6 @@ mod tests {
         assert!(saved["folders"][&folder_key]["opened_ms"].is_i64());
         assert_eq!(saved["window"]["tabs"], serde_json::json!([]));
 
-        // What an older build reads: every field it knows, unchanged in kind.
         #[derive(serde::Deserialize)]
         struct OldFolder {
             session_id: Option<String>,
@@ -1212,7 +1037,6 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let store = Store::at(home.path().to_path_buf());
         let folder = home.path().join("course");
-        // The first turn has no route yet; the second sets it.
         kept(&store, &folder, "s", 1);
         assert_eq!(store.note_step(&folder, "s", 1, Some(None)), None);
         kept(&store, &folder, "s", 2);
@@ -1220,7 +1044,6 @@ mod tests {
             store.note_step(&folder, "s", 2, read(1, 2, "A")),
             step(1, 2, "A")
         );
-        // The same step, in a route the tutor made longer: nothing begins.
         kept(&store, &folder, "s", 3);
         assert_eq!(store.note_step(&folder, "s", 3, read(1, 3, "A")), None);
         kept(&store, &folder, "s", 4);
@@ -1228,13 +1051,11 @@ mod tests {
             store.note_step(&folder, "s", 4, read(2, 3, "B")),
             step(2, 3, "B")
         );
-        // Back to an earlier step: it begins again here.
         kept(&store, &folder, "s", 5);
         assert_eq!(
             store.note_step(&folder, "s", 5, read(1, 3, "A")),
             step(1, 3, "A")
         );
-        // Read again for the same turn, the later reading stands.
         kept(&store, &folder, "s", 6);
         assert_eq!(store.note_step(&folder, "s", 6, read(1, 3, "A")), None);
         assert_eq!(
@@ -1266,7 +1087,6 @@ mod tests {
         let folder = home.path().join("course");
         kept(&store, &folder, "old", 1);
         kept(&store, &folder, "old", 2);
-        // Reopened in this window: where its step began is not known.
         kept(&store, &folder, "old", 3);
         assert_eq!(store.note_step(&folder, "old", 3, read(2, 3, "B")), None);
         kept(&store, &folder, "old", 4);
@@ -1274,7 +1094,6 @@ mod tests {
             store.note_step(&folder, "old", 4, read(3, 3, "C")),
             step(3, 3, "C")
         );
-        // Another conversation in the folder is its own.
         kept(&store, &folder, "new", 5);
         assert_eq!(
             store.note_step(&folder, "new", 5, read(1, 1, "A")),
@@ -1292,13 +1111,10 @@ mod tests {
             store.note_step(&folder, "s", 1, read(1, 2, "A")),
             step(1, 2, "A")
         );
-        // The learner wrote again before this turn's reading: it cannot tell.
         kept(&store, &folder, "s", 2);
         assert_eq!(store.note_step(&folder, "s", 2, None), None);
-        // The next turn finds "B" in hand, but cannot tell whether it began it.
         kept(&store, &folder, "s", 3);
         assert_eq!(store.note_step(&folder, "s", 3, read(2, 2, "B")), None);
-        // A turn never read at all is the same.
         kept(&store, &folder, "s", 4);
         kept(&store, &folder, "s", 5);
         assert_eq!(store.note_step(&folder, "s", 5, read(1, 2, "A")), None);
@@ -1325,9 +1141,7 @@ mod tests {
             store.note_step(&folder, "s", 2, read(2, 2, "B")),
             step(2, 2, "B")
         );
-        // A later reading of the same turn fails: the turn keeps its head.
         assert_eq!(store.note_step(&folder, "s", 2, None), None);
-        // And the next turn still knows which step was in hand before it.
         kept(&store, &folder, "s", 3);
         assert_eq!(
             store.note_step(&folder, "s", 3, read(1, 2, "A")),

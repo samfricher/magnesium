@@ -1,7 +1,3 @@
-//! Canonical stored learner meaning, shared by writes and current/history reads.
-//!
-//! Stored basis IDs retain the existing database representation. Current cards
-//! deliberately project them into reusable observation-reference objects.
 use super::{
     LearnerError, Result,
     model::{Checkpoint, EventMetadata, MemoryRevision, PendingTask, Speaker},
@@ -9,8 +5,6 @@ use super::{
 use rusqlite::{Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-/// Initial sessions store {}. Nonempty checkpoints use the same strict typed
-/// contract at read and completion boundaries, never a permissive JSON mirror.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum StoredCheckpoint {
@@ -58,9 +52,6 @@ impl StoredCheckpoint {
     }
 }
 
-/// The original stored speaker and explicit delivery are separate from origin.
-/// Loading these facts does not upgrade model-reported provenance or certify
-/// learner attendance. Observations and task references share this decoder.
 pub(crate) struct EventFacts {
     pub speaker: Speaker,
     pub metadata: Option<EventMetadata>,
@@ -122,8 +113,6 @@ pub(crate) struct ObservationRef {
     pub observation_id: String,
 }
 
-/// Every persisted snapshot contains all required state, including empty lists.
-/// Only review resolution is absent on changes that did not resolve a review.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MemorySnapshot {
@@ -174,8 +163,6 @@ pub(crate) fn stored<T: DeserializeOwned>(text: &str, field: &str) -> Result<T> 
     Ok(value)
 }
 
-/// Compact canonical fields. This is a projection of the same row, never a
-/// second durable summary; full snapshots and cards share this strict decoder.
 pub(crate) struct MemoryFields {
     pub memory_id: String,
     pub title: String,
@@ -257,8 +244,6 @@ const COMPACT_COLUMNS: &str = "m.memory_id, m.title, m.scope, m.summary,
     m.review_note, m.current_basis_json, m.replacement_ids_json, m.lifecycle,
     m.revision, m.last_observed_at_ms";
 
-/// Preserve caller order, including duplicate explicit references. JSON supplies
-/// bounded IDs as data, without constructing SQL or one statement per memory.
 pub(crate) fn memory_fields(conn: &Connection, ids: &[String]) -> Result<Vec<MemoryFields>> {
     if ids.is_empty() {
         return Ok(vec![]);

@@ -1,11 +1,3 @@
-//! Each topic's reading in a plan, worked out by the runtime (#31).
-//!
-//! The papers loop reads every gap tag as untested, open, conditional or
-//! sound. The tutor used to work the reading out at every marking and write it
-//! in words into the tag's memory, where it could drift from the gap log. Now
-//! the runtime works it out each time it is asked, from the plan's gap-log
-//! rows, the stored attempts on the tag and the plan's `graph.yaml`, with
-//! today's definitions, and the tool results state it.
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -16,10 +8,8 @@ use crate::digest::read_small;
 use crate::learner::label_key;
 use crate::practice::Item;
 
-/// A course graph's tags and the edges a reading follows, keyed by tag key.
 #[derive(Debug, Default)]
 pub(crate) struct Graph {
-    /// In the order the file lists them.
     pub(crate) order: Vec<String>,
     pub(crate) tags: BTreeMap<String, GraphTag>,
 }
@@ -34,9 +24,6 @@ pub(crate) struct GraphTag {
 
 const LIST_FIELDS: [&str; 4] = ["needs", "key_need", "contains", "touches"];
 
-/// Read the papers skill's `graph.yaml`: a `tags:` map of tag to fields,
-/// with each list in flow form (`[a, b]`) or block form (`- a`). It reads only
-/// what a reading needs and refuses a shape it cannot be sure of.
 pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
     let mut graph = Graph::default();
     let mut in_tags = false;
@@ -98,7 +85,6 @@ pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
         };
         if let Some(item) = body.strip_prefix("- ").or((body == "-").then_some("")) {
             match &block {
-                // YAML lets a block list's dashes sit at its key's indent.
                 Some((field, field_indent)) if indent >= *field_indent => {
                     let item = unquote(item);
                     if !item.is_empty()
@@ -119,8 +105,6 @@ pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
         let field = field.trim();
         let value = value.trim();
         block = None;
-        // A field with its value below may hold a block list. The items of
-        // one a reading does not use are skipped, as `list` gives no list.
         if value.is_empty() {
             block = Some((field.to_owned(), indent));
             continue;
@@ -152,7 +136,6 @@ pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
     Ok(graph)
 }
 
-/// The list a field fills. A touches edge gives a reading nothing.
 fn list<'a>(tag: &'a mut GraphTag, field: &str) -> Option<&'a mut Vec<String>> {
     match field {
         "needs" => Some(&mut tag.needs),
@@ -162,8 +145,6 @@ fn list<'a>(tag: &'a mut GraphTag, field: &str) -> Option<&'a mut Vec<String>> {
     }
 }
 
-/// A line without its comment: a `#` at the start of the text or after a
-/// space, outside quotes.
 fn strip_comment(line: &str) -> &str {
     let mut quote = None;
     let mut previous = ' ';
@@ -212,12 +193,9 @@ impl Reading {
 pub(crate) struct TagReading {
     pub(crate) tag: String,
     pub(crate) reading: Reading,
-    /// Why, in a few words, such as "midterm-1#3 open, waiting for its
-    /// repair" or "cold in MockA Q3b".
     pub(crate) why: String,
 }
 
-/// One stored attempt on a tag, as a reading sees it.
 #[derive(Clone, Debug)]
 pub(crate) struct TagAttempt {
     pub(crate) label_key: String,
@@ -229,7 +207,6 @@ pub(crate) struct TagAttempt {
     pub(crate) place: String,
 }
 
-/// Every stored attempt, with where it was answered.
 pub(crate) fn load_attempts(conn: &Connection) -> rusqlite::Result<Vec<TagAttempt>> {
     let mut statement = conn.prepare(
         "SELECT label_key, mark, help, cold, slow, paper, paper_question, question
@@ -257,7 +234,6 @@ pub(crate) fn load_attempts(conn: &Connection) -> rusqlite::Result<Vec<TagAttemp
         .collect()
 }
 
-/// A reading a memory stated in words before schema 5: (reading, phrase).
 pub(crate) fn load_imported(
     conn: &Connection,
 ) -> rusqlite::Result<BTreeMap<String, (String, String)>> {
@@ -267,7 +243,6 @@ pub(crate) fn load_imported(
         .collect()
 }
 
-/// What a plan's readings were worked out from.
 pub(crate) struct PlanInputs<'a> {
     pub(crate) plan: &'a str,
     pub(crate) graph: Option<&'a Graph>,
@@ -276,14 +251,6 @@ pub(crate) struct PlanInputs<'a> {
     pub(crate) imported: &'a BTreeMap<String, (String, String)>,
 }
 
-/// Each tag's reading, by the papers loop's definitions:
-/// - open: a gap-log row at open, not yet passed since its last repair;
-/// - conditional: a row at 1 of 3 or 2 of 3, a key_need tag open, a tag in
-///   needs open under a cold pass, or passed only slow, partly, with help or
-///   not cold;
-/// - sound: passed cold, unaided, in full and in time, directly or through
-///   contains, with nothing in needs open;
-/// - untested: no evidence yet.
 pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
     let PlanInputs {
         plan,
@@ -319,7 +286,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
             .unwrap_or_default()
     };
     let name = |key: &str| names.get(key).cloned().unwrap_or_else(|| key.to_owned());
-    // Open comes from the rows alone, so the needs checks below never recurse.
     let open_row = |key: &str| -> Option<&Item> {
         rows.iter().copied().find(|row| {
             label_key(&row.facts.label) == key && !row.state.closed() && row.state.passes == 0
@@ -329,7 +295,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
         attempts.iter().filter(|a| a.label_key == key).collect()
     };
     let cold_pass = |a: &&TagAttempt| a.right && a.alone && a.cold && !a.slow;
-    // Tags with a cold, unaided, full, in-time pass of their own.
     let passed: BTreeMap<String, String> = order
         .iter()
         .filter_map(|key| {
@@ -339,8 +304,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
                 .map(|a| (key.clone(), a.place.clone()))
         })
         .collect();
-    // Through contains: one edge from any passing tag, or any number of edges
-    // to a tag with no attempt of its own.
     let mut reached: BTreeMap<String, String> = BTreeMap::new();
     for from in passed.keys() {
         let mut seen = BTreeSet::new();
@@ -460,8 +423,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
         .collect()
 }
 
-/// A plan's readings as a tool result states them: the tags under each
-/// reading, each with why, and the untested tags by name only.
 pub(crate) fn plan_json(
     plan: &str,
     graph: &Result<Graph, String>,
@@ -510,7 +471,6 @@ pub(crate) fn graph_file(plan: &str) -> String {
     format!("Study/{plan}/graph.yaml")
 }
 
-/// A plan's graph, or why it cannot be used.
 pub(crate) fn read_graph(root: &Path, plan: &str) -> Result<Graph, String> {
     let path = root.join("Study").join(plan).join("graph.yaml");
     if std::fs::symlink_metadata(&path).is_err() {
@@ -520,8 +480,6 @@ pub(crate) fn read_graph(root: &Path, plan: &str) -> Result<Graph, String> {
     parse_graph(&text)
 }
 
-/// The readings of these plans, for a tool result, or None when there are
-/// none to state.
 pub(crate) fn readings_json(conn: &Connection, root: &Path, plans: &[String]) -> Option<Value> {
     if plans.is_empty() {
         return None;
@@ -550,8 +508,6 @@ pub(crate) fn readings_json(conn: &Connection, root: &Path, plans: &[String]) ->
     }))
 }
 
-/// The tags a plan's readings cover, as keys: its graph's tags and the
-/// labels of its rows.
 pub(crate) fn plan_tag_keys(root: &Path, plan: &str, items: &[Item]) -> BTreeSet<String> {
     let mut keys: BTreeSet<String> = read_graph(root, plan)
         .map(|graph| graph.order.into_iter().collect())
@@ -565,7 +521,6 @@ pub(crate) fn plan_tag_keys(root: &Path, plan: &str, items: &[Item]) -> BTreeSet
     keys
 }
 
-/// Each attempt of an update, from `attempt` and `attempts`.
 fn request_attempts(request: &Value) -> Vec<&Value> {
     request["observations"]
         .as_array()
@@ -580,10 +535,6 @@ fn request_attempts(request: &Value) -> Vec<&Value> {
         .collect()
 }
 
-/// The `help_levels` field of a committed update whose attempts name a kind
-/// of problem: each kind's level now, and the help to give. When the last
-/// attempt of a kind in the update had no starting move, the help is for
-/// now; otherwise it is for the next time.
 pub(crate) fn help_levels_json(conn: &Connection, request: &Value) -> Option<Value> {
     use crate::learner::help::{Level, known_kinds, stored};
     let mut kinds: Vec<(String, bool)> = Vec::new();
@@ -623,9 +574,6 @@ pub(crate) fn help_levels_json(conn: &Connection, request: &Value) -> Option<Val
     }))
 }
 
-/// The plans whose readings a result states: every plan on a paper stage
-/// load; the plans a committed update's practice touched; and the plan a
-/// session started or resumed for names in its goal.
 fn plans_to_state(
     conn: &Connection,
     root: &Path,
@@ -669,8 +617,6 @@ fn plans_to_state(
         }
     }
     if practice_change && let Ok(items) = crate::practice::snapshot(conn, root) {
-        // An attempt concerns a plan when its label or its kind is one of
-        // the plan's tags.
         let labels: BTreeSet<String> = request_attempts(request)
             .into_iter()
             .flat_map(|a| [a["label"].as_str(), a["kind"].as_str()])
@@ -707,9 +653,6 @@ fn plans_to_state(
     chosen.into_iter().collect()
 }
 
-/// Add what the runtime keeps for the tutor to a tool result: the help levels
-/// of the kinds a committed update's attempts name, and the readings of the
-/// plans it concerns. Reading only; none of this can fail the call.
 pub(crate) fn add_to_result(
     workspace: &crate::workspace::Workspace,
     committed: Option<&Value>,
@@ -746,8 +689,6 @@ pub(crate) fn add_to_result(
     }
 }
 
-/// Words of four letters or more that name no topic, so they never make an
-/// answer an earlier answer on the goal.
 const COMMON_WORDS: &[&str] = &[
     "about",
     "after",
@@ -839,13 +780,6 @@ const COMMON_WORDS: &[&str] = &[
     "your",
 ];
 
-/// At a session start or resume, the learner's latest answers on the goal:
-/// those whose label or kind shares with it a word of four letters or more
-/// that names a topic, at most eight, newest first. The question is left
-/// out: its everyday words ("pizza", "what") say nothing about the topic. A new conversation can then tell that
-/// the record already holds answers on the topic, and skip the opening
-/// questions, without a search the tutor may not make. None when there are
-/// none.
 fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option<Value> {
     if !matches!(
         request["session"]["operation"].as_str(),
@@ -876,7 +810,6 @@ fn earlier_answers(conn: &Connection, request: &Value, result: &Value) -> Option
     if wanted.is_empty() {
         return None;
     }
-    // This request's own answers are not earlier ones.
     let own: BTreeSet<&str> = result["captured_event_ids"]
         .as_array()
         .into_iter()

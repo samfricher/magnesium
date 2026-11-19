@@ -1,8 +1,3 @@
-// Settings: a readable page in its own tab, with sections and real controls.
-// Every setting the window has is here, and nothing is shown as a file: the
-// learner's own choices are kept in the window's storage on this Mac; the
-// engine, the payment and a paper's time are kept by the core.
-
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useGlassState } from "../glass";
@@ -12,7 +7,6 @@ import type { About, Engine, EngineChoice, Payment, Permissions, Setup } from ".
 
 const ENGINE_NAMES: Record<Engine, string> = { plugin: "Claude Code", direct: "Magnesium" };
 
-/** Faces every Mac has, offered by name beside the window's own; any other installed face can be typed. */
 const MAC_FACES = [
   "Athelas",
   "Avenir Next",
@@ -37,7 +31,6 @@ const MAC_FACES = [
   "Times New Roman",
 ];
 
-/** Whether a face by this name is on this Mac: text set in it measures differently from the fallbacks. */
 function installed(name: string): boolean {
   const face = name.trim().replace(/["\\;{}]/g, "");
   if (face === "") return false;
@@ -52,7 +45,6 @@ function installed(name: string): boolean {
   });
 }
 
-/** A colour as the colour well takes it, "#2f3f86", from a named ink or any CSS colour. */
 function hexOf(value: string, dark: boolean, fallback: string): string {
   const named = INKS[value.toLowerCase()];
   const css = named ? named[dark ? 1 : 0] : value;
@@ -65,11 +57,6 @@ function hexOf(value: string, dark: boolean, fallback: string): string {
   return /^#[0-9a-f]{6}$/i.test(got) ? got : fallback;
 }
 
-/**
- * Two to five choices, one of them chosen: native radio buttons (forms
- * guide), drawn as the window's quiet segments. One Tab stop; the arrow keys
- * move along them and choose, as radios do.
- */
 function Choice<T extends string | number | boolean>(props: { name: string; options: [T, string][]; value: T; onPick: (value: T) => void; face?: (value: T) => string | undefined; disabled?: boolean }) {
   const group = useId();
   return (
@@ -88,13 +75,11 @@ function Choice<T extends string | number | boolean>(props: { name: string; opti
   );
 }
 
-/** The window's ground as words, for a reader that cannot see where the slider stands. */
 function glassWords(level: number): string {
   if (level === 0) return "Solid";
   return level < 0 ? `Frosted glass, ${-level} of 10` : `Liquid Glass, ${level} of 10`;
 }
 
-/** One setting: its visible name names the group of controls that set it. */
 function Setting(props: { name: string; id?: string; className?: string; children: ReactNode; action?: string }) {
   const made = useId();
   const id = props.id ?? made;
@@ -145,7 +130,6 @@ function FontField(props: { label: string; value: string; known: [string, string
   );
 }
 
-/** The colours a well offers, by what it colours and for which scheme: each readable on the ground it is for. */
 const PALETTES: Record<"ink" | "ground" | "text", [string[], string[]]> = {
   ink: [
     ["#2f3f86", "#2e5b4a", "#4e3c8c", "#3b3e44", "#1f4e8c", "#0f6b6b", "#7a3b2e", "#8a5a00", "#6b2d5c", "#1e2023"],
@@ -161,11 +145,6 @@ const PALETTES: Record<"ink" | "ground" | "text", [string[], string[]]> = {
   ],
 };
 
-/**
- * A colour chosen in the page itself, not in the Mac's colour panel: a well
- * that opens a grid of swatches (radio buttons: one Tab stop, the arrow keys
- * choose) and a field for any colour as #rrggbb. Esc closes the grid.
- */
 function ColourField(props: { label: string; value: string; dark: boolean; fallback: string; onPick: (value: string) => void; own?: boolean; kind: "ink" | "ground" | "text"; name: string }) {
   const [open, setOpen] = useState(false);
   const hex = hexOf(props.value, props.dark, props.fallback);
@@ -298,11 +277,9 @@ type Props = {
   setup: Setup | null;
   engine: EngineChoice | null;
   about: About | null;
-  /** A lesson runs: its engine stays until it ends. */
   lessonOpen: boolean;
   blockMinutes: number;
   section: string | null;
-  /** How many times a section was asked for: asked again, it comes into view again. */
   sectionAsked: number;
   onEngine: (engine: Engine) => void;
   onPayment: (payment: Payment) => void;
@@ -317,10 +294,8 @@ export function SettingsPage(props: Props) {
   const { prefs, change } = props;
   const page = useRef<HTMLDivElement>(null);
   const [minutes, setMinutes] = useState(String(props.blockMinutes));
-  // The field holds a time of the learner's own; one of the choices beside it is not said twice.
   const custom = (value: number) => ![25, 50, 90].includes(value);
   useEffect(() => setMinutes(custom(props.blockMinutes) ? String(props.blockMinutes) : ""), [props.blockMinutes]);
-  // A section named from outside (Help's "Keys and Commands", About) comes into view.
   useEffect(() => {
     if (!props.section) return;
     page.current?.querySelector(`#settings-${props.section}`)?.scrollIntoView({ block: "start" });
@@ -329,12 +304,10 @@ export function SettingsPage(props: Props) {
   const taken = (combo: string) => (KEY_ACTIONS.find(([action]) => prefs.keys[action] === combo)?.[0] ?? null);
   const setKey = (action: KeyAction, combo: string) => {
     const keys = { ...prefs.keys, [action]: combo };
-    // One key does one thing: the command that had it has none now.
     for (const [other] of KEY_ACTIONS) if (other !== action && keys[other] === combo && combo !== "none") keys[other] = "none";
     change({ keys });
   };
   const glass = useGlassState();
-  // Until the Mac has answered, the whole scale is shown: only an older Mac loses the Liquid Glass half.
   const liquid = glass?.liquid !== false;
   const account = props.setup?.account ?? null;
   const runtime = props.setup?.runtime ?? null;
@@ -373,9 +346,7 @@ export function SettingsPage(props: Props) {
             <span className="setting-value">{prefs.measure} characters</span>
           </Setting>
           <p className="sample" style={{ fontFamily: faceCss(prefs.face) }}>
-            {/* Through the lesson's own maths, so the sample shows what a lesson draws. */}
             <Line text={"The line meets the y-axis at $\\frac{1}{V_{max}}$."} />
-            {/* The tutor's words, then the learner's, on a line of their own as in a lesson. */}
             <span className="sample-you" style={{ fontFamily: prefs.voice === "reading" ? faceCss(prefs.face) : faceCss(prefs.voice, faceCss("system")) }}>
               <Line text={"$V_{max}$ = 4 µM/s"} />
             </span>
@@ -540,7 +511,6 @@ export function SettingsPage(props: Props) {
                     Sign in
                   </button>
                 )}
-                {/* Checking again is for a check that failed. */}
                 {(!account.signed_in || account.problem) && (
                   <button className="plain" onClick={props.onCheckAgain}>
                     Check again
@@ -573,7 +543,6 @@ export function SettingsPage(props: Props) {
             />
             <span className="setting-note">minutes, when a paper names none</span>
           </Setting>
-          {/* Which program runs lessons is said under About; here only while there is a choice to make. */}
           {runtime?.state === "kept" && runtime.bundled && (
             <Setting name="The magnesium program">
               <span className="setting-note">{runtime.installed ? `${runtime.installed.version.split("+")[0]}, kept over this app’s copy` : "Kept over this app’s copy"}</span>

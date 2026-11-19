@@ -1,16 +1,3 @@
-//! The macOS menu bar. Every command the window has is here as well as on
-//! screen, so nothing is reachable only through ⌘K. A click sends the page an
-//! `menu` event naming the command, which the page handles exactly as it
-//! handles the visible control.
-//!
-//! The page tells the shell what the menu should hold as it changes (the
-//! workspaces for Go, the open tabs for Window, the learner's own keys, what
-//! is disabled now). The bar is built once, and each change after that is
-//! made to the items already on it. Putting a whole new bar in place
-//! (`set_menu`) takes the old one off first, in a separate turn of the main
-//! thread, and macOS drew the bar with no menus in between: its titles
-//! blinked out on every tab switch.
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -20,22 +7,16 @@ use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-/// What the page says the menu should hold.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Spec {
-    /// The learner's key for each command, as "cmd+shift+h".
     #[serde(default)]
     keys: HashMap<String, String>,
-    /// The library's workspaces, for Go: the folder and its name.
     #[serde(default)]
     workspaces: Vec<Named>,
-    /// The open tabs, for Window: the tab's key and its name.
     #[serde(default)]
     tabs: Vec<Named>,
-    /// Commands that do nothing where the learner is now.
     #[serde(default)]
     disabled: Vec<String>,
-    /// A name for a command other than its own: "Hide Plan" when it is shown.
     #[serde(default)]
     titles: HashMap<String, String>,
 }
@@ -46,18 +27,13 @@ pub struct Named {
     title: String,
 }
 
-/// Where an item's key comes from.
 #[derive(Clone, Debug)]
 enum Key {
-    /// The learner's key for the item's command.
     Learner,
-    /// ⌘1 to ⌘9, by the tab's place in the bar.
     Tab(usize),
-    /// Its own, which never changes.
     Fixed(Option<String>),
 }
 
-/// What an item shows on the bar.
 #[derive(Clone, Debug, PartialEq)]
 struct Shown {
     text: String,
@@ -65,19 +41,16 @@ struct Shown {
     accelerator: Option<String>,
 }
 
-/// One of the window's own items: what it is for, and what it shows now.
 #[derive(Clone, Debug)]
 struct Entry {
     command: String,
     arg: Option<String>,
-    /// Its title when the page names none.
     title: String,
     key: Key,
     shown: Shown,
 }
 
 impl Entry {
-    /// What the item should show for `spec`.
     fn wanted(&self, id: &str, spec: &Spec) -> Shown {
         Shown {
             text: spec
@@ -102,9 +75,6 @@ impl Entry {
 pub struct MenuBar {
     spec: Mutex<Spec>,
     table: Mutex<HashMap<String, Entry>>,
-    /// One change at a time. A change waits on the main thread item by item,
-    /// so neither `spec` nor `table` is held while it does: a click on the
-    /// menu reads `table` on the main thread.
     applying: Mutex<()>,
     replaced: AtomicUsize,
 }
@@ -113,7 +83,6 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// The keys the window starts with, as the page's own defaults.
 const DEFAULT_KEYS: [(&str, &str); 26] = [
     ("home", "cmd+1"),
     ("commands", "cmd+k"),
@@ -143,13 +112,11 @@ const DEFAULT_KEYS: [(&str, &str); 26] = [
     ("zoom-out-document", "cmd+alt+-"),
 ];
 
-/// "cmd+shift+h" as the menu writes an accelerator, "Cmd+Shift+H".
 pub fn accelerator(combo: &str) -> Option<String> {
     let combo = combo.trim().to_ascii_lowercase();
     if combo.is_empty() || combo == "none" {
         return None;
     }
-    // A key that is itself "+" is written last, after a "+".
     let (mods, key) = match combo.strip_suffix("++") {
         Some(rest) => (rest, "+".to_owned()),
         None => {
@@ -209,11 +176,8 @@ impl MenuBar {
         accelerator(&combo)
     }
 
-    /// Bring the bar in step with the page's last word: build it the first
-    /// time, and after that change only the items that differ.
     pub fn apply<R: Runtime>(&self, app: &AppHandle<R>, spec: Spec) -> tauri::Result<()> {
         let _one = lock(&self.applying);
-        // Until the bar is this one, it is the one Tauri puts on a Mac app by default.
         let Some(menu) = app.menu().filter(|menu| menu.get(WINDOW).is_some()) else {
             return self.replace(app, spec);
         };
@@ -222,13 +186,10 @@ impl MenuBar {
         }
         match self.change(app, &menu, &spec) {
             Ok(()) => Ok(()),
-            // A change that stopped part way could leave the bar out of step with
-            // what is recorded of it: build it again instead.
             Err(_) => self.replace(app, spec),
         }
     }
 
-    /// Build the whole bar and put it in place of the one there.
     fn replace<R: Runtime>(&self, app: &AppHandle<R>, spec: Spec) -> tauri::Result<()> {
         let mut table = HashMap::new();
         let menu = build(app, &spec, &mut table)?;
@@ -239,7 +200,6 @@ impl MenuBar {
         Ok(())
     }
 
-    /// Change the items on the bar to what `spec` says, item by item.
     fn change<R: Runtime>(
         &self,
         app: &AppHandle<R>,
@@ -276,8 +236,6 @@ impl MenuBar {
             if wanted.accelerator != entry.shown.accelerator {
                 match &wanted.accelerator {
                     Some(key) => item.set_accelerator(Some(key))?,
-                    // muda cannot take a key off an item (set_accelerator(None)
-                    // leaves the old one): the item is made again without one.
                     None => {
                         let fresh =
                             MenuItem::with_id(app, id, &wanted.text, wanted.enabled, None::<&str>)?;
@@ -299,7 +257,6 @@ impl MenuBar {
         Ok(())
     }
 
-    /// How many times the whole bar was put in place.
     pub fn replaced(&self) -> usize {
         self.replaced.load(Ordering::Relaxed)
     }
@@ -308,7 +265,6 @@ impl MenuBar {
         lock(&self.spec).clone()
     }
 
-    /// A custom item was chosen: tell the page, as a click on its control would.
     pub fn chosen<R: Runtime>(&self, app: &AppHandle<R>, id: &str) -> bool {
         let Some(entry) = lock(&self.table).get(id).cloned() else {
             return false;
@@ -327,15 +283,10 @@ impl MenuBar {
     }
 }
 
-/// The Go and Window menus, found again by these when the bar is changed.
 const GO: &str = "menu-go";
 const WINDOW: &str = "menu-window";
-/// What Window holds before its tabs: Minimize, Zoom, a line, Show Previous
-/// Tab and Show Next Tab. The tabs follow a line of their own.
 const WINDOW_FIXED: usize = 5;
 
-/// ⌘1 to ⌘9 pick the first nine tabs, unless the learner gave that key to
-/// another command.
 fn tab_key(spec: &Spec, n: usize) -> Option<String> {
     let wanted = (n < 9).then(|| format!("Cmd+{}", n + 1))?;
     let taken = MenuBar::key(spec, "home").as_ref() == Some(&wanted)
@@ -345,7 +296,6 @@ fn tab_key(spec: &Spec, n: usize) -> Option<String> {
     (!taken).then_some(wanted)
 }
 
-/// A list the page names: the workspaces in Go, the open tabs in Window.
 #[derive(Clone, Copy)]
 enum List {
     Go,
@@ -367,7 +317,6 @@ impl List {
         }
     }
 
-    /// Where its first item stands in its menu.
     fn start(self) -> usize {
         match self {
             List::Go => 0,
@@ -376,7 +325,6 @@ impl List {
     }
 }
 
-/// Makes the window's own items, as `spec` says, and records each in `table`.
 struct Maker<'a, R: Runtime> {
     app: &'a AppHandle<R>,
     spec: &'a Spec,
@@ -415,12 +363,10 @@ impl<R: Runtime> Maker<'_, R> {
         Ok(item)
     }
 
-    /// An item for a command the page has, with the learner's key for it.
     fn command(&mut self, id: &str, title: &str) -> tauri::Result<MenuItem<R>> {
         self.item(id, id, None, title, Key::Learner)
     }
 
-    /// The `n`th item of a list.
     fn listed(&mut self, list: List, n: usize) -> tauri::Result<MenuItem<R>> {
         let spec = self.spec;
         let named = &list.named(spec)[n];
@@ -432,15 +378,10 @@ impl<R: Runtime> Maker<'_, R> {
     }
 }
 
-/// What Go shows with no workspaces.
 fn no_workspaces<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
     MenuItem::with_id(app, "go-none", "No spaces yet", false, None::<&str>)
 }
 
-/// Bring a list on the bar in step with `make.spec`, from the `had` items it
-/// holds. A place it had keeps its item, which takes the new name and folder
-/// or tab (the item's own text and key change with every other item's); a
-/// place added gets a new item, and a place gone loses its item.
 fn relist<R: Runtime>(
     make: &mut Maker<'_, R>,
     menu: &Submenu<R>,
@@ -456,8 +397,6 @@ fn relist<R: Runtime>(
             entry.title = each.title.clone();
         }
     }
-    // What stands before the list once it has items: Go's "No spaces yet"
-    // goes, Window's line before the tabs comes.
     if had == 0 && now > 0 {
         match list {
             List::Go => {
@@ -485,7 +424,6 @@ fn relist<R: Runtime>(
     Ok(())
 }
 
-/// The window's own items on the bar, by id, each with the menu it is in.
 type OnBar<R> = HashMap<String, (MenuItem<R>, Submenu<R>)>;
 
 fn items_on<R: Runtime>(menu: &Menu<R>) -> tauri::Result<OnBar<R>> {
@@ -659,7 +597,6 @@ fn build<R: Runtime>(
     Ok(menu)
 }
 
-/// The standard items' keys, by their names, for the harness's reading.
 fn standard_key(title: &str) -> Option<&'static str> {
     Some(match title {
         "Undo" => "Cmd+Z",
@@ -719,7 +656,6 @@ fn describe<R: Runtime>(bar: &MenuBar, kind: &MenuItemKind<R>) -> Value {
     }
 }
 
-/// The whole menu bar as data: each menu's title and its items.
 pub fn read<R: Runtime>(app: &AppHandle<R>) -> Value {
     let bar = app.state::<MenuBar>();
     let menus = app
@@ -732,7 +668,6 @@ pub fn read<R: Runtime>(app: &AppHandle<R>) -> Value {
     json!(menus)
 }
 
-/// Loose match of an item's title: case, a trailing "…" and curly quotes aside.
 fn same(title: &str, wanted: &str) -> bool {
     let plain = |text: &str| {
         text.trim()
@@ -744,8 +679,6 @@ fn same(title: &str, wanted: &str) -> bool {
     plain(title) == plain(wanted)
 }
 
-/// Choose the item at `path` (a menu's title, then the item's), exactly as a
-/// click on it would.
 pub fn click<R: Runtime>(app: &AppHandle<R>, path: &[String]) -> Result<String, String> {
     let [top, rest @ ..] = path else {
         return Err("name a menu and an item, as [\"File\", \"Attach…\"]".into());

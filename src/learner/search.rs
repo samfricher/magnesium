@@ -1,4 +1,3 @@
-//! Deterministic lexical retrieval over canonical current descriptions.
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,11 +7,11 @@ use unicode_normalization::UnicodeNormalization;
 #[serde(deny_unknown_fields)]
 pub struct Query {
     #[serde(default)]
-    /// Alternatives; every phrase is quoted literally and joined with OR.
+    #[schemars(description = "Alternatives; every phrase is quoted literally and joined with OR.")]
     #[schemars(length(max = 12))]
     pub any_of: Vec<String>,
     #[serde(default)]
-    /// Required literal phrases joined with AND; no raw FTS operators.
+    #[schemars(description = "Required literal phrases joined with AND; no raw FTS operators.")]
     #[schemars(length(max = 4))]
     pub all_of: Vec<String>,
 }
@@ -75,8 +74,6 @@ pub fn compile(query: &Query) -> Result<String, String> {
     {
         return Err("no_search_terms".into());
     }
-    // A punctuation-only restriction cannot match unicode61: skip the formulation,
-    // rather than silently broaden its meaning by removing that restriction.
     if all.iter().any(|p| !p.chars().any(char::is_alphanumeric)) {
         return Err("no_search_terms".into());
     }
@@ -128,8 +125,6 @@ fn indexed_labels(labels: impl IntoIterator<Item = String>) -> String {
         .join("\n")
 }
 
-/// Both selected-ID maintenance and rebuilding insert this same active-only
-/// projection, including label normalization, deduplication, order, and NULLs.
 fn insert_active_memories(conn: &Connection, memory_id: Option<&str>) -> rusqlite::Result<()> {
     let query = format!(
         "{ACTIVE_MEMORY_PROJECTION}{} ORDER BY memory_no",
@@ -168,10 +163,6 @@ fn insert_active_memories(conn: &Connection, memory_id: Option<&str>) -> rusqlit
     Ok(())
 }
 
-/// Called within the writer's existing index-maintenance savepoint. A retired
-/// memory has its old document removed and no replacement inserted. Missing
-/// canonical IDs fail maintenance so the existing dirty/rebuild path repairs
-/// corruption instead of scanning every valid update by the unindexed text ID.
 pub(crate) fn sync_memories(
     conn: &Connection,
     memory_ids: &BTreeSet<String>,
@@ -188,7 +179,6 @@ pub(crate) fn sync_memories(
     Ok(())
 }
 
-/// Called inside a writer savepoint or maintenance transaction. Never changes canonical state.
 pub fn rebuild_indexes(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(memory_id UNINDEXED,title,scope,topics,summary,state_text,review_note,retrieval_cues,tokenize='unicode61'); CREATE VIRTUAL TABLE IF NOT EXISTS observation_fts USING fts5(observation_id UNINDEXED,description,conditions_text,assistance_text,tokenize='unicode61'); DELETE FROM memory_fts; DELETE FROM observation_fts;")?;
     insert_active_memories(conn, None)?;
@@ -211,9 +201,6 @@ pub fn reindex(conn: &Connection) -> rusqlite::Result<()> {
     }
 }
 
-/// One handler covers every statement in the read snapshot, including initial
-/// reference/count queries. Its lifetime ends before transaction cleanup so a
-/// cancelled scan cannot leave a progress callback on a reused connection.
 pub(crate) struct ReadProgress<'a> {
     conn: &'a Connection,
     exhausted: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -259,8 +246,6 @@ pub(crate) fn search(
     search_in_snapshot(conn, supplied, original, literals, literal_intent)
 }
 
-/// Called by the read snapshot owner with its progress guard already installed.
-/// Do not replace or clear that handler: it also bounds later projections.
 pub(crate) fn search_in_snapshot(
     conn: &Connection,
     supplied: &[Intent],
@@ -357,10 +342,6 @@ pub(crate) fn search_in_snapshot(
                 if !seen.insert(compiled.clone()) {
                     continue;
                 }
-                // Each formulation matches one complete current record. Required
-                // terms may live in different fields, while FTS phrases remain
-                // within a field. A formulation supplies one rank-fusion vote,
-                // even when both descriptive text and retrieval cues match it.
                 let rows = if let Some(rows) = cache.get(&compiled) {
                     rows.clone()
                 } else {
@@ -382,8 +363,6 @@ pub(crate) fn search_in_snapshot(
                         ..Default::default()
                     });
                     c.score += 1.0 / (61 + rank) as f64;
-                    // This is record-level lexical eligibility, not evidence
-                    // that the vocabulary appeared in an actual learner answer.
                     c.channels.insert("lexical".into());
                 }
             }

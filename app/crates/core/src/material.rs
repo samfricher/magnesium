@@ -1,13 +1,3 @@
-//! Course material the learner adds from the window: slides, notes, a pasted
-//! page. The window copies it into the study folder and says, in plain
-//! lines, what it added and what the tutor's search cannot read.
-//!
-//! The window decides none of what search reads. It asks the runtime
-//! (`magnesium searchable`), which runs search's own rules, and words the
-//! answer. A file that looks like an answer key is added like any other and
-//! never named or opened here: the window's rule for keys is
-//! [`looks_like_a_key`].
-
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -17,49 +7,27 @@ use serde_json::Value;
 
 use crate::study::looks_like_a_key;
 
-/// Where added material goes, under the study root.
-///
-/// Under `Study/` because that is where the tutor already keeps everything
-/// of the course (its plans, papers and the learner's handed-in work), so
-/// the material sits with the rest and a learner can find it in Finder. Not
-/// in `.magnesium/`, which search never reads. Not in a folder search skips
-/// by name (`build`, `dist`, `node_modules`, and so on), and the name
-/// `materials` is not one of those. A learner's own ignore list can still
-/// leave a file out, and `magnesium searchable` says so.
 pub const MATERIALS: &str = "Study/materials";
 
-/// The most one file may weigh, and the most files one folder may bring.
 const MAX_BYTES: u64 = 200 * 1024 * 1024;
 const MAX_FILES: usize = 300;
-/// Pasted text is limited to what search reads of one text file.
 const MAX_PASTED_BYTES: usize = 8 * 1024 * 1024;
-/// How many things search cannot read are listed before "and N more".
 const LINES_BEFORE_MORE: usize = 4;
 
-/// One file the window saved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Saved {
-    /// From the study root.
     pub relative: String,
-    /// The name the learner knows it by.
     pub name: String,
-    /// Whether it looks like an answer key. It is saved, and never named.
     pub key: bool,
 }
 
-/// What an add did, as the page shows it.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct Added {
-    /// Paths from the study root of the files saved, answer keys left out.
     pub saved: Vec<String>,
-    /// How many saved files look like answer keys.
     pub keys: usize,
-    /// What the window says, one plain line each.
     pub lines: Vec<String>,
 }
 
-/// A name that is safe to write: no path separators, no control characters,
-/// not hidden, not endless.
 fn clean_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -78,7 +46,6 @@ fn clean_name(name: &str) -> String {
     if cleaned.chars().count() <= 120 {
         return cleaned;
     }
-    // Long names keep their ending, so the kind of file still shows.
     let (stem, ext) = split_name(&cleaned);
     let keep = 120usize.saturating_sub(ext.chars().count() + 1).max(1);
     let stem: String = stem.chars().take(keep).collect();
@@ -96,7 +63,6 @@ fn split_name(name: &str) -> (&str, &str) {
     }
 }
 
-/// A name in `dir` that is free: `name.ext`, then `name 2.ext`, and so on.
 fn free_name(dir: &Path, name: &str) -> String {
     if !dir.join(name).exists() && dir.join(name).symlink_metadata().is_err() {
         return name.to_owned();
@@ -114,8 +80,6 @@ fn free_name(dir: &Path, name: &str) -> String {
         .unwrap_or_else(|| name.to_owned())
 }
 
-/// Make `relative` under `root`, refusing to go through a link. A link in
-/// the way could lead out of the study folder.
 fn make_dir(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut path = root.to_path_buf();
     for part in relative.components() {
@@ -151,7 +115,6 @@ fn relative_of(root: &Path, file: &Path) -> String {
         .into_owned()
 }
 
-/// Copy one file into `dir`. A file named like another keeps both.
 fn copy_file(root: &Path, dir: &Path, source: &Path, name: &str) -> Result<Saved, String> {
     let meta = fs::metadata(source).map_err(|_| format!("\"{name}\" could not be read."))?;
     if !meta.is_file() {
@@ -172,7 +135,6 @@ fn copy_file(root: &Path, dir: &Path, source: &Path, name: &str) -> Result<Saved
     })
 }
 
-/// The files under a dropped folder, hidden files and links left out.
 fn files_under(dir: &Path, found: &mut Vec<(PathBuf, PathBuf)>, base: &Path, cut: &mut bool) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -203,8 +165,6 @@ fn files_under(dir: &Path, found: &mut Vec<(PathBuf, PathBuf)>, base: &Path, cut
     }
 }
 
-/// Copy what the learner dropped or picked into the study folder. Returns
-/// what was saved, and a line for each thing that could not be.
 pub fn copy_in(root: &Path, sources: &[PathBuf]) -> (Vec<Saved>, Vec<String>) {
     let mut saved = Vec::new();
     let mut problems = Vec::new();
@@ -261,7 +221,6 @@ pub fn copy_in(root: &Path, sources: &[PathBuf]) -> (Vec<Saved>, Vec<String>) {
     (saved, problems)
 }
 
-/// Save pasted text as a text file.
 pub fn save_text(root: &Path, text: &str) -> Result<Saved, String> {
     if text.trim().is_empty() {
         return Err("There is no text to save.".into());
@@ -285,7 +244,6 @@ fn extension_of(name: &str) -> String {
     split_name(name).1.to_ascii_lowercase()
 }
 
-/// One plain line about a file search will not read, or read only in part.
 fn search_line(saved: &Saved, verdict: &Value) -> Option<String> {
     let name = &saved.name;
     let reason = verdict["reason"].as_str();
@@ -326,23 +284,13 @@ fn search_line(saved: &Saved, verdict: &Value) -> Option<String> {
     Some(line)
 }
 
-/// How many names a listing carries. The count of files is always whole.
-/// The workspace page opens the whole list in place, so this is a guard
-/// against a huge folder, not a page's length.
 const NAMES_LISTED: usize = 500;
-/// The most entries a listing looks at, so a huge folder cannot hold it up.
 const MAX_LOOKED_AT: usize = 5000;
 
-/// What the course's material folder holds, as the course page says it.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct Listed {
-    /// The names of the most recent files, newest first, answer keys left
-    /// out. A file in a folder is named from the material folder, as
-    /// "Week 3/slides.pdf".
     pub names: Vec<String>,
-    /// How many files there are that are not answer keys.
     pub files: usize,
-    /// How many files look like answer keys. They are counted and never named.
     pub keys: usize,
 }
 
@@ -385,11 +333,6 @@ fn walk(
     }
 }
 
-/// The files in the course's material folder (`Study/materials`, where the
-/// window puts what it adds), the most recent first. The window's one rule for
-/// answer keys decides which are counted and not named: [`looks_like_a_key`],
-/// asked of the path from the study root, as it is when a source is opened.
-/// Hidden files and links are not listed, as when a folder is dropped.
 pub fn list(root: &Path) -> Listed {
     let below = root.join(MATERIALS);
     let mut found = Vec::new();
@@ -409,8 +352,6 @@ pub fn list(root: &Path) -> Listed {
     listed
 }
 
-/// Word what was done. `search` is the runtime's answer for each saved file
-/// that is not an answer key, in order, or `None` when it could not say.
 pub fn report(
     saved: &[Saved],
     problems: Vec<String>,
@@ -555,7 +496,6 @@ mod tests {
         put(root.path(), "Midterm answer key.pdf", 1);
         put(root.path(), "week1-intro.pdf", 900);
         put(root.path(), "Week 4/slides.pdf", 60);
-        // The key rule asks the folder names too, as when a source is opened.
         put(root.path(), "Solutions/PS1.pdf", 2);
         let listed = list(root.path());
         assert_eq!(
@@ -674,7 +614,6 @@ mod tests {
     fn a_name_cannot_climb_out_of_the_material_folder() {
         let root = root();
         let outside = tempfile::tempdir().unwrap();
-        // A file name cannot hold a slash on disk, but the cleaner must cope with one.
         assert_eq!(clean_name("../../etc/passwd"), "-..-etc-passwd");
         assert_eq!(clean_name(".hidden"), "hidden");
         assert_eq!(clean_name(""), "file");

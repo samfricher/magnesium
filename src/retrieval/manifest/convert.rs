@@ -1,84 +1,27 @@
-//! Optional local document conversion (#208).
-//!
-//! The native fast path (text extraction plus `pdf-extract` text-layer
-//! work) stays the default. Scanned PDFs, complex layout, and
-//! DOCX/PPTX/EPUB course material may need a richer local converter; a
-//! mandatory Python/model stack would undermine the native low-setup
-//! experience, so conversion lives behind this small versioned boundary
-//! and an explicit opt-in, in a separately packaged worker that does not
-//! ship with the core install.
-//!
-//! Chosen component: Docling's **local** conversion pipeline as an
-//! optional worker (not its hosted/managed service, agent framework, or
-//! MCP server). The worker implementation lives in `workers/docling/`
-//! with pinned requirements, asset pins, the fixed 12-document sample,
-//! and the fidelity gate harness. This module defines the native side
-//! of that contract:
-//!
-//! - [`DocumentExtraction`]: versioned page/section blocks with original
-//!   anchors, extraction method/version, warnings, and coverage.
-//! - Worker protocol `MAGNESIUM_DOCS_V1`: length-framed JSON over stdio,
-//!   mirroring the native PDF worker. The native runtime opens the
-//!   authorized source itself and hands the worker the path of a private
-//!   snapshot copy it created; the worker accepts no model-supplied paths or URL
-//!   fetches. Bounded output, deadline, and kill-on-timeout/cancel reuse
-//!   the PDF isolation pattern.
-//! - Explicit opt-in: `MAGNESIUM_DOCS_WORKER` names the worker executable and
-//!   `MAGNESIUM_DOCS_WORKER_OPT_IN=1` opts in. A missing or denied worker
-//!   leaves the core functional with the native result.
-//!
-//! Honest limits (see also the 12-document gate in the issue): the
-//! packaged Docling worker, its measured resource budgets, and the fixed
-//! sample comparison are NOT_RUN in this batch — no worker binary is
-//! bundled here. Opted-in conversion records the coverage the worker
-//! reports (`complete`, `partial` or `text_unavailable`); a
-//! `text_unavailable` or empty result keeps the native result. Extracted text and confidence values
-//! are derived data, never facts about a learner and never proof of
-//! mathematical correctness; derived text cannot authorize a
-//! learner-state mutation (this boundary performs no store writes).
-
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Version of the [`DocumentExtraction`] representation.
 pub(crate) const DOCUMENT_EXTRACTION_VERSION: u32 = 1;
-/// Worker stdio protocol marker (`MAGNESIUM_DOCS_V1 <len>\n<json>`).
 pub(crate) const WORKER_PROTOCOL_MARKER: &str = "MAGNESIUM_DOCS_V1 ";
-/// Names the worker executable (explicit opt-in; no user-managed pip).
 pub(crate) const WORKER_ENV: &str = "MAGNESIUM_DOCS_WORKER";
-/// Must be `1` for the runtime to invoke the worker at all.
 pub(crate) const WORKER_OPT_IN_ENV: &str = "MAGNESIUM_DOCS_WORKER_OPT_IN";
-/// Default on-demand per-range deadline before the worker is killed.
-/// Tuned by measurement before choosing production limits; ranges must
-/// never freeze the conversation.
 pub(crate) const WORKER_DEADLINE: Duration = Duration::from_secs(30);
-/// Maximum framed worker response in bytes.
 pub(crate) const MAX_WORKER_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
-/// Maximum converted text in bytes per invocation.
 pub(crate) const MAX_WORKER_TEXT_BYTES: usize = 2 * 1024 * 1024;
-/// Maximum blocks per invocation.
 pub(crate) const MAX_WORKER_BLOCKS: usize = 512;
-/// Source kinds the worker may be asked about. Anything else stays on
-/// the native path; the worker never widens the supported set by itself.
 pub(crate) const WORKER_SOURCE_KINDS: &[&str] = &["pdf", "docx", "pptx", "epub"];
 
-/// One converted block linked to its original page/slide/section.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ExtractionBlock {
-    /// `page` (physical file index, 1-based) or `section`.
     pub(crate) anchor_kind: String,
     pub(crate) anchor_start: u32,
     pub(crate) anchor_end: u32,
     pub(crate) text: String,
-    /// Uncertain reading order, formula, or table relationship reported for
-    /// this block. Validated but not yet stored: indexing keeps only
-    /// `anchor_start` and `text` of each block.
     pub(crate) warning: Option<String>,
 }
 
-/// Coverage of one conversion invocation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ExtractionCoverage {
     Complete,
@@ -86,9 +29,6 @@ pub(crate) enum ExtractionCoverage {
     TextUnavailable { reason: String },
 }
 
-/// Converter provenance recorded beside a worker-assisted index
-/// generation, so derived text is never misattributed to the native
-/// worker. `None` (native fast path) stores NULLs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ConverterProvenance {
     pub(crate) method: String,
@@ -99,9 +39,6 @@ pub(crate) struct ConverterProvenance {
 }
 
 impl DocumentExtraction {
-    /// Provenance for the derived-index record. Missing ranges and
-    /// warnings survive exactly as reported; truncation already forced
-    /// `partial` coverage at the worker.
     pub(crate) fn provenance(&self) -> ConverterProvenance {
         let (coverage, missing) = match &self.coverage {
             ExtractionCoverage::Complete => ("complete".to_owned(), Vec::new()),
@@ -120,9 +57,6 @@ impl DocumentExtraction {
     }
 }
 
-/// Versioned conversion result. `method`/`method_version` name the exact
-/// converter and asset set so future index generations can cache by
-/// source hash + converter/asset versions + range.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DocumentExtraction {
     pub(crate) version: u32,
@@ -135,15 +69,10 @@ pub(crate) struct DocumentExtraction {
 
 #[derive(Debug)]
 pub(crate) enum WorkerError {
-    /// No worker configured, not opted in, or the executable is missing:
-    /// the caller keeps the native result. Never a failure.
     Unavailable(String),
     Timeout,
     Cancelled,
-    /// The worker ran but its output failed validation: the caller keeps
-    /// the last valid index generation. Never silent cloud fallback.
     InvalidOutput(String),
-    /// The worker exited nonzero or reported a bounded failure.
     Failed(String),
 }
 
@@ -163,10 +92,6 @@ impl std::fmt::Display for WorkerError {
     }
 }
 
-/// Explicit opt-in plus a configured executable. Both are required; the
-/// core install never invokes a worker implicitly. Read from the
-/// environment once per extraction decision; tests pass configs
-/// explicitly so no test mutates process-global state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkerConfig {
     pub(crate) executable: PathBuf,
@@ -183,8 +108,6 @@ pub(crate) fn worker_config_from_env() -> Option<WorkerConfig> {
     Some(WorkerConfig { executable })
 }
 
-/// Validate one worker-produced extraction against its claimed source.
-/// Pure: no filesystem, store, or network access.
 pub(crate) fn validate_extraction(
     value: &serde_json::Value,
     source_sha256: &str,
@@ -334,12 +257,6 @@ pub(crate) fn validate_extraction(
     })
 }
 
-/// Invoke the opted-in worker for one selected source range. The caller
-/// passes a read-only snapshot the native side created from the
-/// authorized source; the worker never receives model paths or URLs.
-/// Corrupt assets, malformed input, output overflow, time/memory limits,
-/// cancellation, and crashes surface as errors so the caller preserves
-/// the originals and the last valid index generation.
 pub(crate) fn convert_with_worker(
     config: &WorkerConfig,
     snapshot_path: &Path,
@@ -374,9 +291,6 @@ pub(crate) fn convert_with_worker(
     });
     let request_bytes =
         serde_json::to_vec(&request).map_err(|error| WorkerError::Failed(error.to_string()))?;
-    // A pre-cancelled request must never become a pipe-write failure or
-    // start a worker merely to stop it. Retain typed cancellation before
-    // process creation, as well as the running-process checks below.
     if cancellation.is_some_and(|cancellation| cancellation.is_cancelled()) {
         return Err(WorkerError::Cancelled);
     }
@@ -394,10 +308,6 @@ pub(crate) fn convert_with_worker(
         return Err(WorkerError::Failed("send conversion request".to_owned()));
     }
     drop(stdin);
-    // Drain framed stdout on a reader thread while the parent polls:
-    // a valid response larger than pipe capacity would otherwise fill
-    // the pipe, block the worker's write, and deadlock until the
-    // deadline kills it. The bound still applies at join time.
     let stdout = child.stdout.take();
     let reader = std::thread::spawn(move || {
         let mut output = Vec::new();
@@ -419,38 +329,32 @@ pub(crate) fn convert_with_worker(
             return Err(WorkerError::Cancelled);
         }
         match child.try_wait() {
-            Ok(Some(status)) => {
-                // The direct worker exited, but a helper holding an
-                // inherited stdout descriptor keeps the reader open: drain
-                // only within the same deadline/cancellation boundary,
-                // never in an unbounded join.
-                match drain_reader(reader, started, cancellation) {
-                    Ok(Ok(output)) => {
-                        if !status.success() {
-                            return Err(WorkerError::Failed(format!(
-                                "conversion worker exited with {status}"
-                            )));
-                        }
-                        if output.len() > MAX_WORKER_MESSAGE_BYTES {
-                            return Err(WorkerError::InvalidOutput(
-                                "conversion worker output exceeds the bound".to_owned(),
-                            ));
-                        }
-                        return parse_worker_output(&output, source_sha256);
+            Ok(Some(status)) => match drain_reader(reader, started, cancellation) {
+                Ok(Ok(output)) => {
+                    if !status.success() {
+                        return Err(WorkerError::Failed(format!(
+                            "conversion worker exited with {status}"
+                        )));
                     }
-                    Ok(Err(error)) => return Err(WorkerError::InvalidOutput(error)),
-                    Err(DrainTimeout::Expired) => {
-                        kill_worker_tree(&mut child);
-                        let _ = child.wait();
-                        return Err(WorkerError::Timeout);
+                    if output.len() > MAX_WORKER_MESSAGE_BYTES {
+                        return Err(WorkerError::InvalidOutput(
+                            "conversion worker output exceeds the bound".to_owned(),
+                        ));
                     }
-                    Err(DrainTimeout::Cancelled) => {
-                        kill_worker_tree(&mut child);
-                        let _ = child.wait();
-                        return Err(WorkerError::Cancelled);
-                    }
+                    return parse_worker_output(&output, source_sha256);
                 }
-            }
+                Ok(Err(error)) => return Err(WorkerError::InvalidOutput(error)),
+                Err(DrainTimeout::Expired) => {
+                    kill_worker_tree(&mut child);
+                    let _ = child.wait();
+                    return Err(WorkerError::Timeout);
+                }
+                Err(DrainTimeout::Cancelled) => {
+                    kill_worker_tree(&mut child);
+                    let _ = child.wait();
+                    return Err(WorkerError::Cancelled);
+                }
+            },
             Ok(None) => {
                 if started.elapsed() > WORKER_DEADLINE {
                     kill_worker_tree(&mut child);
@@ -472,10 +376,6 @@ pub(crate) fn convert_with_worker(
     }
 }
 
-/// Spawn the worker as a process-group leader (Unix) so deadline and
-/// cancellation cleanup can terminate helper processes holding inherited
-/// stdio descriptors, not just the direct child. Elsewhere the direct
-/// child alone is killed.
 fn spawn_worker(executable: &Path) -> std::io::Result<std::process::Child> {
     #[cfg(unix)]
     {
@@ -498,25 +398,15 @@ fn spawn_worker(executable: &Path) -> std::io::Result<std::process::Child> {
     }
 }
 
-/// Terminate the worker and any helper processes it started. Process
-/// groups exist only on Unix; elsewhere only the direct child is
-/// killed and descriptor-holding helpers are bounded by the reader
-/// deadline below instead.
 fn kill_worker_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
-        // Group id equals the worker pid (see `spawn_worker`); ESRCH
-        // when the tree is already gone is harmless.
         let pid = nix::unistd::Pid::from_raw(child.id() as i32);
         let _ = nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL);
     }
     let _ = child.kill();
 }
 
-/// Drain the reader thread within the same absolute deadline and
-/// cancellation boundary that governs the worker. Never blocks
-/// indefinitely: a helper holding stdout past the deadline (or across
-/// cancellation) ends the wait with the matching outcome instead.
 fn drain_reader(
     reader: std::thread::JoinHandle<Result<Vec<u8>, String>>,
     started: Instant,
@@ -579,8 +469,6 @@ pub(crate) fn worker_status() -> serde_json::Value {
         "opted_in": std::env::var_os(WORKER_OPT_IN_ENV).is_some_and(|value| value == "1"),
         "available": configured,
         "source_kinds": WORKER_SOURCE_KINDS,
-        // Fixed-sample gate and packaged worker are NOT_RUN in this batch:
-        // no worker binary is bundled, so no format counts as converted.
         "fixed_sample_gate": "not_run",
         "deadline_secs": WORKER_DEADLINE.as_secs(),
         "max_message_bytes": MAX_WORKER_MESSAGE_BYTES,

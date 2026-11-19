@@ -1,4 +1,3 @@
-//! One owner for whole-item admission, continuation and exact packet bytes.
 use super::{
     records::*,
     requests::{NextCall, ReadRef, Request},
@@ -405,9 +404,6 @@ impl Builder {
         coverage: impl Fn() -> PageCoverage,
     ) -> Result<(), String> {
         let total = rows.len();
-        // A known final page is admitted atomically with its actual null cursor.
-        // Intermediate cursor overhead must not reject an exactly fitting final
-        // packet containing all remaining whole items.
         if total <= limit {
             let mut complete = self.packet.clone();
             for (index, row) in rows.iter().cloned().enumerate() {
@@ -422,8 +418,6 @@ impl Builder {
         for (index, row) in rows.into_iter().take(limit).enumerate() {
             match self.try_push(row,total>index+1,scope,coverage()) {Admission::Added=>emitted+=1,Admission::FullBeforeItem if emitted==0=>return Err("budget_too_small: next whole item and continuation do not fit; increase max_bytes".into()),Admission::FullBeforeItem=>break}
         }
-        // The prior admission reserved its continuation whenever any row remained,
-        // including a later row that fails admission. No rejected key is committed.
         self.check()
     }
     pub fn preview_choices(

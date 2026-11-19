@@ -1,5 +1,3 @@
-//! A sitting opens with what is due: quick checks and paper redos, which the
-//! runtime schedules from recorded attempts.
 use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -62,8 +60,6 @@ fn attempt(
     )
 }
 
-/// A context call from a caller that asks for the quick checks as data, as
-/// the study window's direct engine does.
 fn tool_with_checks(e: &TestEnvironment, request: Value) -> Value {
     use std::io::Write;
     let mut child = e
@@ -103,9 +99,6 @@ fn store(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
 }
 
-/// What a later day looks like to the runtime: every recorded answer and
-/// change moves one local day back, so a check made today is due, and the
-/// last learner message was more than three hours ago.
 fn next_day(e: &TestEnvironment) {
     clock::days_pass(&e.workspace, 1);
     sittings(e)
@@ -116,7 +109,6 @@ fn next_day(e: &TestEnvironment) {
         .unwrap();
 }
 
-/// The quick checks in the learner store.
 fn checks(e: &TestEnvironment) -> i64 {
     store(e)
         .query_row(
@@ -131,8 +123,6 @@ fn chrono_today() -> String {
     chrono::Local::now().date_naive().to_string()
 }
 
-/// A plan with one lost mark in a gap log from the template before #13,
-/// which has a Cold-redo date column and no Next redo.
 fn old_paper_plan(e: &TestEnvironment) {
     let dir = e.workspace.join("Study/midterm-1");
     std::fs::create_dir_all(&dir).unwrap();
@@ -154,7 +144,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     v2::init(&e);
     old_paper_plan(&e);
 
-    // Day 0: a lesson, and a wrong first try with a label.
     claude_prompt(&e, "p-1", "teach me the quadratic formula");
     v2::start(&e, "claude", "conv");
     let notice = claude_prompt(&e, "p-2", "b is 7");
@@ -174,7 +163,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         "a miss is due the next day, not today: {missed}"
     );
 
-    // A later day: the first learner message begins a sitting.
     next_day(&e);
     let notice = claude_prompt(&e, "p-3", "hi, let's carry on");
     assert!(
@@ -183,7 +171,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     );
     assert!(notice.len() <= 512, "{} bytes: {notice}", notice.len());
 
-    // The first tool result carries the check's text and names the redo, once.
     let status = v2::tool(
         &e,
         "claude",
@@ -204,7 +191,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     ] {
         assert!(opener.contains(text), "{text}\n{opener}");
     }
-    // A tutor's result is as it was: the opener's text, and nothing as data.
     assert!(status.get("sitting_checks").is_none(), "{status}");
     assert!(status.get("sitting_redos").is_none(), "{status}");
     let again = v2::tool(
@@ -217,8 +203,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
     assert!(again.get("sitting_opener").is_none(), "{again}");
     assert!(again.get("sitting_checks").is_none(), "{again}");
 
-    // The older gap log was brought in, so its row could fall due, and the
-    // runtime wrote its table.
     let gap_log = std::fs::read_to_string(e.workspace.join("Study/midterm-1/gap-log.md")).unwrap();
     assert!(
         gap_log.contains("| Repair done | Passes | Next redo | Status |"),
@@ -236,8 +220,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         .count();
     assert_eq!(backups, 1);
 
-    // The tutor poses it; the learner declines. Both are recorded, and the
-    // decline cites the learner's own message.
     claude_stop(
         &e,
         "p-3",
@@ -270,7 +252,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         .unwrap();
     assert_eq!(role, "learner_response");
 
-    // The lesson goes on, and a decline is free: the check stays due.
     let notice = claude_prompt(&e, "p-5", "what's next?");
     assert!(notice.contains("learning true"), "{notice}");
     let load = v2::tool(
@@ -290,7 +271,6 @@ fn a_sitting_opens_with_its_quick_check_and_redo_and_a_decline_lets_the_lesson_g
         "{declined}"
     );
 
-    // One line per sitting in the local log.
     let log = std::fs::read_to_string(e.workspace.join(".magnesium/sittings.log")).unwrap();
     let last: Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
     assert_eq!(log.lines().count(), 2, "{log}");
@@ -311,8 +291,6 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
     let notice = claude_prompt(&e, "p-2", "b is 7");
     attempt(&e, "miss", &current_event(&notice), "wrong", MISS);
     next_day(&e);
-    // A new sitting begins with the learner's next message. The Stop hook of
-    // that turn carries no reply text, so nothing says the check was posed.
     claude_prompt(&e, "p-3", "hello again");
     let no_reply = json!({"session_id":"conv","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"p-3","stop_hook_active":false});
     let output = run_hook_with_host_flag(&e, &e.workspace, "stop", no_reply, "claude");
@@ -322,8 +300,6 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
         .query_row("SELECT count(*) FROM sittings", [], |r| r.get(0))
         .unwrap();
     assert_eq!(sittings_count, 2);
-    // The first tool result of the sitting carries its opener, once. A
-    // caller that runs the lesson itself asks for the checks as data too.
     let load = tool_with_checks(
         &e,
         json!({"action":"instructions","host":"claude","stage":"teach_and_practice"}),
@@ -338,7 +314,6 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
     assert_eq!(checks[0]["label"], LABEL);
     assert_eq!(checks[0]["misses"], json!([MISS]));
     assert_eq!(load["sitting_redos"], json!([]), "{load}");
-    // The learner answers anyway; a right unaided answer is recorded and passes it.
     let notice = claude_prompt(&e, "p-4", "x is 2 or 5");
     let passed = step(
         &e,
@@ -364,7 +339,6 @@ fn a_right_unaided_answer_to_a_due_check_passes_it_when_the_stop_hook_carries_no
 fn a_caller_that_runs_the_lesson_reads_the_rows_waiting_for_a_repair_in_its_status() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    // Row 1 is repaired and due; row 2 has no repair and waits for one.
     let dir = e.workspace.join("Study/midterm-1");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
@@ -387,7 +361,6 @@ fn a_caller_that_runs_the_lesson_reads_the_rows_waiting_for_a_repair_in_its_stat
             "paper_question": "5"}]),
         "{status}"
     );
-    // A tutor's status is as it was.
     let tutor = v2::tool(
         &e,
         "claude",
@@ -396,7 +369,6 @@ fn a_caller_that_runs_the_lesson_reads_the_rows_waiting_for_a_repair_in_its_stat
         json!({"schema":"learner-model/v2","action":"status"}),
     );
     assert!(tutor.get("repairs_waiting").is_none(), "{tutor}");
-    // Repaired, the row waits no more: its first redo falls due the next day.
     let repaired = step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"repair",
@@ -413,13 +385,10 @@ fn a_caller_that_runs_the_lesson_gets_the_due_paper_redo_as_data_and_its_answer_
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     old_paper_plan(&e);
-    // The first sitting's opener goes to the lesson's start, which brings
-    // the older gap log in. A later sitting opens with the row still due.
     claude_prompt(&e, "p-0", "teach me enzyme kinetics");
     v2::start(&e, "claude", "conv");
     next_day(&e);
     claude_prompt(&e, "p-1", "I'm back");
-    // The first tool result of the sitting, for a caller that asks for data.
     let status = tool_with_checks(&e, json!({"schema":"learner-model/v2","action":"status"}));
     assert_eq!(status["sitting_checks"], json!([]), "{status}");
     assert_eq!(
@@ -429,8 +398,6 @@ fn a_caller_that_runs_the_lesson_gets_the_due_paper_redo_as_data_and_its_answer_
             "question": null, "key": null}]),
         "{status}"
     );
-    // A cold, unaided, right answer that names the row passes it, and its
-    // next question is kept for the next redo.
     let notice = claude_prompt(&e, "p-2", "Km is 2 mM");
     let passed = step(
         &e,
@@ -536,7 +503,6 @@ fn one_command_turns_the_opener_off_or_adds_a_block_on_new_material() {
     let refused = load("teach_and_practice");
     assert_eq!(refused["error"]["code"], "due_checks_first", "{refused}");
     assert!(refused["sitting_opener"].as_str().unwrap().contains(LABEL));
-    // The opener came with the refusal, and review stays open.
     assert_eq!(load("review_and_transfer")["status"], "served");
     let refused = load("orient_and_probe");
     assert_eq!(refused["error"]["code"], "due_checks_first");

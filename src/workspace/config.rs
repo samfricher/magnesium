@@ -13,9 +13,6 @@ const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 const CORE_RULES_KEY: &str = "core_rules";
 const OPENER_KEY: &str = "opener";
 
-/// How a sitting opens with what is due. `On` gives the tutor the facts;
-/// `Block` also refuses new material until each quick check is posed or
-/// declined; `Off` gives neither.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OpenerMode {
     On,
@@ -106,8 +103,6 @@ impl WorkspaceConfig {
         &self.workspace_id
     }
 
-    /// Whether the runtime restates the core teaching rules after a
-    /// compaction. Absent or not a boolean means on.
     pub(crate) fn core_rules(&self) -> bool {
         self.document
             .get(CORE_RULES_KEY)
@@ -123,7 +118,6 @@ impl WorkspaceConfig {
         }
     }
 
-    /// Absent or not one of the three words means on.
     pub(crate) fn opener(&self) -> OpenerMode {
         self.document
             .get(OPENER_KEY)

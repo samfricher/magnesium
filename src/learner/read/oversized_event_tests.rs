@@ -78,8 +78,6 @@ impl Fixture {
     }
 }
 
-/// The emitted call must consume refs or advance the first event range. A
-/// remaining range retains its original final endpoint and every later ref.
 fn assert_progress(before: &[Value], packet: &Value) {
     let mut remaining = before.to_vec();
     for record in packet["records"].as_array().unwrap() {
@@ -446,8 +444,6 @@ fn metadata_only_budget_errors_do_not_repeat_an_ineffective_maximum_call() {
     assert!(error.starts_with("budget_too_small"));
     assert!(error.contains("increase max_bytes"));
     assert!(!error.contains("next_call="));
-    // Old/corrupt stores can contain metadata beyond today's capture envelope.
-    // Never promise that repeating an identical maximum-budget read will work.
     fixture
         .store
         .conn

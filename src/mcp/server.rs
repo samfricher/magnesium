@@ -17,16 +17,10 @@ use super::{check_routing, compatibility_error, routing_error, tool_error, tool_
 use crate::adapter::{self, InvocationIdentity};
 use crate::request::{OperationCancellation, enter_request_cancellation};
 
-/// Room for a 1 MiB semantic request and its JSON-RPC wrapper, so the adapter
-/// can answer one that is too large; the same bound as `adapter call` input.
 const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const _: () = assert!(MAX_FRAME_BYTES > crate::learner::limits::REQUEST_BYTES);
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 
-/// Ordinary source/read work and validated controls have separate bounded
-/// capacity. Eight ordinary jobs cannot starve a stop/off request; the two
-/// control workers still obey the existing host-scoped admission and SQLite
-/// locking. No filesystem or database work runs on the frame executor.
 const BLOCKING_WORKER_PERMITS: usize = 8;
 const CONTROL_WORKER_PERMITS: usize = 2;
 
@@ -44,12 +38,6 @@ pub(crate) fn blocking_worker_available_permits() -> usize {
     blocking_worker_semaphore().available_permits()
 }
 
-/// Bridge an MCP request cancellation signal into the blocking worker's
-/// cancellation token. The returned flag is observed by
-/// [`OperationCancellation`] checks on the worker thread; `cancelled` is the
-/// request's `CancellationToken::cancelled()` future (or a test future). The
-/// returned watcher task must be aborted when the request completes, because
-/// normal completion never cancels the request token.
 fn bridge_cancellation<F>(cancelled: F) -> (Arc<AtomicBool>, tokio::task::JoinHandle<()>)
 where
     F: std::future::Future<Output = ()> + Send + 'static,
@@ -63,10 +51,6 @@ where
     (flag, watcher)
 }
 
-/// Signals running work and releases the watcher when the handler future
-/// completes or is dropped. Normal MCP completion does not cancel the request
-/// token, so the watcher must be aborted here instead of parking until the
-/// process exits.
 struct CancelOnDrop {
     flag: Arc<AtomicBool>,
     watcher: tokio::task::JoinHandle<()>,
@@ -112,9 +96,6 @@ where
     };
     match tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        // Stop/off controls that reach a worker finish their safety transition even if
-        // their caller disappears. Ordinary jobs keep the same token through
-        // routing, source preparation, learner work and optional tracing.
         let effective = if work.finish_safety_control {
             OperationCancellation::none()
         } else {
@@ -170,8 +151,6 @@ where
         if let Some(hooks) = &work.hooks {
             (hooks.checkpoint)(&work.name, "dispatch");
         }
-        // The caller's identity comes from the process environment; tests
-        // name theirs directly.
         let host = {
             #[cfg(test)]
             {
@@ -260,8 +239,6 @@ impl MagnesiumServer {
     fn bound(identity: InvocationIdentity) -> Self {
         Self {
             identity,
-            // Pin the initial canonical binding before the frame runtime starts.
-            // Each worker revalidates this fixed root before domain dispatch.
             bound_root: pin_binding(crate::adapter::host::explicit_root()),
             #[cfg(test)]
             hooks: None,
@@ -287,8 +264,6 @@ impl ServerHandler for MagnesiumServer {
         if let Err(error) = adapter::validate(&self.identity) {
             return Ok(compatibility_error(&self.identity, error));
         }
-        // Only bounded in-memory transport validation belongs here. The same
-        // typed control validator owns both reservation and domain admission.
         let control = request.name == "learning_step"
             && request.arguments.as_ref().is_some_and(|arguments| {
                 adapter::control_admission::valid_control_input(&serde_json::Value::Object(
@@ -340,8 +315,6 @@ impl ServerHandler for MagnesiumServer {
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let result = ListToolsResult::with_all_items(tool_definitions());
-        // MCP 2026-07-28 requires cache hints on list results; Claude Code
-        // rejects the whole list without them. Older peers keep the legacy shape.
         if context
             .protocol_version()
             .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2026_07_28)
@@ -427,7 +400,6 @@ struct BoundedStdio<R = tokio::io::Stdin, W = tokio::io::Stdout> {
 
 enum Frame {
     Whole(Vec<u8>),
-    /// Longer than [`MAX_FRAME_BYTES`]: its bytes were dropped as they came.
     Oversized,
 }
 
@@ -508,10 +480,6 @@ where
 
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleServer>> {
         loop {
-            // An error reply here carries the request's id when it can be
-            // read, so the host stops waiting for it. Bytes that are not JSON
-            // get no reply, as in rmcp's own transport: there is no id to
-            // answer, and a reply to garbage can start an error loop.
             let (error, id) = match self.receive_frame().await? {
                 Frame::Whole(frame) => match serde_json::from_slice(&frame) {
                     Ok(message) => return Some(message),
@@ -520,7 +488,6 @@ where
                         let Ok(value) = serde_json::from_slice::<serde_json::Value>(&frame) else {
                             continue;
                         };
-                        // A notification gets no reply.
                         let Some(id) = value.get("id") else {
                             continue;
                         };

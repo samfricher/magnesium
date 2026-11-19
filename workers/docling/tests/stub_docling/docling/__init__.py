@@ -1,1 +1,0 @@
-"""Stub `docling` package root."""

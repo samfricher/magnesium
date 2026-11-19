@@ -1,13 +1,3 @@
-//! `magnesium searchable`: whether the tutor's source search will read each
-//! file named, and why not when it will not.
-//!
-//! Read-only. It writes nothing, not even the search index, and it asks the
-//! rules that search itself uses: the exclusion policy in `retrieval.rs`,
-//! the kinds of file it reads, its size limits, the content check for
-//! passwords and keys, and the PDF text extractor. It changes none of them.
-//! A study window uses it after the learner adds material, so it can say in
-//! plain words what the tutor will not find.
-
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -23,20 +13,13 @@ use super::{
 };
 use crate::workspace::Workspace;
 
-/// What search does with one file.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Verdict {
-    /// The path as the study folder sees it, or as it was given when it is outside.
     pub(crate) path: String,
-    /// Whether search will find text in this file.
     pub(crate) searchable: bool,
-    /// A short word for why not, or for a caveat on a file that is searchable.
     pub(crate) reason: Option<&'static str>,
-    /// The word in the file's name that left it out, for `name_word`.
     pub(crate) word: Option<&'static str>,
-    /// One plain sentence, the same facts as `reason`.
     pub(crate) detail: String,
-    /// For a PDF: how many pages it has, and how many of them have no text.
     pub(crate) pages: Option<usize>,
     pub(crate) pages_without_text: Option<usize>,
 }
@@ -76,12 +59,8 @@ impl Verdict {
     }
 }
 
-/// What the PDF text extractor found in one file.
 pub(crate) type PdfPages = Result<Vec<String>, String>;
 
-/// The verdict for one file of a study folder. `relative` is its path from
-/// the folder's root. `pdf_pages` reads a PDF's text, one string for each
-/// page; a test gives it a stand-in.
 pub(crate) fn check(
     root: &Path,
     relative: &Path,
@@ -261,9 +240,6 @@ fn check_pdf(
         ));
     }
     if without_text == pages.len() {
-        // The same rule as the indexer's: a PDF whose pages are all blank
-        // gets text only from the optional conversion worker, and nothing
-        // turns that on by itself.
         return counts(if worker_config_from_env().is_some() {
             Verdict {
                 reason: Some("scan_converted"),
@@ -293,14 +269,10 @@ fn check_pdf(
     })
 }
 
-/// The text extractor search uses, run on one file.
 fn extract(file: fs::File) -> PdfPages {
     extract_pdf_from_file(file, None).map_err(|error| error.to_string())
 }
 
-/// `path` as a path from the study folder's root, or `None` when it lies
-/// outside the folder. Nothing is resolved through the disk, so a link keeps
-/// its own name and search's rule about links applies to it.
 fn from_root(root: &Path, cwd: &Path, given: &Path) -> Option<PathBuf> {
     let joined = if given.is_absolute() {
         given.to_path_buf()
@@ -362,9 +334,6 @@ fn render(verdicts: &[Verdict]) -> String {
         .collect()
 }
 
-/// `magnesium searchable [--json] PATH...`, run in a study folder. In a folder
-/// Magnesium has not been set up in, the folder itself is the root: the rules
-/// are the ones it will have once it is set up, with no ignore list yet.
 pub(crate) fn run(paths: &[PathBuf], as_json: bool) -> ExitCode {
     let result = (|| -> Result<Vec<Verdict>, String> {
         let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
@@ -402,7 +371,6 @@ mod tests {
         tempfile_dir::Dir::new()
     }
 
-    /// A scratch study folder under the system's temp directory, removed on drop.
     mod tempfile_dir {
         use std::path::{Path, PathBuf};
 
@@ -468,7 +436,6 @@ mod tests {
             assert_eq!(verdict.word, Some(word), "{name}");
             assert!(verdict.detail.contains(word), "{name}: {}", verdict.detail);
         }
-        // A word that only contains one of those is not the word.
         put(dir.path(), "Study/stats/monkey-turkey.txt", "text");
         assert!(
             check(
@@ -497,15 +464,12 @@ mod tests {
                 "{name}"
             );
         }
-        // Its text is still checked.
         let pdf = check(
             dir.path(),
             Path::new("Study/The secret life of bees.pdf"),
             pages(&["password = hunter2"]),
         );
         assert_eq!(pdf.reason, Some("secret_content"));
-        // A file a person types as text is still left out by the word: a
-        // pasted secret would land there.
         for (name, word) in [
             ("Study/api tokens.md", "tokens"),
             ("Study/secret.html", "secret"),
@@ -520,8 +484,6 @@ mod tests {
                 "{name}"
             );
         }
-        // "key" in a document's name still leaves it out: it may be an
-        // answer key.
         for name in [
             "Study/Midterm answer key.pdf",
             "Study/Secret answer key.pdf",

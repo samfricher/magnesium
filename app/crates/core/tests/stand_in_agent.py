@@ -1,48 +1,4 @@
 #!/usr/bin/env python3
-"""A stand-in for the `claude` program, for tests.
-
-It speaks the same lines the window expects from Claude Code: one JSON object
-per line each way, with control requests for permission prompts and
-interrupts. It starts no model and reaches no network.
-
-It was written from the open-source Agent SDK and the public documentation,
-not from a recording. So a test that passes against it shows that the window
-is consistent with that reading of the protocol. It does not show that the
-real program behaves the same.
-
-What a turn does is chosen by a word in the learner's message:
-  PERMISSION  ask to run a command, then say what was decided
-  PLANEDIT    ask to edit Study/midterm-2/plan.md, then say what was decided
-              (it changes nothing)
-  OUTSIDE     ask to read a made-up file outside the course, then say what
-              was decided (it reads nothing)
-  QUESTION    ask the learner to choose, then say what was chosen
-  SLOW        write slowly, so the reply can be interrupted
-  WAIT        think for a while before the first word
-  HELPER      a helper agent writes text that must never be shown
-  LIMIT       end the turn at a usage limit
-  EXPIRED     the sign-in runs out, once: this turn and every later one end
-              with Claude Code's own line in the reply's place, in the shape
-              2.1.322 sent on 2026-11-15 for a key Anthropic refused, and
-              `auth status` says signed out, until `auth login` runs. The
-              same words sent again after that are answered.
-  NOMODEL     the model is one the account cannot use: Claude Code's own
-              line comes in the reply's place, as 2.1.322 sent it on
-              2026-11-15
-  HISTORY     say how many turns this conversation has had
-  RUNS_ON     say the model and effort it runs on now
-
-It takes `set_model`, `apply_flag_settings` (`effortLevel` only) and
-`get_settings` on its control stream, as Claude Code 2.1.322 does: an
-unknown model is refused, an unknown effort is dropped without a word, and
-with no effort set the model's own applies ("medium" here).
-
-It also answers `auth status --json` and `auth login`, as Claude Code does:
-signed in to a Claude Max plan, or with the API key in ANTHROPIC_API_KEY when
-one is set. STAND_IN_SIGNED_OUT=1 starts it signed out, until `auth login`
-runs. STAND_IN_KEY_HELPER=1 makes it pay with a key from its own settings,
-which no environment change removes.
-"""
 
 import json
 import os
@@ -73,9 +29,6 @@ def emit(value):
         sys.stdout.flush()
 
 
-# The list a real Claude Code sends in its reply to `initialize`: aliases
-# first, then a full id each for older models. The names and lines follow
-# Claude Code 2.1.322's own; an account's real list differs.
 ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 MODELS = [
     {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)",
@@ -140,7 +93,6 @@ if args[:2] == ["auth", "status"]:
     print(json.dumps(status))
     sys.exit(0)
 if args[:2] == ["auth", "login"]:
-    # The real program opens Anthropic's page and waits for the browser.
     time.sleep(0.3)
     if STATE:
         open(os.path.join(STATE, "signed-in"), "w").close()
@@ -151,8 +103,6 @@ if args[:2] == ["auth", "login"]:
 if "--bare" in args:
     sys.stderr.write("stand-in: --bare would skip the plugin\n")
     sys.exit(2)
-# A start that keeps no session is the window asking for the list of models: it is sent no words, so nothing
-# there can ask for permission.
 LISTING = "--no-session-persistence" in args
 for needed in ("-p", "--input-format", "--output-format", "--verbose", "--permission-prompt-tool"):
     if needed not in args and not (LISTING and needed == "--permission-prompt-tool"):
@@ -167,7 +117,6 @@ resumed = session is not None
 if session is None:
     session = str(uuid.uuid4())
 elif STATE and not os.path.exists(os.path.join(STATE, session + ".json")):
-    # The real program refuses an id it has no transcript for.
     sys.stderr.write(f"No conversation found with session ID: {session}\n")
     sys.exit(1)
 
@@ -192,16 +141,11 @@ def save_history(history):
 
 
 def runs_on():
-    """The model the first message names: the one asked for, else what the
-    default stands for in MODELS."""
     if "--model" in args:
         return args[args.index("--model") + 1]
     return next(row["resolvedModel"] for row in MODELS if row["value"] == "default")
 
 
-# What it runs on now, changed by the control requests above.
-# Once an effort is applied on the stream, the `--effort` it started with no
-# longer counts, as in the real program.
 running = {"model": None, "effort": None, "applied": False}
 
 
@@ -232,8 +176,6 @@ def init_message():
         "plugins": [],
         "slash_commands": ["help"],
         "apiKeySource": key_source(),
-        # As Claude Code reports it: auto when asked for, unless this stand-in
-        # plays an account that cannot have it.
         "permissionMode": "auto"
         if "--permission-mode" in args
         and args[args.index("--permission-mode") + 1] == "auto"
@@ -269,7 +211,6 @@ def assistant(blocks, message_id, parent=None):
 
 
 def say(text, slow=False):
-    """Write one text block as deltas, then as a whole message."""
     message_id = "msg_" + uuid.uuid4().hex[:12]
     stream({"type": "message_start", "message": {"id": message_id}})
     stream({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
@@ -333,9 +274,6 @@ def result(text, error=None):
 
 
 def stopped():
-    """What the real program sent for a turn interrupted before its reply
-    ended, in the live trace of 2026-11-10: a user line, then a result with
-    no text and only an internal diagnostic as its error."""
     emit({"type": "user", "parent_tool_use_id": None, "session_id": session,
           "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}})
     emit({
@@ -356,9 +294,6 @@ opened_record = False
 
 
 def open_record(text):
-    """A new conversation's first reply opens the record with Magnesium's
-    context tool, as the plugin's lesson does, unless the message says
-    UNOPENED."""
     global opened_record
     if opened_record or resumed or "UNOPENED" in text:
         return
@@ -369,8 +304,6 @@ def open_record(text):
 
 
 def own_error(said, code, status):
-    """Claude Code's own line for a request that failed, in the reply's
-    place, then the result: the shape 2.1.322 sent on 2026-11-15."""
     emit({
         "type": "assistant",
         "uuid": str(uuid.uuid4()),
@@ -424,7 +357,6 @@ def turn(text):
         return
 
     if "WAIT" in text:
-        # A long silence before the first word, as when a plan is being built.
         for _ in range(100):
             if interrupted.is_set():
                 stopped()
@@ -437,9 +369,6 @@ def turn(text):
         assistant([{"type": "text", "text": "SECRET HELPER TEXT"}], "msg_helper", parent="toolu_helper")
 
     if "OUTSIDE" in text:
-        # As Claude Code 2.1.322 asked on 2026-11-15 for a read outside the
-        # folder: its suggestion is a rule for that whole folder. The path is
-        # made up.
         reply = ask_permission(
             "Read",
             {"file_path": "/Users/someone/Downloads/reading-list.txt"},
@@ -451,9 +380,6 @@ def turn(text):
             return
         answer = "It was read." if reply.get("behavior") == "allow" else "It was left unread."
     elif "PLANEDIT" in text:
-        # As Claude Code 2.1.322 asked on 2026-11-15 for an edit to a plan
-        # its rules did not cover: its one suggestion is the mode that
-        # accepts every edit for the rest of the sitting.
         plan = os.path.join(os.getcwd(), "Study", "midterm-2", "plan.md")
         reply = ask_permission(
             "Edit",
@@ -531,7 +457,6 @@ def main():
                 if not NO_PLUGIN:
                     commands += [{"name": "magnesium:learn"}, {"name": "magnesium:papers"}]
                 response = {"commands": commands}
-                # An older Claude Code sends no list.
                 if os.environ.get("STAND_IN_NO_MODELS") != "1":
                     response["models"] = MODELS
             elif subtype == "interrupt":
@@ -568,8 +493,6 @@ def main():
             content = message["message"]["content"]
             if worker is not None:
                 worker.join()
-            # Cleared here, not in the turn, so an interrupt that arrives
-            # before the turn's thread starts is not lost.
             interrupted.clear()
             worker = threading.Thread(target=turn, args=(content,), daemon=True)
             worker.start()

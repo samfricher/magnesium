@@ -1,4 +1,3 @@
-//! Canonical row decoding and explicit current/historical views.
 use super::requests::{NextCall, ObservationKind, ReadRef};
 use crate::learner::model::{SchemaVersion, SourceRef};
 use crate::learner::records::{self as canonical, ObservationRef};
@@ -99,7 +98,6 @@ pub(super) struct Session {
 }
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct CheckpointBasis {
-    /// Mechanical dependency comparison only, not verification of a diagnosis.
     pub status: &'static str,
     pub memories: Vec<CheckpointBasisNotice>,
 }
@@ -130,7 +128,6 @@ pub(super) fn checkpoint_basis(
         .iter()
         .zip(current)
         .map(|(reference, memory)| {
-            // The shared stored decoder rejects unresolved after_edit sentinels.
             let crate::learner::model::MemoryRevision::Known(used_revision) = reference.revision
             else {
                 unreachable!("canonical stored revision")
@@ -393,8 +390,6 @@ fn project_card(memory: canonical::MemoryFields) -> MemoryCard {
         revision_changed: None,
     }
 }
-/// Whole-record representation shared by read execution and write admission.
-/// Decode the canonical snapshot once; its body is already available.
 pub(super) fn complete_memory(
     conn: &Connection,
     id: &str,

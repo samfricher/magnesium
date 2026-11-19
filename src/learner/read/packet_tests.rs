@@ -1,4 +1,3 @@
-//! Packet selection, continuation and snapshot regressions for learner reads.
 use super::{SESSION_CHOICES_SQL, session_choice_rows, test_support::execute};
 use crate::learner::search;
 use rusqlite::{Connection, params};
@@ -47,7 +46,6 @@ mod tests {
         let intent = "matching-intent-".repeat(8);
         let request = json!({"action":"prepare","mode":"focused","memory_ids":["priority"],"intents":[{"id":intent,"purpose":"symbol roles","queries":[{"any_of":["coefficient"]}]}]});
         let mut full = run(&c, request.clone()).unwrap();
-        // Reproduce the old admission boundary before priority annotations.
         full["memories"][0]["matched_intents"] = json!([]);
         full["memories"][0]["match_channels"] = json!([]);
         for card in full["memories"].as_array_mut().unwrap() {

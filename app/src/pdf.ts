@@ -1,12 +1,7 @@
-// The PDF reader that ships inside the app. It draws a cited page from the
-// file's bytes, which the core reads inside the study folder; it starts no
-// server and makes no request.
-
 export type Pdf = import("pdfjs-dist/legacy/build/pdf.mjs").PDFDocumentProxy;
 
 let reader: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 
-/** The PDF reader and its worker, fetched from the app's own files the first time a PDF opens. */
 function pdfReader() {
   reader ??= (async () => {
     const lib = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -17,17 +12,13 @@ function pdfReader() {
   return reader;
 }
 
-/** The reader itself, for its text layer: the words of a page laid over its picture, so they can be selected. */
 export const pdfLib = () => pdfReader();
 
-/** Open a PDF from its bytes. */
 export async function openPdf(bytes: ArrayBuffer | Uint8Array): Promise<Pdf> {
   const lib = await pdfReader();
-  // The reader takes the bytes over, so it gets a copy.
   return lib.getDocument({ data: new Uint8Array(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).slice() }).promise;
 }
 
-/** Draw one page into a canvas, as wide as `width` CSS pixels. Resolves to the page's size in CSS pixels. */
 export async function drawPage(pdf: Pdf, number: number, canvas: HTMLCanvasElement, width: number): Promise<{ width: number; height: number }> {
   const page = await pdf.getPage(number);
   const ratio = Math.min(window.devicePixelRatio || 1, 3);

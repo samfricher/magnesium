@@ -1,11 +1,3 @@
-//! Small typed host-adapter boundary (LEARN-200).
-//!
-//!
-//! Trust means supported local capture under the host's permission boundary,
-//! not resistance to arbitrary malicious code running as the same OS user.
-//! Capabilities come from the installed adapter plus negotiated host support,
-//! never from a model argument. Tool connectivity alone never grants capture.
-
 use std::path::{Path, PathBuf};
 
 use crate::workspace::Workspace;
@@ -13,19 +5,10 @@ use crate::workspace::Workspace;
 pub(crate) const EXPLICIT_ROOT_ENV: &str = "MAGNESIUM_WORKSPACE_ROOT";
 pub(crate) const MAX_NATIVE_ID_BYTES: usize = 512;
 
-/// Native process session identity Claude Code exports to hooks and stdio
-/// MCP servers. Claude Code sends no conversation identity in MCP requests,
-/// so this variable is its only route. A Claude MCP server keeps the ID it
-/// was spawned with, so it can lag the hooks after `/clear`.
 pub(crate) const HOST_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
-/// Stable native identity framing. Host kind is also stored separately in
-/// the learner database; no identity is taken from a model tool argument.
 pub(crate) const STORED_HOST_ID_PREFIX: &str = "magnesium-h1:";
 
-/// Supported host kinds. Magnesium is built and tested for Claude Code only.
-/// Unknown kinds are rejected as unavailable capture; they must not silently
-/// inherit another host's identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HostKind {
     Claude,
@@ -48,7 +31,6 @@ impl HostKind {
     }
 }
 
-/// Typed host identity supplied by an installed native adapter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HostIdentity {
     kind: HostKind,
@@ -72,24 +54,15 @@ impl HostIdentity {
         self.kind
     }
 
-    /// Opaque host-thread key. Native identity does not restrict which
-    /// workspace-wide memories may be read or revised.
     pub(crate) fn stored_session_id(&self) -> String {
         framed_host_id(self.kind, &self.native_session_id)
     }
 
-    /// Stable native event key used for capture deduplication.
     pub(crate) fn stored_turn_id(&self, native_turn_id: &str) -> Result<String, String> {
         validate_native_id("native turn ID", native_turn_id)?;
         Ok(framed_host_id(self.kind, native_turn_id))
     }
 
-    /// Stored turn value for a native-local ordinal allocated at a trusted
-    /// prompt hook for hosts without stable turn IDs. Newly minted
-    /// ordinals are session-qualified (`ordinal-<session hash>-<20-digit
-    /// ordinal>`) so two conversations of the same host cannot collide on
-    /// their first ordinal within one store; historical unqualified
-    /// `ordinal-…` values remain readable as opaque existing identities.
     pub(crate) fn stored_ordinal_turn_id(&self, ordinal: u64) -> String {
         let base = session_qualified_ordinal_turn_id(&self.stored_session_id(), ordinal);
         framed_host_id(self.kind, &base)
@@ -100,7 +73,6 @@ fn framed_host_id(kind: HostKind, native: &str) -> String {
     format!("{STORED_HOST_ID_PREFIX}{}:{native}", kind.as_str())
 }
 
-/// The host whose plugin launched this process, when its command line says so.
 static LAUNCH_HOST: std::sync::OnceLock<HostKind> = std::sync::OnceLock::new();
 
 pub(crate) fn set_launch_host(kind: HostKind) {
@@ -140,9 +112,6 @@ fn remove_if_present(path: &Path) -> Result<bool, String> {
     }
 }
 
-/// Claude Code keeps a stdio MCP server, and its spawn-time session ID,
-/// across /clear and in-process /resume. Its hooks mark the conversation they
-/// leave in those cases, and unmark a conversation when it starts again.
 pub(crate) fn mark_session_ended(workspace: &Workspace, host: &HostIdentity) -> Result<(), String> {
     crate::workspace::write_private_atomic(
         &ended_marker(workspace, &host.stored_session_id())?,
@@ -167,25 +136,18 @@ pub(crate) fn session_ended(
         .map_err(|error| error.to_string())
 }
 
-/// Resolve a validated native process identity from Claude Code's session
-/// variable. Environment values are native IDs; framing happens only through
-/// HostIdentity. No match grants neither a native identity nor permission to
-/// publish learner text.
 pub(crate) fn process_host_identity() -> Option<HostIdentity> {
     std::env::var(HOST_SESSION_ENV)
         .ok()
         .and_then(|id| HostIdentity::claude(&id).ok())
 }
 
-/// Native process workspace binding; tool arguments cannot change it.
 pub(crate) fn explicit_root() -> Option<PathBuf> {
     std::env::var_os(EXPLICIT_ROOT_ENV)
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
 }
 
-/// Verify that a discovered workspace matches the explicit binding.
-/// Mismatch rejects learning writes; ordinary host work continues.
 pub(crate) fn check_workspace_binding(workspace: &Workspace) -> Result<(), String> {
     let bound = explicit_root();
     check_workspace_binding_against(workspace, bound.as_deref())
@@ -207,7 +169,6 @@ pub(crate) fn check_workspace_binding_against(
     Ok(())
 }
 
-/// Canonicalize-and-compare helper for tests and the MCP boundary.
 pub(crate) fn binding_matches(bound_root: &Path, workspace_root: &Path) -> bool {
     let (Ok(bound), Ok(root)) = (
         std::fs::canonicalize(bound_root),
@@ -218,10 +179,6 @@ pub(crate) fn binding_matches(bound_root: &Path, workspace_root: &Path) -> bool 
     bound == root
 }
 
-/// Session-qualified ordinal fragment for newly minted ordinal turn IDs.
-/// The SHA-256 of the exact stored host-session value namespaces the
-/// counter so two conversations of one host allocate distinct ordinal
-/// identities within one Magnesium store.
 pub(crate) fn session_qualified_ordinal_turn_id(stored_session_id: &str, ordinal: u64) -> String {
     let hash = stored_session_hash(stored_session_id);
     format!("ordinal-{hash}-{ordinal:020}")
@@ -236,16 +193,6 @@ fn stored_session_hash(stored_session_id: &str) -> String {
     hex
 }
 
-/// Allocate the next native-local ordinal for a host session. The counter
-/// is scoped to the exact stored session value so two providers with
-/// identical native strings allocate in independent sequences. The
-/// counter is read and updated under a private OS lock; a missing file is
-/// zero, while a corrupt or unreadable file is `unavailable_capture`
-/// rather than a silent reset to zero. The update is checked and
-/// persisted atomically; the lock is released on return. Order comes from
-/// the monotonic ordinal; retries reuse the MCP idempotency key, not a
-/// new ordinal. A raced duplicate ordinal fails safe at the existing
-/// `UNIQUE(scope_id, turn_id)` write, never as a silent redirect.
 pub(crate) fn allocate_native_ordinal(
     workspace: &Workspace,
     stored_session_id: &str,
@@ -283,12 +230,9 @@ pub(crate) fn allocate_native_ordinal(
         .ok_or_else(|| "unavailable_capture: host ordinal counter overflow".to_owned())?;
     crate::workspace::write_private_atomic(&counter_path, next.to_string().as_bytes())
         .map_err(|error| error.to_string())?;
-    // Dropping `lock` releases the OS advisory lock.
     Ok(next)
 }
 
-/// Serialize ordinal access per session with a bounded private OS lock.
-/// The lock has no TTL: process termination releases it.
 fn acquire_native_ordinal_lock(lock: &std::fs::File) -> Result<(), String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {

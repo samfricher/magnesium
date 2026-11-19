@@ -8,15 +8,9 @@ use serde_json::{Value, json};
 #[test]
 fn claude_plugin_is_exact_and_native() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    // Plugins ship with the runtime, so they carry its version and protocol.
     let plugin_version = env!("CARGO_PKG_VERSION");
     let protocol = "2".to_owned();
 
-    // The Claude Code plugin is a manifest, a real MCP server declaration,
-    // and the four lifecycle hooks bound to the native executable. The
-    // installed command line supplies `--host-kind claude` because the
-    // official Claude Code event JSON carries session, cwd, and prompt but no
-    // host-kind field.
     let manifest: Value = serde_json::from_slice(
         &fs::read(root.join("claude-plugin/.claude-plugin/plugin.json")).expect("claude manifest"),
     )
@@ -57,8 +51,6 @@ fn claude_plugin_is_exact_and_native() {
         &fs::read(root.join("claude-plugin/hooks/hooks.json")).expect("claude hooks manifest"),
     )
     .expect("claude hooks JSON");
-    // Claude Code restates the core rules through SessionStart after a
-    // compaction, so the plugin registers no compaction hooks.
     let mut events: Vec<&str> = hooks["hooks"]
         .as_object()
         .expect("hook events")
@@ -77,11 +69,9 @@ fn claude_plugin_is_exact_and_native() {
         ]
     );
     for (event, groups) in hooks["hooks"].as_object().expect("hook events") {
-        // SessionEnd also ends a conversation on /clear and in-process /resume.
         let expected = match event.as_str() {
             "SessionStart" => Some(json!("startup|resume|clear|compact")),
             "SessionEnd" => Some(json!("other|clear|resume")),
-            // Only the window's reply tool ends a turn.
             "PostToolUse" => Some(json!(
                 "mcp__plugin_magnesium_magnesium__(reply|learning_step)"
             )),
@@ -107,16 +97,12 @@ fn claude_plugin_is_exact_and_native() {
             assert!(!command.contains("python") && !command.contains("node"));
         }
     }
-    // The UserPromptSubmit hook must fit Claude Code's 30-second command-hook
-    // budget for that event.
     assert!(
         hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"]
             .as_i64()
             .is_some_and(|timeout| timeout <= 30)
     );
 
-    // The plugin directory is its own one-plugin marketplace, so Claude Code
-    // can load it in place without copying it into a separate layout.
     let marketplace: Value = serde_json::from_slice(
         &fs::read(root.join("claude-plugin/.claude-plugin/marketplace.json"))
             .expect("claude marketplace"),
@@ -158,9 +144,6 @@ fn read_json(path: &std::path::Path) -> Value {
     serde_json::from_slice(&fs::read(path).expect("settings file")).expect("settings JSON")
 }
 
-/// The rules init allows in a study folder: Magnesium's MCP server, reads of the
-/// copied plugin, and a launch of each shipped skill. Claude Code rules name an absolute path with `//` and
-/// match Windows paths in POSIX form (`C:\Users` is `//c/Users`).
 fn magnesium_rules(report: &Value) -> Vec<Value> {
     let settings = read_json(std::path::Path::new(
         report["claude"]["user_settings"].as_str().unwrap(),
@@ -198,7 +181,6 @@ fn init_enables_the_claude_plugin_for_this_folder_only() {
     assert_eq!(claude["enabled_everywhere"], false);
     let settings_path = std::path::PathBuf::from(claude["user_settings"].as_str().unwrap());
     let settings = read_json(&settings_path);
-    // The user settings only declare where the plugin is; nothing is enabled there.
     assert_eq!(settings.as_object().unwrap().len(), 1, "{settings}");
     let plugin_dir = std::path::PathBuf::from(
         settings["extraKnownMarketplaces"]["magnesium"]["source"]["path"]
@@ -264,7 +246,6 @@ fn init_enables_the_claude_plugin_for_this_folder_only() {
         frontmatter.lines().any(|line| line == "name: help"),
         "{frontmatter}"
     );
-    // The help skill grants nothing itself: Magnesium's folder settings allow `magnesium digest`.
     assert!(
         !frontmatter
             .lines()
@@ -272,10 +253,8 @@ fn init_enables_the_claude_plugin_for_this_folder_only() {
         "{frontmatter}"
     );
     assert!(help.contains("Run `magnesium digest` once"), "{help}");
-    // Magnesium's rules are allowed next to the user's own, so Magnesium does not ask.
     let mut allow = vec![json!("Read")];
     allow.extend(magnesium_rules(&report));
-    // /magnesium:help runs `magnesium digest`; the folder settings, not the skill, allow it.
     assert!(
         read_json(&local)["permissions"]["allow"]
             .as_array()
@@ -290,7 +269,6 @@ fn init_enables_the_claude_plugin_for_this_folder_only() {
     assert_eq!(claude["added_rules"], json!(magnesium_rules(&report)));
     assert_eq!(report["warnings"], json!([]), "{report}");
 
-    // Rerunning changes nothing.
     let before = (fs::read(&settings_path).unwrap(), fs::read(&local).unwrap());
     let rerun = init_json(&environment);
     assert_eq!(rerun["claude"]["status"], "enabled");
@@ -317,7 +295,6 @@ fn init_says_when_it_allows_magnesium_in_claude_code() {
     let first = init();
     assert!(first.contains(allowed), "{first}");
 
-    // A rerun adds no rule, so it prints no permission line.
     let second = init();
     assert!(
         second.contains("Claude Code plugin: enabled for this folder"),
@@ -328,7 +305,6 @@ fn init_says_when_it_allows_magnesium_in_claude_code() {
 
 #[test]
 fn init_allows_magnesium_in_an_enabled_folder_and_keeps_the_learners_ask_and_deny_rules() {
-    // A folder enabled by an earlier Magnesium gets the rules on the next init.
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
     let local = environment.workspace.join(".claude/settings.local.json");
     fs::create_dir_all(local.parent().unwrap()).unwrap();
@@ -343,8 +319,6 @@ fn init_allows_magnesium_in_an_enabled_folder_and_keeps_the_learners_ask_and_den
         json!({"enabledPlugins":{"magnesium@magnesium":true},"permissions":{"allow":magnesium_rules(&report)}})
     );
 
-    // The learner's own ask and deny rules stay exactly as they are; Claude
-    // Code applies them before allow, so they still win.
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
     let local = environment.workspace.join(".claude/settings.local.json");
     fs::create_dir_all(local.parent().unwrap()).unwrap();
@@ -476,11 +450,6 @@ fn incompatible_hook_fails_open_without_workspace_mutation() {
     assert_eq!(before, snapshot(&environment));
 }
 
-/// A plugin copy from before the compaction hooks were removed, or a Claude
-/// Code session started before the program was replaced, still runs them.
-/// Exit code 2 from a PreCompact hook blocks compaction, so both retired
-/// commands succeed silently and record nothing, inside a study folder or
-/// outside one, whatever their input holds.
 #[test]
 fn retired_compaction_hooks_from_an_older_plugin_copy_exit_cleanly() {
     let environment = TestEnvironment::from_fixture("basic").expect("test environment");
@@ -504,7 +473,6 @@ fn retired_compaction_hooks_from_an_older_plugin_copy_exit_cleanly() {
         .to_string();
         for folder in [&environment.workspace, &outside] {
             for input in [payload.as_bytes(), b"", b"not json"] {
-                // The exact command line an older plugin copy registered.
                 let mut child = environment
                     .command_with(test_binary(), folder)
                     .args([
@@ -523,7 +491,6 @@ fn retired_compaction_hooks_from_an_older_plugin_copy_exit_cleanly() {
                     .stderr(Stdio::piped())
                     .spawn()
                     .expect("spawn retired hook");
-                // The hook may exit before it reads its input.
                 let _ = child.stdin.take().expect("hook stdin").write_all(input);
                 let output = child.wait_with_output().expect("hook output");
                 assert_eq!(output.status.code(), Some(0), "{event}: {output:?}");
@@ -631,10 +598,6 @@ fn claude_plugin_install_refuses_a_symlinked_managed_directory_without_writing_o
     );
 }
 
-/// `update` runs after a runtime upgrade. The Claude plugin copy
-/// pins the plugin version in its hook and MCP command lines, so a copy left
-/// from the previous release fails every hook and tool call with a version
-/// mismatch until it is rewritten.
 #[test]
 fn update_refreshes_an_existing_claude_plugin_copy() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -664,7 +627,6 @@ fn update_refreshes_an_existing_claude_plugin_copy() {
         );
     }
 
-    // A machine where init never ran gets no Claude plugin copy from update.
     let fresh = TestEnvironment::from_fixture("basic").expect("test environment");
     let update = fresh.command().arg("update").output().expect("run update");
     assert!(update.status.success(), "{update:?}");

@@ -44,7 +44,6 @@ fn short_ticket_verifies_only_the_exact_current_turn_text_and_conversation() {
         let ticket = issue(&workspace, &host, "turn-1", text, 1_000).unwrap();
         assert_eq!(ticket.len(), 32);
         assert!(ticket.bytes().all(|b| b.is_ascii_hexdigit()));
-        // A retried prompt hook for the same turn reissues the same ticket.
         assert_eq!(
             issue(&workspace, &host, "turn-1", text, 2_000).unwrap(),
             ticket
@@ -85,7 +84,6 @@ fn short_ticket_verifies_only_the_exact_current_turn_text_and_conversation() {
             );
         }
 
-        // A newer prompt replaces the marker, so the earlier ticket expires with it.
         issue(&workspace, &host, "turn-2", "Next question", 3_000).unwrap();
         assert_eq!(
             verify(&workspace, &host, &ticket, text, 3_500).err(),
@@ -98,9 +96,6 @@ fn short_ticket_verifies_only_the_exact_current_turn_text_and_conversation() {
 #[test]
 fn the_window_opener_is_certified_as_the_goal_whichever_way_the_tutor_echoes_it() {
     let (root, workspace, host) = fixture();
-    // The study window opens a lesson with this line. The hook sees all of
-    // it; the tutor sees the skill the command expands to, and may echo the
-    // whole line or only the goal.
     let opener = "/magnesium:learn adding fractions with different denominators";
     let goal = "adding fractions with different denominators";
     let ticket = issue(&workspace, &host, "turn-1", opener, 1_000).unwrap();
@@ -112,7 +107,6 @@ fn the_window_opener_is_certified_as_the_goal_whichever_way_the_tutor_echoes_it(
         let event = verify(&workspace, &host, &ticket, echo, 1_500).unwrap();
         assert_eq!(event.text, goal, "echo {echo:?}");
     }
-    // The ticket still shows the answer is what the learner typed.
     assert_eq!(
         verify(&workspace, &host, &ticket, "adding fractions", 1_500).err(),
         Some(failure())
@@ -120,8 +114,6 @@ fn the_window_opener_is_certified_as_the_goal_whichever_way_the_tutor_echoes_it(
     for (raw, stored) in [
         ("/magnesium:papers midterm on 3 March", "midterm on 3 March"),
         ("/magnesium:learn\n\nlimits", "limits"),
-        // A command alone, another program's command, or a command glued to
-        // a word is the learner's own text.
         ("/magnesium:learn", "/magnesium:learn"),
         ("/magnesium:learn   ", "/magnesium:learn"),
         ("/other:learn limits", "/other:learn limits"),
@@ -144,11 +136,9 @@ fn the_window_opener_is_certified_as_the_goal_whichever_way_the_tutor_echoes_it(
 fn claude_paste_markup_is_certified_and_stored_as_the_learner_wrote_it() {
     let (root, workspace, host) = fixture();
     let words = "Why is E(w, b) a bowl?\n$$X^\\top X w = X^\\top t$$";
-    // A whole-message paste from the Claude desktop app, byte for byte.
     let pasted =
         format!("\n\n<pasted_content id=\"b185\">\n{words}\n</pasted_content id=\"b185\">\n");
     let ticket = issue(&workspace, &host, "turn-1", &pasted, 1_000).unwrap();
-    // The tutor may echo the learner's words alone or the whole prompt.
     for echo in [words, pasted.as_str()] {
         let event = verify(&workspace, &host, &ticket, echo, 1_500).unwrap();
         assert_eq!(event.text, words);
@@ -171,13 +161,11 @@ fn claude_paste_markup_is_certified_and_stored_as_the_learner_wrote_it() {
             "<pasted_content id=\"a\">\n</pasted_content id=\"a\">\nok\n",
             "ok",
         ),
-        // Pasted code keeps its first line's indentation.
         (
             "\n\n<pasted_content id=\"c\">\n    if x:\n        return x\n</pasted_content id=\"c\">\n",
             "    if x:\n        return x",
         ),
         ("  indented\r\n\r\n", "  indented"),
-        // Unmatched, inline or malformed tags are the learner's own text.
         (
             "<pasted_content id=\"a\">\nx\n</pasted_content id=\"b\">",
             "<pasted_content id=\"a\">\nx\n</pasted_content id=\"b\">",
@@ -214,12 +202,10 @@ fn the_windows_talk_line_says_talk_and_is_not_kept_as_the_learners_words() {
         intent(&host, &talk),
         Some(crate::learner::MessageIntent::Talk)
     );
-    // Twice changes nothing more, so a tutor's echo of either verifies.
     assert_eq!(
         learner_text(&host, &learner_text(&host, &talk)),
         "why factorise first?"
     );
-    // The line alone, and the line with pasted text after it.
     assert_eq!(
         intent(&host, TALK_LEAD),
         Some(crate::learner::MessageIntent::Talk)
@@ -227,7 +213,6 @@ fn the_windows_talk_line_says_talk_and_is_not_kept_as_the_learners_words() {
     let pasted =
         format!("{TALK_LEAD}\n<pasted_content id=\"a1\">\nx² + 5x\n</pasted_content id=\"a1\">");
     assert_eq!(learner_text(&host, &pasted), "x² + 5x");
-    // Words run on from the line, or the line further down, are not the window's.
     for text in [
         format!("{TALK_LEAD} and x = 2"),
         format!("x = 2\n{TALK_LEAD}"),

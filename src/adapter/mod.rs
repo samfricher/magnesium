@@ -150,8 +150,6 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     output
 }
 
-// The same runtime protocol types describe the tool contract.
-// Updates retain an independent raw-capture boundary before semantic decoding.
 #[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
@@ -166,11 +164,9 @@ pub(crate) enum LearningStepRequest {
 pub(crate) struct ControlRequest {
     pub schema: crate::learner::SchemaVersion,
     pub action: control_admission::ControlTag,
-    /// Required. An ID you make up for this request, new to this study folder:
-    /// every conversation here shares its IDs, so end it with something only
-    /// this turn has, such as the last characters of its ticket or event ID.
-    /// Send an ID again only to replay the identical request after an unknown
-    /// outcome.
+    #[schemars(
+        description = "Required. An ID you make up for this request, new to this study folder:\nevery conversation here shares its IDs, so end it with something only\nthis turn has, such as the last characters of its ticket or event ID.\nSend an ID again only to replay the identical request after an unknown\noutcome."
+    )]
     pub request_id: String,
     pub control: control_admission::ControlAction,
     pub turn_ref: Option<String>,
@@ -189,7 +185,6 @@ pub(crate) struct InstructionRequest {
     pub host: crate::workspace::instruction_bundle::InstructionHost,
     pub operation: Option<crate::workspace::instruction_bundle::InstructionOperation>,
 }
-// Runtime contracts for instruction metadata and typed learner reads.
 #[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
@@ -204,13 +199,8 @@ pub(crate) fn host_context(host: &HostIdentity) -> crate::learner::HostContext {
         host_thread_id: host.stored_session_id(),
     }
 }
-/// `context` serves two request shapes; a tutor that mixes them gets both in
-/// full rather than one missing field per retry.
 const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
 const MEMORY_SHAPES: &str = r#"memory takes {"schema":"learner-model/v2","action":"search","goal":"<topic>","original_query":"<learner's words>"}, {"schema":"learner-model/v2","action":"read","refs":[{"kind":"current_memory"|"observation"|"event","id":"<id>"}]}, or {"schema":"learner-model/v2","action":"browse"} with optional "topic"; other actions are topics, history, reviews, observations and pending_work"#;
-/// Native process environment is adapter context, not a model-supplied identity.
-/// A tool-only connection gets its own ephemeral thread; it never borrows a
-/// previous conversation's bound session merely because the workspace matches.
 fn tool_host() -> crate::learner::HostContext {
     if let Some(host) = host::process_host_identity() {
         return host_context(&host);
@@ -223,10 +213,6 @@ fn tool_host() -> crate::learner::HostContext {
             .clone(),
     }
 }
-/// Tutors often call `context` with only a stage or only a goal. A stage
-/// means "load that stage's instructions" and a goal means "prepare", so fill
-/// in the action, and the host or schema the runtime already knows, instead of
-/// failing the call. An explicit action is never changed.
 fn complete_context_request(
     mut request: serde_json::Value,
     native_host: Option<&crate::learner::HostContext>,
@@ -271,8 +257,6 @@ pub(crate) fn dispatch(
 ) -> Result<serde_json::Value, String> {
     dispatch_with_host(cwd, operation, request, None)
 }
-/// The optional identity is supplied only by trusted native transport metadata.
-/// It is never read from model-selected tool arguments.
 pub(crate) fn dispatch_with_host(
     cwd: &Path,
     operation: &str,
@@ -311,7 +295,6 @@ pub(crate) fn dispatch_with_host(
         };
         return Ok(crate::just_checks::from_tool(cwd, by, asker, start));
     }
-    // A stage for more than the checks: the learner asked for it.
     let lifted = crate::just_checks::lift_on_stage(
         cwd,
         operation,
@@ -321,8 +304,6 @@ pub(crate) fn dispatch_with_host(
     if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
         return Ok(refusal);
     }
-    // A sittings store from before #30 moves its quick checks into the
-    // learner store before an update can make a check on the same label.
     if operation == "learning_step" {
         let _ = sittings_here(cwd, false);
     }
@@ -348,7 +329,6 @@ pub(crate) fn dispatch_with_host(
             caller.as_ref().map(|host| host.host_thread_id.as_str()),
         );
     }
-    // A pause or a stop the learner asked for ends the sitting.
     if ends.is_some_and(|request| crate::closing::ends_on_control(&request, &result))
         && let Ok(Some(workspace)) = Workspace::discover(cwd)
     {
@@ -375,11 +355,6 @@ pub(crate) fn dispatch_with_host(
     Ok(result)
 }
 
-/// A `context status` result for a caller that runs the lesson itself (see
-/// [`crate::sittings::CHECKS_ENV`]) carries `repairs_waiting`: the gap-log
-/// rows waiting for a repair, read when it is asked, so that the caller
-/// records a repair only for a row the record says is waiting. A tutor's
-/// results are as they were.
 fn add_repairs_waiting(cwd: &Path, result: &mut serde_json::Value) {
     if !crate::sittings::checks_wanted() || !result.is_object() || result.get("error").is_some() {
         return;
@@ -393,14 +368,6 @@ fn add_repairs_waiting(cwd: &Path, result: &mut serde_json::Value) {
         result["repairs_waiting"] = crate::practice::waiting_rows_json(&items);
     }
 }
-/// A committed session start or resume carries what `context.prepare`
-/// returns for its goal, as `context`. In the live runs of 2026-11-11 the
-/// tutor read the learner's record at 3 of 3 lesson starts on `main` and at
-/// 2 of 6 on this build, and a lesson that skips the read starts from nothing
-/// in a folder with a history. With the read in the start's result it cannot
-/// be skipped, in a window or a terminal, and the lesson saves a call. Its
-/// budget is the one `context.prepare` has by default. Reading only: a read
-/// that fails leaves the start's result as it was.
 fn add_goal_context(
     cwd: &Path,
     update: &serde_json::Value,
@@ -439,9 +406,6 @@ fn add_goal_context(
         return;
     };
     let host = native_host.unwrap_or_else(tool_host);
-    // No retrieval trace is kept for this read, so a replayed start returns
-    // what it returned the first time. The tutor's own context.prepare
-    // calls keep theirs.
     let read = crate::learner::read::prepare_snapshot_for_tool(
         &store.conn,
         &host.host_kind,
@@ -456,8 +420,6 @@ fn add_goal_context(
         result["context"] = context;
     }
 }
-/// A Claude MCP server keeps its spawn-time session after /clear or an
-/// in-process /resume; refuse rather than act on the conversation it left.
 pub(crate) fn refuse_changed_conversation(
     workspace: &Workspace,
     host: &crate::learner::HostContext,
@@ -470,8 +432,6 @@ pub(crate) fn refuse_changed_conversation(
     }
     Ok(())
 }
-/// The study folder's sittings, when this call runs in one it is bound to.
-/// The store is created only for a write, so a read changes no file.
 fn sittings_here(cwd: &Path, write: bool) -> Option<(Workspace, crate::sittings::Sittings)> {
     let workspace = Workspace::discover(cwd).ok()??;
     check_workspace_binding(&workspace).ok()?;
@@ -482,12 +442,6 @@ fn sittings_here(cwd: &Path, write: bool) -> Option<(Workspace, crate::sittings:
     };
     Some((workspace, sittings))
 }
-/// After a committed update, its learner input notes a learner message, and
-/// what its attempts did to practice items goes in the result and settles
-/// the sitting's checks. A practice change, or a paper stage load, brings in
-/// and writes the gap logs. The first tool result of a sitting then carries
-/// the opener. Last, the result states the help levels and readings the
-/// update or load concerns. None of this can fail the call.
 fn open_sitting(
     cwd: &Path,
     update: Option<&serde_json::Value>,
@@ -508,8 +462,6 @@ fn open_sitting(
     let today = crate::sittings::local_day(now);
     let committed = update.filter(|_| result["update_status"] == "committed");
     let practice_change = committed.is_some_and(touches_practice);
-    // Bringing a gap log in copies the learner's rows into the learner
-    // store, so it waits while this conversation records nothing.
     let records = caller.is_none_or(|host| records_here(&workspace, host));
     let mut report = crate::practice::GapLogReport::default();
     if records && (paper_stage || practice_change) {
@@ -555,7 +507,6 @@ fn open_sitting(
             let _ = sittings.note_learner_message(&workspace, now);
         }
         let _ = sittings.settle(&outcomes);
-        // The last check of a sitting of checks alone ends it.
         let by = caller.map(|host| host.host_thread_id.as_str());
         if (practice_change || !outcomes.is_empty())
             && sittings
@@ -565,8 +516,6 @@ fn open_sitting(
             result["sitting_ended"] = true.into();
             result["sitting_note"] = crate::just_checks::ENDED_NOTE.into();
         }
-        // The checks alone go to the conversation that asked, once, even
-        // when another conversation had the sitting's usual opener.
         let alone = records
             .then(|| {
                 sittings
@@ -599,8 +548,6 @@ fn open_sitting(
     }
     crate::readings::add_to_result(&workspace, committed, practice_change, paper_stage, result);
 }
-/// Whether this conversation records: no control latch denies capture, and
-/// recording is on for it.
 fn records_here(workspace: &Workspace, host: &crate::learner::HostContext) -> bool {
     let allowed = control_admission::Admission::new(workspace, host)
         .capture_guard()
@@ -610,8 +557,6 @@ fn records_here(workspace: &Workspace, host: &crate::learner::HostContext) -> bo
             .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
             .is_ok_and(|(_, _, recording)| recording)
 }
-/// An update that records an attempt, or changes or corrects a practice
-/// item.
 fn touches_practice(request: &serde_json::Value) -> bool {
     let nonempty = |field: &str| {
         request[field]
@@ -629,8 +574,6 @@ fn touches_practice(request: &serde_json::Value) -> bool {
                     || o["attempts"].as_array().is_some_and(|a| !a.is_empty())
             })
 }
-/// An answer in chat: an attempt with no paper that names no item, so it
-/// makes or answers the quick check on its label.
 fn has_chat_attempt(request: &serde_json::Value) -> bool {
     request["observations"]
         .as_array()
@@ -642,8 +585,6 @@ fn has_chat_attempt(request: &serde_json::Value) -> bool {
                 && a["counts_for"].as_array().is_none_or(Vec::is_empty)
         })
 }
-/// With the opener's block on, a stage that brings new material is refused
-/// while a quick check of this sitting is neither posed nor declined.
 fn due_checks_first(
     cwd: &Path,
     operation: &str,
@@ -669,8 +610,6 @@ fn due_checks_first(
     let counts = sittings.open_counts().ok()??;
     let now = crate::sittings::now_ms();
     let mut synced = crate::practice::GapLogReport::default();
-    // Claiming the opener brings gap logs in, which waits while this
-    // conversation records nothing.
     let records = caller.is_none_or(|host| records_here(&workspace, host));
     let claimed = if records {
         sittings
@@ -756,7 +695,6 @@ fn dispatch_inner(
             .map_err(|e| format!("{e}. reply takes {{\"text\":\"<your whole reply>\"}}"))?;
         let host = native_host.unwrap_or_else(tool_host);
         let event = host_reply(cwd, &host, &request.text)?;
-        // Without this, a tutor often writes the same reply again as text.
         let next = match (request.save_after, &event) {
             (true, Some(event)) => format!(
                 "Send the memory edit or checkpoint due now, in one learning_step, with no text: the learner already has your reply. If this reply set a task, the checkpoint's pending_task names it: proposal_event_ref {event}, and conditions the task's words copied exactly from your reply."
@@ -858,7 +796,6 @@ pub(crate) fn host_session_start(
     }
     Ok(Some(notice))
 }
-/// `magnesium core-rules on|off` in the current study folder.
 pub(crate) fn set_core_rules(on: bool) -> std::process::ExitCode {
     let result = std::env::current_dir()
         .and_then(|cwd| Workspace::discover(&cwd))
@@ -892,10 +829,6 @@ pub(crate) fn set_core_rules(on: bool) -> std::process::ExitCode {
         }
     }
 }
-/// "New here?" is said once per machine, not once per study folder. The
-/// marker lives in Magnesium's per-user data folder, which `magnesium init`
-/// creates; this never creates that folder, so without it the hint falls back
-/// to checking only this study folder.
 fn first_greeting_on_this_machine(folder_has_lessons: bool) -> bool {
     let Ok(paths) = crate::workspace::GlobalPaths::resolve() else {
         return !folder_has_lessons;
@@ -905,22 +838,16 @@ fn first_greeting_on_this_machine(folder_has_lessons: bool) -> bool {
         return false;
     }
     if paths.installed() {
-        // A failed write only means the hint may be repeated once more.
         let _ = crate::workspace::write_private_atomic(&marker, b"");
     }
     !folder_has_lessons
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NoticeHook {
-    /// `core_rules` is this study folder's switch: on, the core rules replace
-    /// the line that asks the tutor to reload its instructions.
-    SessionStart {
-        core_rules: bool,
-    },
+    SessionStart { core_rules: bool },
     UserPromptSubmit,
 }
 impl NoticeHook {
-    /// Must match `additionalContextLimit` in the Claude Code hooks file.
     const fn additional_context_limit(self) -> usize {
         match self {
             Self::SessionStart { .. } => 4096,
@@ -937,11 +864,6 @@ enum Clause {
     Sitting,
     UnboundRecovery,
 }
-/// Over the limit, the state line first loses its context.prepare advice;
-/// only then do clauses give way, in this order. The confusion reminder goes
-/// before the pointers because a turn after a long reply is when it matters
-/// most. The sitting and unbound-work pointers go only when nothing else is
-/// left to drop; the state line still counts unbound work.
 const GIVE_WAY_ORDER: [Clause; 5] = [
     Clause::TaskReminder,
     Clause::ReplyFeedback,
@@ -971,7 +893,6 @@ fn hook_notice(
             if hook == (NoticeHook::SessionStart { core_rules: false }) {
                 clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
             }
-            // A compaction drops the skill that says how a sitting ends.
             if matches!(hook, NoticeHook::SessionStart { .. }) {
                 clauses.push((Clause::Required, crate::closing::END_GUIDANCE.into()));
             }
@@ -979,14 +900,12 @@ fn hook_notice(
         (false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
         _ => {}
     }
-    // The lesson's teaching rules hold whether or not it is recording.
     if active && hook == (NoticeHook::SessionStart { core_rules: true }) {
         clauses.push((
             Clause::Required,
             format!("\n\n{}", core_rules::text()).into(),
         ));
     }
-    // While a quick check of this sitting is open, every turn says so.
     if let Some(sitting) = sitting {
         clauses.push((Clause::Sitting, sitting.to_owned().into()));
     }
@@ -1039,11 +958,7 @@ const CLAUDE_RELOAD_GUIDANCE: &str =
 const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study or catch up, load the learn skill and start or resume a session; when they name an exam, midterm or final to prepare for, load the papers skill instead.";
 const NATIVE_TICKET_FALLBACK: &str =
     " Native ticket unavailable; use labeled model-reported fallback.";
-/// The study window draws the `reply` tool's input as the tutor's words while
-/// they are written; text after a tool call would arrive in one piece. Only
-/// the delivery differs from a terminal: the teaching is the same.
 const CLAUDE_WINDOW_REPLY_GUIDANCE: &str = " This conversation is in the Magnesium study window: record the answer's observation and attempt, then send the reply as the text of Magnesium's reply tool, then send any memory edit or checkpoint due in one learning_step (set save_after on the reply). Write no other text. Teach exactly as you would in a terminal.";
-/// Only the Claude Code plugin ships `/magnesium:help`, so other hosts never get this line.
 const CLAUDE_NEW_LEARNER_GUIDANCE: &str = " No learning session is recorded in this study folder, and no study folder on this machine has greeted the learner yet, so they are probably new to Magnesium: when it fits, tell them \"New here? Type /magnesium:help.\"";
 pub(crate) fn host_user_prompt_submit(
     cwd: &Path,
@@ -1084,9 +999,6 @@ pub(crate) fn host_user_prompt_submit(
         occurred_at_ms: None,
     };
     let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
-    // A learner message in a conversation that records may begin a sitting.
-    // Only its time is kept, never its text.
-    // A message after a sitting's end carries the sitting on.
     let sittings = if recording {
         crate::sittings::Sittings::open(&workspace).map(Some)
     } else {
@@ -1153,8 +1065,6 @@ pub(crate) fn host_user_prompt_submit(
     )?))
 }
 fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
-    // The complete signed ticket stays exact. A count beyond the compact
-    // preview is explicitly labeled and can be read through pending_work.
     let count = if unbound > 9999 {
         "9999+".to_owned()
     } else {
@@ -1173,9 +1083,6 @@ fn native_ticket_notice(ticket: &str, unbound: i64) -> String {
     notice
 }
 
-/// The external key of a reply sent through the window's `reply` tool: the
-/// key of the learner message it answers, so the reply check can pair them.
-/// A second reply in the same turn gets a number.
 const REPLY_KEY_PREFIX: &str = "reply:";
 pub(crate) fn reply_key(learner_key: &str, nth: usize) -> String {
     if nth <= 1 {
@@ -1184,17 +1091,12 @@ pub(crate) fn reply_key(learner_key: &str, nth: usize) -> String {
         format!("{REPLY_KEY_PREFIX}{learner_key}#{nth}")
     }
 }
-/// The key of the learner message a recorded reply answers. A reply from the
-/// end-of-turn hook is keyed by its turn; one from the `reply` tool by the
-/// message it answers.
 pub(crate) fn answered_key(reply_key: &str) -> String {
     match reply_key.strip_prefix(REPLY_KEY_PREFIX) {
         Some(rest) => rest.split('#').next().unwrap_or(rest).to_owned(),
         None => native_capture::event_key(reply_key),
     }
 }
-/// The key of the conversation's latest learner message: the prompt hook or
-/// the session start captured it this turn.
 fn latest_learner_key(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
@@ -1212,9 +1114,6 @@ fn latest_learner_key(
             e => Err(e.to_string()),
         })
 }
-/// Whether the `reply` tool already delivered a reply to the conversation's
-/// latest learner message: then a learning_step that follows it is the
-/// turn's last write.
 pub(crate) fn replied_this_turn(cwd: &Path, host: &HostIdentity) -> Result<bool, String> {
     let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
         return Ok(false);
@@ -1227,11 +1126,6 @@ pub(crate) fn replied_this_turn(cwd: &Path, host: &HostIdentity) -> Result<bool,
         None => Ok(false),
     }
 }
-/// A save after the reply that the runtime refused gets one retry before the
-/// turn ends. Returns true when this conversation's latest learner message
-/// has already had its refusal, so the turn now ends either way; otherwise
-/// it notes this one and returns false. The note is a file of the learner
-/// message's key, one per conversation, in Magnesium's private cache.
 pub(crate) fn refused_save_after_reply(cwd: &Path, host: &HostIdentity) -> Result<bool, String> {
     let Some(workspace) = Workspace::discover(cwd).map_err(|e| e.to_string())? else {
         return Ok(true);
@@ -1253,7 +1147,6 @@ pub(crate) fn refused_save_after_reply(cwd: &Path, host: &HostIdentity) -> Resul
     crate::workspace::write_private_atomic(&path, key.as_bytes()).map_err(|e| e.to_string())?;
     Ok(false)
 }
-/// Replies already recorded from the `reply` tool for one learner message.
 fn tool_replies(
     store: &crate::learner::LearnerStore,
     host: &crate::learner::HostContext,
@@ -1273,11 +1166,6 @@ fn tool_replies(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())
 }
-/// The tutor's reply, from the window's `reply` tool, recorded as it is
-/// delivered: the window shows this text as the tutor writes it. It is kept
-/// as the end-of-turn hook keeps a reply, and only while the lesson records.
-/// Returns the kept event's id, which a checkpoint names as the task it
-/// posed.
 pub(crate) fn host_reply(
     cwd: &Path,
     host: &crate::learner::HostContext,
@@ -1304,8 +1192,6 @@ pub(crate) fn host_reply(
     if !(active && recording) {
         return Ok(None);
     }
-    // The message this reply answers is the conversation's latest learner
-    // message.
     let learner_key = latest_learner_key(&store, host)?;
     let key = match learner_key {
         Some(learner_key) => {
@@ -1353,9 +1239,6 @@ pub(crate) fn host_response_stop_with_delivery(
     if safety.blocked.is_some() {
         return Ok(());
     }
-    // In the window the reply came through the `reply` tool and is already
-    // kept. Text the tutor wrote besides it is kept too, unless it repeats
-    // the reply, so a reply is never lost and never kept twice.
     {
         let store = open_store(&workspace)?;
         let sent = tool_replies(&store, &context, &native_capture::event_key(turn))?;
@@ -1364,8 +1247,6 @@ pub(crate) fn host_response_stop_with_delivery(
             return Ok(());
         }
     }
-    // A reply that says "Quick check 2" poses that check. Only the fact is
-    // kept, never the reply.
     if let Ok(Some(mut sittings)) = crate::sittings::Sittings::open_existing(&workspace) {
         let _ = sittings.note_reply(text);
     }

@@ -13,9 +13,6 @@ pub(crate) enum ChunkKind {
     Fallback,
     Heading,
     Page,
-    /// `Module` and `Symbol` pieces were cut from Python, JavaScript and
-    /// TypeScript files by earlier versions. New code files are split as
-    /// plain text; an index built earlier still holds and reads these.
     Module,
     Symbol,
 }
@@ -43,8 +40,6 @@ impl ChunkKind {
     }
 }
 
-/// Code metadata that earlier versions stored with each code piece. New
-/// pieces carry none, but search still reads it from an earlier index.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct SymbolDefinition {
     pub(crate) name: String,
@@ -227,7 +222,6 @@ fn bounded_chunks(
         if end == lines.len() {
             break;
         }
-        // Overlap only chunks long enough that it stays under half of each one.
         let overlap = if kind == ChunkKind::Fallback && end - start > 2 * OVERLAP_LINES {
             OVERLAP_LINES
         } else {

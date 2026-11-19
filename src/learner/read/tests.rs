@@ -522,7 +522,6 @@ fn ranked_fallback_annotates_priorities_and_separates_advice_from_calls() {
         json!({"action":"prepare","mode":"auto","memory_ids":["m0"],"intents":intents}),
     )
     .unwrap();
-    // The fallback must run the ranked query once, exactly as a direct search does.
     let fallback_reads = table_read_count(&reads, "memory_fts");
     assert!(fallback_reads > 0);
     reads.lock().unwrap().clear();
@@ -695,9 +694,6 @@ fn optional_ranked_cards_skip_large_candidates_and_keep_whole_qualifications() {
 }
 
 type ColumnReads = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
-/// Records every table column that statements prepared on `conn` read. The
-/// authorizer reports what a statement touches, so tests can bound how much a
-/// request loads without depending on the SQL text.
 fn record_column_reads(conn: &Connection) -> ColumnReads {
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
     let reads = ColumnReads::default();
@@ -754,10 +750,7 @@ fn compact_directory_batches_projection_without_loading_body_cues_or_topics() {
             reads.lock().unwrap()
         );
     }
-    // The summary projection is one batch for the whole page.
     assert_eq!(column_read_count(&reads, "learner_memories", "summary"), 1);
-    // The directory's own topic predicate reads the topic relation even with no
-    // memories, so loading topics for the page would show up as extra reads.
     let empty = fixture();
     let empty_reads = record_column_reads(&empty);
     run(&empty, json!({"action":"browse","max_bytes":65536})).unwrap();
@@ -801,8 +794,6 @@ fn bodies_load_once_per_request_for_auto_prepare_and_explicit_read() {
 thread_local! {
     static STATEMENT_EXECUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
-/// Counts statement executions, so a statement prepared once and run once per
-/// memory shows up even though the authorizer sees it only once.
 fn statement_executions(conn: &Connection, request: Value) -> usize {
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     STATEMENT_EXECUTIONS.with(|count| count.set(0));
@@ -931,7 +922,6 @@ fn compact_and_complete_views_share_strict_canonical_field_decoding() {
         [],
     )
     .unwrap();
-    // A compact projection does not invent an interpretation for omitted fields.
     assert!(run(&conn, json!({"action":"browse"})).is_ok());
     assert!(
         run(

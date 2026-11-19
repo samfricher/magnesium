@@ -42,7 +42,6 @@ impl McpClient {
         Self::spawn_bound_with_env(environment, current_dir, workspace_root, initialized, &[])
     }
 
-    /// A server launched as the Claude Code plugin launches it.
     pub fn spawn_claude(environment: &TestEnvironment, variables: &[(&str, &str)]) -> Self {
         Self::spawn_with_args(
             environment,

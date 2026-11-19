@@ -29,8 +29,6 @@ impl LearnerError {
     }
 }
 impl LearnerError {
-    /// A request ID names one request per workspace. Tutors tend to reuse a
-    /// readable ID for a new request, so say what a fresh one must be.
     pub fn request_key_conflict(message: impl Into<String>) -> Self {
         let mut error = Self::new("request_key_conflict", message);
         error.recovery = Some(serde_json::json!({
@@ -57,8 +55,6 @@ impl From<serde_json::Error> for LearnerError {
     }
 }
 pub type Result<T> = std::result::Result<T, LearnerError>;
-// Runtime serialization, decoding, storage spelling and schema all use these
-// same closed choices. There are no schema-only copies of the protocol.
 macro_rules! protocol_enum {
     ($(#[$enum_attr:meta])* $name:ident { $($(#[$variant_attr:meta])* $variant:ident => $wire:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -105,9 +101,6 @@ protocol_enum!(GoalStepStatus { Todo => "todo", Doing => "doing", Done => "done"
 protocol_enum!(AttemptHelp { None => "none", Hint => "hint", Step => "step", Solution => "solution" });
 protocol_enum!(GapType { K => "K", S => "S", N => "N", A => "A", R => "R" });
 
-/// Serde's internally tagged enum derive buffers payload fields and loses their
-/// nested diagnostic path. The runtime variants still derive the wire/schema
-/// contract; this same declaration dispatches a chosen payload exactly once.
 macro_rules! tagged_protocol {
     ($name:ident, operation { $($variant:ident => $wire:literal, $payload:ty;)+ }) => {
         tagged_protocol!($name { $($variant => $wire, $payload;)+ });
@@ -137,7 +130,6 @@ macro_rules! tagged_protocol {
     };
 }
 
-/// Supplied by the adapter, never deserialized from model tool arguments.
 #[derive(Clone, Debug)]
 pub struct HostContext {
     pub host_kind: String,
@@ -155,9 +147,10 @@ pub struct RawEvent {
     #[serde(default)]
     pub occurred_at_ms: Option<i64>,
 }
-/// Exactly one object key identifies change support. Direct event references
-/// may describe a learner challenge; current state still requires observations.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Exactly one object key identifies change support. Direct event references\nmay describe a learner challenge; current state still requires observations."
+)]
 pub enum ChangeBasisRef {
     #[serde(rename = "observation_id")]
     Observation(String),
@@ -166,9 +159,10 @@ pub enum ChangeBasisRef {
     #[serde(rename = "event_id")]
     Event(String),
 }
-/// Only observations can support the current descriptive state. Externally
-/// tagged newtypes retain the selected single-key object wire form and paths.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Only observations can support the current descriptive state. Externally\ntagged newtypes retain the selected single-key object wire form and paths."
+)]
 pub enum CurrentBasisRef {
     #[serde(rename = "observation_id")]
     Observation(String),
@@ -192,198 +186,201 @@ pub struct SourceRef {
     pub hash: Option<String>,
     pub version: Option<String>,
     pub location: Option<String>,
-    /// One of original, excerpt, model_reported or unavailable. A missing or
-    /// unknown value is saved as model_reported.
+    #[schemars(
+        description = "One of original, excerpt, model_reported or unavailable. A missing or\nunknown value is saved as model_reported."
+    )]
     #[serde(default)]
     pub available_form: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ObservationInput {
-    /// Nonempty request-local name of at most 256 UTF-8 bytes, unique across all
-    /// new objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved.
-    /// Refer to it with {"new_observation":"this-name"}.
+    #[schemars(
+        description = "Nonempty request-local name of at most 256 UTF-8 bytes, unique across all\nnew objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved.\nRefer to it with {\"new_observation\":\"this-name\"}."
+    )]
     pub client_ref: String,
-    /// Use self_report for an explicitly stated preference; learner_preference is not a kind.
+    #[schemars(
+        description = "Use self_report for an explicitly stated preference; learner_preference is not a kind."
+    )]
     pub kind: ObservationKind,
-    /// Concrete observed work and its limited implications; not a generic mastery score.
+    #[schemars(
+        description = "Concrete observed work and its limited implications; not a generic mastery score."
+    )]
     pub description: String,
-    /// Existing captured event IDs with each event's evidentiary role. Not event_ids.
+    #[schemars(
+        description = "Existing captured event IDs with each event's evidentiary role. Not event_ids."
+    )]
     #[schemars(length(min = 1, max = 16))]
     pub events: Vec<ObservationEvent>,
     #[serde(default)]
-    /// Conditions under which the work occurred; state unknowns explicitly.
+    #[schemars(
+        description = "Conditions under which the work occurred; state unknowns explicitly."
+    )]
     pub conditions_text: String,
     #[serde(default)]
-    /// Help actually supplied before the work, distinguishing unknown from no help.
+    #[schemars(
+        description = "Help actually supplied before the work, distinguishing unknown from no help."
+    )]
     pub assistance_text: String,
     #[serde(default)]
     pub source_refs: Vec<SourceRef>,
-    /// Give this when the observation is the learner's first try at a task you
-    /// set, or their decline of a quick check. The runtime stores it as one
-    /// row per answer. A wrong or partly right first try schedules a quick
-    /// check on its label for the next day; a later right, cold first try on
-    /// a due check passes it. A right first try reached through a full
-    /// solution is asked for cold the next day. The runtime works out every
-    /// pass, status and next date. Needs a learner_response event.
+    #[schemars(
+        description = "Give this when the observation is the learner's first try at a task you\nset, or their decline of a quick check. The runtime stores it as one\nrow per answer. A wrong or partly right first try schedules a quick\ncheck on its label for the next day; a later right, cold first try on\na due check passes it. A right first try reached through a full\nsolution is asked for cold the next day. The runtime works out every\npass, status and next date. Needs a learner_response event."
+    )]
     #[serde(default)]
     pub attempt: Option<Attempt>,
-    /// Instead of attempt, for a marked paper: one attempt per answered
-    /// question or part, each with paper. At most 40.
+    #[schemars(
+        description = "Instead of attempt, for a marked paper: one attempt per answered\nquestion or part, each with paper. At most 40."
+    )]
     #[serde(default)]
     #[schemars(length(max = 40))]
     pub attempts: Vec<Attempt>,
 }
-/// One marked answer. The runtime stores it as a row code can count, and
-/// schedules quick checks from chat answers.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "One marked answer. The runtime stores it as a row code can count, and\nschedules quick checks from chat answers."
+)]
 #[serde(deny_unknown_fields)]
 pub struct Attempt {
-    /// A short name, 1–120 bytes, for the skill or misunderstanding in words,
-    /// such as "sign of b in the quadratic formula", or the paper's tag. Never
-    /// the problem: no equation and no question number. Reuse an open quick
-    /// check's label exactly for the same skill, and when recording its answer
-    /// or decline.
+    #[schemars(
+        description = "A short name, 1–120 bytes, for the skill or misunderstanding in words,\nsuch as \"sign of b in the quadratic formula\", or the paper's tag. Never\nthe problem: no equation and no question number. Reuse an open quick\ncheck's label exactly for the same skill, and when recording its answer\nor decline."
+    )]
     pub label: String,
-    /// The question as you set it, such as "Solve 2x² − 5x − 3 = 0". On a
-    /// paper, a line of the question is enough; paper says which it was.
-    /// Longer than 1,000 bytes is cut.
+    #[schemars(
+        description = "The question as you set it, such as \"Solve 2x² − 5x − 3 = 0\". On a\npaper, a line of the question is enough; paper says which it was.\nLonger than 1,000 bytes is cut."
+    )]
     pub question: String,
-    /// The mark for the first try before any correction: right, partly or
-    /// wrong. declined when the learner declines a quick check, or asks for
-    /// the full solution before giving any answer: record that with help
-    /// solution, and the step is asked for cold the next day.
+    #[schemars(
+        description = "The mark for the first try before any correction: right, partly or\nwrong. declined when the learner declines a quick check, or asks for\nthe full solution before giving any answer: record that with help\nsolution, and the step is asked for cold the next day."
+    )]
     pub first_try: FirstTry,
-    /// The most help given on this question before the first try: none,
-    /// hint, step (a worked step of this question) or solution. A worked or
-    /// partly worked example on another problem is not help on this one, so
-    /// the changed version or full problem that follows it is none unless
-    /// you helped with that question itself.
+    #[schemars(
+        description = "The most help given on this question before the first try: none,\nhint, step (a worked step of this question) or solution. A worked or\npartly worked example on another problem is not help on this one, so\nthe changed version or full problem that follows it is none unless\nyou helped with that question itself."
+    )]
     pub help: AttemptHelp,
-    /// true only when the answer was unaided, from a blank page, on a later
-    /// day than the teaching. Never true with help other than none, nor when
-    /// this label already has an answer earlier the same day.
+    #[schemars(
+        description = "true only when the answer was unaided, from a blank page, on a later\nday than the teaching. Never true with help other than none, nor when\nthis label already has an answer earlier the same day."
+    )]
     pub cold: bool,
-    /// The learner's confidence letter, when they gave one: sure (S), unsure
-    /// (U) or guess (G).
+    #[schemars(
+        description = "The learner's confidence letter, when they gave one: sure (S), unsure\n(U) or guess (G)."
+    )]
     #[serde(default)]
     pub confidence: Option<Confidence>,
-    /// Seconds the answer took, only where a clock ran.
+    #[schemars(description = "Seconds the answer took, only where a clock ran.")]
     #[serde(default)]
     pub seconds: Option<u32>,
-    /// For an answer on a practice paper: which paper and question, and its
-    /// marks. first_try is right for full marks, wrong for none, else partly.
+    #[schemars(
+        description = "For an answer on a practice paper: which paper and question, and its\nmarks. first_try is right for full marks, wrong for none, else partly."
+    )]
     #[serde(default)]
     pub paper: Option<PaperMark>,
-    /// true when the answer was right but over the time allowed. A Type S
-    /// row never passes on a slow answer.
+    #[schemars(
+        description = "true when the answer was right but over the time allowed. A Type S\nrow never passes on a slow answer."
+    )]
     #[serde(default)]
     pub slow: bool,
-    /// The gap-log rows, such as "midterm-1#3", or quick-check labels this
-    /// answer is a redo of. The runtime counts it for each: a pass when it is
-    /// due and the answer is right, cold and unaided; a fail when it is due
-    /// and the answer is not. On a fail, name only the rows whose tag holds
-    /// the first error. At most 12.
+    #[schemars(
+        description = "The gap-log rows, such as \"midterm-1#3\", or quick-check labels this\nanswer is a redo of. The runtime counts it for each: a pass when it is\ndue and the answer is right, cold and unaided; a fail when it is due\nand the answer is not. On a fail, name only the rows whose tag holds\nthe first error. At most 12."
+    )]
     #[serde(default)]
     #[schemars(length(max = super::limits::COUNTS_FOR_PER_ATTEMPT))]
     pub counts_for: Vec<String>,
-    /// On a paper answer that lost marks, or a full-mark answer that was too
-    /// slow (type S): the gap-log row it makes. The runtime numbers the row,
-    /// writes it into the plan's gap-log.md and dates its redos once you
-    /// report its repair. Needed on every lost mark unless counts_for names
-    /// the row it fails or paper.stretch is true.
+    #[schemars(
+        description = "On a paper answer that lost marks, or a full-mark answer that was too\nslow (type S): the gap-log row it makes. The runtime numbers the row,\nwrites it into the plan's gap-log.md and dates its redos once you\nreport its repair. Needed on every lost mark unless counts_for names\nthe row it fails or paper.stretch is true."
+    )]
     #[serde(default)]
     pub gap: Option<GapReport>,
-    /// The next question to pose cold on the item this answer makes or
-    /// redoes, with its answer key. Write it when the item is made and again
-    /// after each pass.
+    #[schemars(
+        description = "The next question to pose cold on the item this answer makes or\nredoes, with its answer key. Write it when the item is made and again\nafter each pass."
+    )]
     #[serde(default)]
     pub next: Option<NextQuestion>,
-    /// The kind of problem: problems that share one method, such as
-    /// "discrete expected value", 1–120 bytes. With a course graph it is the
-    /// tag. Reuse a name from known_kinds in an earlier result for the same
-    /// method. Give it when the learner has no starting move (no_start), on
-    /// the changed version or full problem that follows an example, and on
-    /// each later problem, cold redo or check of that kind. The runtime keeps
-    /// the kind's help level from these: a first try that is not right
-    /// without help moves it back one step, and the result's help_levels
-    /// states it. An example given on another problem is not help on this one.
+    #[schemars(
+        description = "The kind of problem: problems that share one method, such as\n\"discrete expected value\", 1–120 bytes. With a course graph it is the\ntag. Reuse a name from known_kinds in an earlier result for the same\nmethod. Give it when the learner has no starting move (no_start), on\nthe changed version or full problem that follows an example, and on\neach later problem, cold redo or check of that kind. The runtime keeps\nthe kind's help level from these: a first try that is not right\nwithout help moves it back one step, and the result's help_levels\nstates it. An example given on another problem is not help on this one."
+    )]
     #[serde(default)]
     pub kind: Option<String>,
-    /// true when the learner has no starting move on a new problem of this
-    /// kind, with first_try declined (they wrote nothing) or wrong. Needs
-    /// kind. The runtime moves the help level forward and the result's
-    /// help_levels says which help to give now. Never for the same problem
-    /// or its changed version.
+    #[schemars(
+        description = "true when the learner has no starting move on a new problem of this\nkind, with first_try declined (they wrote nothing) or wrong. Needs\nkind. The runtime moves the help level forward and the result's\nhelp_levels says which help to give now. Never for the same problem\nor its changed version."
+    )]
     #[serde(default)]
     pub no_start: bool,
 }
-/// A gap-log row, as the tutor reports it. Dates, passes and status are the
-/// runtime's.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "A gap-log row, as the tutor reports it. Dates, passes and status are the\nruntime's."
+)]
 #[serde(deny_unknown_fields)]
 pub struct GapReport {
-    /// K did not know, S slow, N notation or missing step, A arithmetic, R
-    /// misread.
+    #[schemars(
+        description = "K did not know, S slow, N notation or missing step, A arithmetic, R\nmisread."
+    )]
     #[serde(rename = "type")]
     pub gap_type: GapType,
-    /// What was written, and what the mark scheme needed. Over 1,000 bytes
-    /// is cut.
+    #[schemars(
+        description = "What was written, and what the mark scheme needed. Over 1,000 bytes\nis cut."
+    )]
     pub what_went_wrong: String,
-    /// The plan's folder under Study/, such as "midterm-1". Needed only when
-    /// the study folder has more than one plan.
+    #[schemars(
+        description = "The plan's folder under Study/, such as \"midterm-1\". Needed only when\nthe study folder has more than one plan."
+    )]
     #[serde(default)]
     pub plan: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NextQuestion {
-    /// A new problem the learner has not seen, posed as is, that needs the
-    /// skill unprompted. It asks for a result and never names or points at
-    /// the skill, tag, method, form of answer, step or earlier mistake:
-    /// "Solve …", not "Solve … by <method>" or "Write … in the form …". Each
-    /// earlier miss gives it a different answer from the right one.
+    #[schemars(
+        description = "A new problem the learner has not seen, posed as is, that needs the\nskill unprompted. It asks for a result and never names or points at\nthe skill, tag, method, form of answer, step or earlier mistake:\n\"Solve …\", not \"Solve … by <method>\" or \"Write … in the form …\". Each\nearlier miss gives it a different answer from the right one."
+    )]
     pub question: String,
-    /// Its answer and how to mark it. Held back until the learner answers.
+    #[schemars(
+        description = "Its answer and how to mark it. Held back until the learner answers."
+    )]
     pub answer_key: String,
 }
-/// A change to one gap-log row or quick check. Name it as the gap log or the
-/// sitting opener does: "midterm-1#3" for a row, or a quick check's label.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "A change to one gap-log row or quick check. Name it as the gap log or the\nsitting opener does: \"midterm-1#3\" for a row, or a quick check's label."
+)]
 #[serde(deny_unknown_fields)]
 pub struct PracticeEdit {
     pub item: String,
-    /// The repair is done: what it was, such as "taught the slope; two
-    /// checks". The first redo falls due the next day, never the same day.
-    /// Report it again after a failed redo's new repair.
+    #[schemars(
+        description = "The repair is done: what it was, such as \"taught the slope; two\nchecks\". The first redo falls due the next day, never the same day.\nReport it again after a failed redo's new repair."
+    )]
     #[serde(default)]
     pub repaired: Option<String>,
     #[serde(default)]
     pub next: Option<NextQuestion>,
-    /// Correct a row's type.
+    #[schemars(description = "Correct a row's type.")]
     #[serde(default, rename = "type")]
     pub gap_type: Option<GapType>,
-    /// Correct a row's description.
+    #[schemars(description = "Correct a row's description.")]
     #[serde(default)]
     pub what_went_wrong: Option<String>,
-    /// Take the item out, when it was logged in error: why. Its attempts stay.
+    #[schemars(
+        description = "Take the item out, when it was logged in error: why. Its attempts stay."
+    )]
     #[serde(default)]
     pub dropped: Option<String>,
 }
-/// Correct a stored attempt, such as when the learner shows a mark was wrong.
-/// Give only the fields that change. The runtime keeps the attempt as it was,
-/// and works out every item it counts for again.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Correct a stored attempt, such as when the learner shows a mark was wrong.\nGive only the fields that change. The runtime keeps the attempt as it was,\nand works out every item it counts for again."
+)]
 #[serde(deny_unknown_fields)]
 pub struct AttemptCorrection {
-    /// From practice.attempts in the result that stored it, or `magnesium
-    /// attempts --json`.
+    #[schemars(
+        description = "From practice.attempts in the result that stored it, or `magnesium\nattempts --json`."
+    )]
     pub attempt_id: String,
-    /// Why, in a sentence.
+    #[schemars(description = "Why, in a sentence.")]
     pub reason: String,
     #[serde(default)]
     pub first_try: Option<FirstTry>,
-    /// A paper answer's marks. first_try follows them.
+    #[schemars(description = "A paper answer's marks. first_try follows them.")]
     #[serde(default)]
     pub marks: Option<f64>,
     #[serde(default)]
@@ -392,10 +389,10 @@ pub struct AttemptCorrection {
     pub cold: Option<bool>,
     #[serde(default)]
     pub slow: Option<bool>,
-    /// Replaces the rows and checks it counts for.
+    #[schemars(description = "Replaces the rows and checks it counts for.")]
     #[serde(default)]
     pub counts_for: Option<Vec<String>>,
-    /// Replaces the kind of problem; an empty string takes it away.
+    #[schemars(description = "Replaces the kind of problem; an empty string takes it away.")]
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -404,22 +401,24 @@ pub struct AttemptCorrection {
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PaperMark {
-    /// The paper's name as the gap log writes it, such as "MockA".
+    #[schemars(description = "The paper's name as the gap log writes it, such as \"MockA\".")]
     pub name: String,
-    /// The question and part, such as "3b".
+    #[schemars(description = "The question and part, such as \"3b\".")]
     pub question: String,
     pub marks: f64,
     pub out_of: f64,
-    /// true for a question beyond the plan's scope: it makes no gap-log row.
+    #[schemars(
+        description = "true for a question beyond the plan's scope: it makes no gap-log row."
+    )]
     #[serde(default)]
     pub stretch: bool,
 }
-/// One step of the lesson's current goal.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(description = "One step of the lesson's current goal.")]
 #[serde(deny_unknown_fields)]
 pub struct GoalStep {
     pub step: String,
-    /// todo, doing or done.
+    #[schemars(description = "todo, doing or done.")]
     pub status: GoalStepStatus,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -432,22 +431,27 @@ pub struct MemoryRecord {
     pub topics: Option<Vec<String>>,
     pub retrieval_cues: Option<Vec<String>>,
     pub review_note: Option<String>,
-    /// Select 1–8 observation objects supporting the complete current description.
-    /// This is not an append-only history; prior support remains in memory revisions.
-    /// Use {"observation_id":"id"} or {"new_observation":"client_ref"}; event_id is only allowed in change_basis.
+    #[schemars(
+        description = "Select 1–8 observation objects supporting the complete current description.\nThis is not an append-only history; prior support remains in memory revisions.\nUse {\"observation_id\":\"id\"} or {\"new_observation\":\"client_ref\"}; event_id is only allowed in change_basis."
+    )]
     #[schemars(length(min = 1, max = 8))]
     pub current_basis: Vec<CurrentBasisRef>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateMemoryEdit {
-    /// Nonempty request-local name of at most 256 UTF-8 bytes, unique across all
-    /// new objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved.
+    #[schemars(
+        description = "Nonempty request-local name of at most 256 UTF-8 bytes, unique across all\nnew objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved."
+    )]
     pub client_ref: String,
-    /// Complete memory description nested under record; title/state_text/current_basis are not edit-level fields.
+    #[schemars(
+        description = "Complete memory description nested under record; title/state_text/current_basis are not edit-level fields."
+    )]
     pub record: MemoryRecord,
     pub reason: String,
-    /// Evidence objects explaining this change; required separately from record.current_basis.
+    #[schemars(
+        description = "Evidence objects explaining this change; required separately from record.current_basis."
+    )]
     #[schemars(length(min = 1, max = 16))]
     pub change_basis: Vec<ChangeBasisRef>,
 }
@@ -456,11 +460,15 @@ pub struct CreateMemoryEdit {
 pub struct ReviseMemoryEdit {
     pub memory_id: String,
     pub expected_revision: i64,
-    /// Complete memory description nested under record; title/state_text/current_basis are not edit-level fields.
+    #[schemars(
+        description = "Complete memory description nested under record; title/state_text/current_basis are not edit-level fields."
+    )]
     pub record: MemoryRecord,
     pub change_kind: ChangeKind,
     pub reason: String,
-    /// Evidence objects explaining this change; required separately from record.current_basis.
+    #[schemars(
+        description = "Evidence objects explaining this change; required separately from record.current_basis."
+    )]
     #[schemars(length(min = 1, max = 16))]
     pub change_basis: Vec<ChangeBasisRef>,
     pub review_resolution: Option<String>,
@@ -472,7 +480,9 @@ pub struct FlagMemoryEdit {
     pub expected_revision: i64,
     pub review_note: String,
     pub reason: String,
-    /// Evidence objects explaining this change; required separately from record.current_basis.
+    #[schemars(
+        description = "Evidence objects explaining this change; required separately from record.current_basis."
+    )]
     #[schemars(length(min = 1, max = 16))]
     pub change_basis: Vec<ChangeBasisRef>,
 }
@@ -485,7 +495,9 @@ pub struct RetireMemoryEdit {
     #[serde(default)]
     pub replacement_ids: Vec<String>,
     #[serde(default)]
-    /// Evidence objects explaining this change; required separately from record.current_basis.
+    #[schemars(
+        description = "Evidence objects explaining this change; required separately from record.current_basis."
+    )]
     #[schemars(length(max = 16))]
     pub change_basis: Vec<ChangeBasisRef>,
 }
@@ -499,11 +511,14 @@ tagged_protocol!(MemoryEdit {
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartSessionEdit {
-    /// Nonempty request-local name of at most 256 UTF-8 bytes, unique across all
-    /// new objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved.
+    #[schemars(
+        description = "Nonempty request-local name of at most 256 UTF-8 bytes, unique across all\nnew objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved."
+    )]
     pub client_ref: String,
     pub goal: String,
-    /// Explicitly selected pending unbound inputs; never import a whole backlog.
+    #[schemars(
+        description = "Explicitly selected pending unbound inputs; never import a whole backlog."
+    )]
     #[serde(default)]
     #[schemars(length(max = 32))]
     pub selected_unbound_event_ids: Vec<String>,
@@ -520,7 +535,9 @@ pub struct UseSessionEdit {
 pub struct ResumeSessionEdit {
     pub session_id: String,
     pub expected_revision: i64,
-    /// Explicitly selected pending unbound inputs to attach to this lesson.
+    #[schemars(
+        description = "Explicitly selected pending unbound inputs to attach to this lesson."
+    )]
     #[serde(default)]
     #[schemars(length(max = 32))]
     pub selected_unbound_event_ids: Vec<String>,
@@ -546,9 +563,6 @@ tagged_protocol!(SessionEdit, operation {
 });
 
 impl SessionEdit {
-    /// The only lifecycle operations that can admit independently verified new
-    /// input while inactive. Adapter/store validation and generated descriptions
-    /// share this vocabulary; a capture reference itself never chooses one.
     pub const CAPTURE_OPERATIONS: [&'static str; 2] = ["start", "resume"];
 
     pub fn accepts_capture_operation(operation: Option<&str>) -> bool {
@@ -556,7 +570,6 @@ impl SessionEdit {
     }
 }
 
-/// Preserve the selected wire form: an integer or the literal "after_edit".
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MemoryRevision {
     Known(i64),
@@ -617,7 +630,6 @@ impl schemars::JsonSchema for MemoryRevision {
         "MemoryRevision".into()
     }
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        // The sentinel schema value comes from the runtime serializer.
         let sentinel = serde_json::to_value(Self::AfterEdit).expect("revision sentinel");
         let integer = generator.subschema_for::<i64>();
         schemars::json_schema!({"anyOf":[integer,{"type":"string","const":sentinel}]})
@@ -629,31 +641,33 @@ pub struct MemoryRevisionRef {
     pub memory_id: String,
     pub revision: MemoryRevision,
 }
-/// Event-backed task proposal, with delivery and help recorded separately.
-/// A planned task without a captured proposal belongs in checkpoint.next_action
-/// or plan_text. This object is not a free-form task draft or delivery claim.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Event-backed task proposal, with delivery and help recorded separately.\nA planned task without a captured proposal belongs in checkpoint.next_action\nor plan_text. This object is not a free-form task draft or delivery claim."
+)]
 #[serde(deny_unknown_fields)]
 pub struct PendingTask {
-    /// Required actual captured event ID containing the task proposal. Never
-    /// invent an ID or use a learner request as a tutor proposal. A proposal
-    /// reference alone does not show that the learner received the task.
+    #[schemars(
+        description = "Required actual captured event ID containing the task proposal. Never\ninvent an ID or use a learner request as a tutor proposal. A proposal\nreference alone does not show that the learner received the task."
+    )]
     pub proposal_event_ref: String,
-    /// The task's own words, copied exactly from the reply that posed it:
-    /// the question and what it states, not the feedback or teaching before
-    /// it. The study window marks them as the task. A task's words restate
-    /// every number, name and condition its answer needs, so these stand
-    /// alone. Other constraints go in plan_text.
+    #[schemars(
+        description = "The task's own words, copied exactly from the reply that posed it:\nthe question and what it states, not the feedback or teaching before\nit. The study window marks them as the task. A task's words restate\nevery number, name and condition its answer needs, so these stand\nalone. Other constraints go in plan_text."
+    )]
     pub conditions: String,
     #[serde(default)]
-    /// Captured event IDs of actual observed delivery, not planned future
-    /// delivery. An empty array means no known observed delivery.
+    #[schemars(
+        description = "Captured event IDs of actual observed delivery, not planned future\ndelivery. An empty array means no known observed delivery."
+    )]
     pub observed_delivery_refs: Vec<String>,
     #[serde(default)]
-    /// Captured event IDs of help actually supplied. Proposed future help
-    /// belongs in next_action or plan_text until it has an actual event.
+    #[schemars(
+        description = "Captured event IDs of help actually supplied. Proposed future help\nbelongs in next_action or plan_text until it has an actual event."
+    )]
     pub help_refs: Vec<String>,
-    /// Optional captured event ID of the reference answer; do not invent one.
+    #[schemars(
+        description = "Optional captured event ID of the reference answer; do not invent one."
+    )]
     pub reference_answer_ref: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -661,23 +675,23 @@ pub struct PendingTask {
 pub struct Checkpoint {
     pub current_problem: String,
     pub working_diagnosis: String,
-    /// Intended next teaching step, including a specific planned task when no
-    /// captured proposal event exists yet. Preserve the meaningful task here.
+    #[schemars(
+        description = "Intended next teaching step, including a specific planned task when no\ncaptured proposal event exists yet. Preserve the meaningful task here."
+    )]
     pub next_action: String,
-    /// Optional concise plan, including planned task wording, conditions and
-    /// future help. Planning does not establish proposal, delivery or ability.
+    #[schemars(
+        description = "Optional concise plan, including planned task wording, conditions and\nfuture help. Planning does not establish proposal, delivery or ability."
+    )]
     pub plan_text: Option<String>,
     #[serde(default)]
     pub memory_refs: Vec<MemoryRevisionRef>,
-    /// Existing event-backed task. Before a proposal event exists, retain the
-    /// plan in next_action/plan_text and use null only if no useful current task
-    /// needs preserving. Keep actual task refs until deliberately replaced or
-    /// skipped; null in this complete checkpoint replacement clears the task.
-    /// Complete-captured may retain an identical existing task or clear it, but
-    /// cannot introduce or materially change one.
+    #[schemars(
+        description = "Existing event-backed task. Before a proposal event exists, retain the\nplan in next_action/plan_text and use null only if no useful current task\nneeds preserving. Keep actual task refs until deliberately replaced or\nskipped; null in this complete checkpoint replacement clears the task.\nComplete-captured may retain an identical existing task or clear it, but\ncannot introduce or materially change one."
+    )]
     pub pending_task: Option<PendingTask>,
-    /// Optional ordered steps of the current goal, at most 12. A checkpoint
-    /// saved before this field existed has none.
+    #[schemars(
+        description = "Optional ordered steps of the current goal, at most 12. A checkpoint\nsaved before this field existed has none."
+    )]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 12))]
     pub goal_steps: Vec<GoalStep>,
@@ -685,16 +699,19 @@ pub struct Checkpoint {
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EventDisposition {
-    /// Existing event ID; supply at most one disposition for this event per batch.
+    #[schemars(
+        description = "Existing event ID; supply at most one disposition for this event per batch."
+    )]
     pub event_id: String,
-    /// processed or no_change; this object has no reason field.
+    #[schemars(description = "processed or no_change; this object has no reason field.")]
     pub outcome: Disposition,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateReviewEdit {
-    /// Nonempty request-local name of at most 256 UTF-8 bytes, unique across all
-    /// new objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved.
+    #[schemars(
+        description = "Nonempty request-local name of at most 256 UTF-8 bytes, unique across all\nnew objects in this batch. Runtime IDs (e/o/m/s/r-32 hex digits) are reserved."
+    )]
     pub client_ref: String,
     pub memory_id: String,
     pub purpose: String,
@@ -726,17 +743,17 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     pub action: UpdateAction,
     #[serde(default)]
     pub mode: UpdateMode,
-    /// Required. An ID you make up for this request, new to this study folder:
-    /// every conversation here shares its IDs, so end it with something only
-    /// this turn has, such as the last characters of its ticket or event ID.
-    /// Send an ID again only to replay the identical request after an unknown
-    /// outcome.
+    #[schemars(
+        description = "Required. An ID you make up for this request, new to this study folder:\nevery conversation here shares its IDs, so end it with something only\nthis turn has, such as the last characters of its ticket or event ID.\nSend an ID again only to replay the identical request after an unknown\noutcome."
+    )]
     pub request_id: String,
-    /// Existing learner input used as context/support, never a reassignment.
-    /// To associate pending unbound work, select it explicitly in session.
+    #[schemars(
+        description = "Existing learner input used as context/support, never a reassignment.\nTo associate pending unbound work, select it explicitly in session."
+    )]
     pub turn_ref: Option<String>,
-    /// Required whenever checkpoint is supplied. Existing session writes require
-    /// session_id and its current expected_revision (independent of memory revisions).
+    #[schemars(
+        description = "Required whenever checkpoint is supplied. Existing session writes require\nsession_id and its current expected_revision (independent of memory revisions)."
+    )]
     pub session: Option<S>,
     #[serde(default)]
     pub reported_events: Vec<RawEvent>,
@@ -744,22 +761,21 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     pub observations: Vec<ObservationInput>,
     #[serde(default)]
     pub memory_edits: Vec<M>,
-    /// Complete lesson checkpoint replacement. When non-null, session is REQUIRED:
-    /// use {operation:"use",session_id,expected_revision} from context.status or
-    /// the last successful session receipt, or an explicit start/resume operation.
-    /// Preserve checkpoint on errors and repair the session guard instead of dropping it.
+    #[schemars(
+        description = "Complete lesson checkpoint replacement. When non-null, session is REQUIRED:\nuse {operation:\"use\",session_id,expected_revision} from context.status or\nthe last successful session receipt, or an explicit start/resume operation.\nPreserve checkpoint on errors and repair the session guard instead of dropping it."
+    )]
     pub checkpoint: Option<Checkpoint>,
     #[serde(default)]
     pub event_dispositions: Vec<EventDisposition>,
     #[serde(default)]
     pub review_updates: Vec<R>,
-    /// Report a repair, the next question, or a correction, on gap-log rows
-    /// and quick checks. Never a date, pass or status: the runtime works those
-    /// out. At most 40.
+    #[schemars(
+        description = "Report a repair, the next question, or a correction, on gap-log rows\nand quick checks. Never a date, pass or status: the runtime works those\nout. At most 40."
+    )]
     #[serde(default)]
     #[schemars(length(max = super::limits::PRACTICE_EDITS_PER_BATCH))]
     pub practice: Vec<PracticeEdit>,
-    /// At most 8.
+    #[schemars(description = "At most 8.")]
     #[serde(default)]
     #[schemars(length(max = super::limits::ATTEMPT_CORRECTIONS_PER_BATCH))]
     pub attempt_corrections: Vec<AttemptCorrection>,
@@ -777,14 +793,17 @@ pub struct UpdateResult {
     pub index_status: String,
     pub references: std::collections::BTreeMap<String, String>,
     pub revisions: std::collections::BTreeMap<String, i64>,
-    /// What the runtime cut or relabeled to save this request instead of
-    /// refusing it. Absent when nothing was changed.
+    #[schemars(
+        description = "What the runtime cut or relabeled to save this request instead of\nrefusing it. Absent when nothing was changed."
+    )]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shortened: Vec<String>,
 }
 
-/// Bounded provenance/context only; no alternate learner profile in event metadata.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Bounded provenance/context only; no alternate learner profile in event metadata."
+)]
 #[serde(deny_unknown_fields)]
 pub struct EventMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -798,16 +817,18 @@ pub struct EventMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub help_refs: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    /// Typed source references; do not add a metadata.source field.
+    #[schemars(description = "Typed source references; do not add a metadata.source field.")]
     pub source_refs: Vec<SourceRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    /// Describe image/file provenance here, not in a metadata.image_path field.
+    #[schemars(
+        description = "Describe image/file provenance here, not in a metadata.image_path field."
+    )]
     pub attachments: Vec<AttachmentRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coverage: Option<String>,
-    /// Set by the host alone, from how the learner sent the message: talk is
-    /// never an answer, so no attempt may cite it. Absent from the tool
-    /// schema, and refused on a model-reported event.
+    #[schemars(
+        description = "Set by the host alone, from how the learner sent the message: talk is\nnever an answer, so no attempt may cite it. Absent from the tool\nschema, and refused on a model-reported event."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub intent: Option<MessageIntent>,
@@ -822,9 +843,10 @@ pub struct AttachmentRef {
     pub content_length: Option<u64>,
 }
 
-/// Transport proof of a new native learner message on an explicit start or
-/// resume, not evidence of understanding or an instruction to choose a session.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "Transport proof of a new native learner message on an explicit start or\nresume, not evidence of understanding or an instruction to choose a session."
+)]
 #[serde(deny_unknown_fields)]
 pub struct NativeCaptureRequest {
     pub ticket: String,

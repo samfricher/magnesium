@@ -11,12 +11,6 @@ use crate::workspace::Workspace;
 
 const MAX_HOOK_INPUT_BYTES: u64 = 4 * 1024 * 1024;
 
-/// Hook events the plugin no longer registers. A plugin copy from before
-/// their removal, or a Claude Code session started before the program was
-/// replaced, still runs them. Exit code 2 from a PreCompact hook blocks
-/// compaction, so these names must keep parsing and must succeed: they exit
-/// 0 at once, with no output, without reading their input or recording
-/// anything.
 pub(crate) const RETIRED_EVENTS: [&str; 2] = ["pre-compact", "post-compact"];
 
 #[derive(Clone, Copy, Debug)]
@@ -25,7 +19,6 @@ enum HookEvent {
     UserPromptSubmit,
     Stop,
     SessionEnd,
-    /// After Magnesium's `reply` tool, in a session the study window starts.
     PostToolUse,
 }
 
@@ -60,9 +53,6 @@ struct HookInput {
     hook_event_name: String,
     model: Option<String>,
     permission_mode: Option<String>,
-    /// Claude Code's per-prompt UUID, shared by every hook in that turn, so
-    /// the prompt and Stop hooks agree on the turn. A prompt without one gets
-    /// a native-local ordinal instead.
     prompt_id: Option<String>,
     prompt: Option<String>,
     source: Option<String>,
@@ -74,10 +64,6 @@ struct HookInput {
     tool_response: Option<Value>,
 }
 
-/// The host comes from the installed `--host-kind` hook flag, because Claude
-/// Code's official event JSON carries no kind field. A missing or unknown
-/// kind is unavailable capture, never a silent reinterpretation as Claude
-/// Code. The caller degrades fail-open so the host stays unblocked.
 fn host_kind(flag: Option<&str>) -> Result<HostKind, String> {
     let flag = flag.ok_or("unavailable_capture: the hook command names no host kind")?;
     HostKind::parse(flag).map_err(|detail| format!("unavailable_capture: {detail}"))
@@ -192,13 +178,7 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
         return Err("hook_event_name does not match the invoked handler".to_owned());
     }
     validate_identifier("session_id", &input.session_id)?;
-    // A turn-scoped hook needs the native turn ID. Without one, only a
-    // prompt is accepted, and `handle` then allocates a native-local ordinal
-    // (see `validate_turn_for`).
 
-    // Never scrape transcript files. Available finalized assistant text is
-    // captured as observed delivery only while learning recording is active.
-    // Provider model/permission metadata remains unpersisted.
     let _unpersisted_documented_fields =
         (&input.transcript_path, &input.model, &input.permission_mode);
 
@@ -223,8 +203,6 @@ fn validate_input(event: HookEvent, input: &HookInput) -> Result<(), String> {
                 .ok_or_else(|| "Stop is missing stop_hook_active".to_owned())?;
             Ok(())
         }
-        // "clear" and "resume" are the reasons after which Claude Code's
-        // process continues as a different conversation.
         HookEvent::SessionEnd => validate_choice(
             "reason",
             input.reason.as_deref(),
@@ -283,11 +261,6 @@ fn handle(
     kind: HostKind,
     workspace: &Workspace,
 ) -> Result<Option<Value>, String> {
-    // Hook cwd must resolve to the same nearest boundary as the workspace
-    // under operation. A mismatch (nested/moved workspace, changed route,
-    // simultaneous windows, or a bound-root violation) rejects learning
-    // writes here; ordinary host work continues because hooks always exit
-    // successfully with degraded status instead of blocking.
     adapter::check_workspace_binding(workspace)?;
     let host = &HostIdentity::new(kind, &input.session_id)
         .map_err(|detail| format!("unavailable_capture: {detail}"))?;
@@ -295,10 +268,6 @@ fn handle(
         let tool = input.tool_name.as_deref();
         let ends = match tool_kind(tool) {
             Some(MagnesiumTool::Reply) => !save_after(input.tool_input.as_ref()),
-            // The notes the tutor sends after its reply are the turn's last
-            // write, once they are saved. A refused save gets one retry, and
-            // the turn ends after it either way. In a terminal no reply tool
-            // exists, so this never fires.
             Some(MagnesiumTool::LearningStep) => {
                 adapter::replied_this_turn(&input.cwd, host)?
                     && (committed(input.tool_response.as_ref())
@@ -321,10 +290,6 @@ fn handle(
         HookEvent::UserPromptSubmit => {
             let prompt = input.prompt.as_deref().expect("validated prompt");
             let context = if input.prompt_id.is_none() {
-                // A prompt without a stable turn ID: allocate a native-local
-                // ordinal at this trusted prompt hook. The session/order
-                // mapping is unambiguous (per-session monotonic counter);
-                // retries reuse the MCP idempotency key.
                 let ordinal =
                     adapter::host::allocate_native_ordinal(workspace, &host.stored_session_id())?;
                 adapter::host_user_prompt_submit(&input.cwd, host, None, Some(ordinal), prompt)?
@@ -353,8 +318,6 @@ fn handle(
                 &stored_turn,
                 input.last_assistant_message.as_deref(),
             )?;
-            // A sitting this turn ended: Claude Code shows the learner its
-            // closing lines under the reply.
             let closing = crate::closing::stop_hook_lines(workspace, &host.stored_session_id());
             Ok(Some(closing.map_or_else(
                 || json!({}),
@@ -371,12 +334,6 @@ fn handle(
     }
 }
 
-/// The turn ends at its last write in the window: at the reply, or, when a
-/// memory edit or checkpoint is due, at the one learning_step after it. A
-/// tutor asked to write nothing more still wrote a closing line in most turns
-/// of the live runs of 2026-11-11 ("Your question is above"), which the
-/// window would show as a second message, and which cost seconds. Other
-/// tools, and every terminal session, are left alone.
 fn end_turn() -> Value {
     json!({"continue": false, "suppressOutput": true})
 }
@@ -401,9 +358,6 @@ fn tool_kind(tool: Option<&str>) -> Option<MagnesiumTool> {
     }
 }
 
-/// Whether a learning_step's result says the update committed. Claude Code
-/// hands an MCP tool's result to the hook as its content, whose text holds
-/// the runtime's JSON, so every string is read as JSON too.
 fn committed(response: Option<&Value>) -> bool {
     fn walk(value: &Value, depth: u8) -> bool {
         if depth > 6 {
@@ -423,8 +377,6 @@ fn committed(response: Option<&Value>) -> bool {
     response.is_some_and(|response| walk(response, 0))
 }
 
-/// A line for the learner beside the hook's other output. Claude Code shows a
-/// hook's `systemMessage` to the person at the terminal and not to the model.
 fn with_message(output: Option<Value>, message: Option<String>) -> Option<Value> {
     let Some(message) = message else {
         return output;

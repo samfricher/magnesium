@@ -1,6 +1,3 @@
-//! Retrieval for the active workspace only. Results preserve source provenance but
-//! grant no authority to mutate learner state, invoke tools, or change policy.
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

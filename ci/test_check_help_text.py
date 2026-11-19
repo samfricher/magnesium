@@ -1,4 +1,3 @@
-"""The /magnesium:help text checker passes the real skill and names each planted defect."""
 import contextlib
 import io
 from pathlib import Path
@@ -37,7 +36,6 @@ def example(action: str = '1. **Learn one week.** Say "Teach me week 6 from the 
 
 
 def skill_text(changes: dict[str, str] | None = None) -> str:
-    """A small skill laid out like claude-plugin/skills/help/SKILL.md, with some section bodies replaced."""
     bodies = {"Show the screen": SHAPE}
     bodies.update({f"Topic: {name}": topic(name) for name in check_help_text.TOPICS})
     bodies.update({f"Example: {name}": example() for name in EXAMPLES})

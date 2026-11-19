@@ -1,4 +1,3 @@
-//! Real runtime commands must have unambiguous batch-local identities.
 use super::*;
 use rusqlite::{Connection, types::ValueRef};
 use serde_json::{Value, json};
@@ -103,8 +102,6 @@ fn event_status(conn: &Connection, id: &str) -> (String, Option<String>) {
     )
     .unwrap()
 }
-/// Every semantic canonical/projection row, receipt, control and generation is
-/// compared. Only raw capture's event_generation is separated for exact checks.
 fn semantic_state(conn: &Connection) -> Value {
     let mut result = serde_json::Map::new();
     for table in [
@@ -247,8 +244,6 @@ fn batch_keys_distinct_explicit_dispositions_leave_unselected_support_pending() 
 
 #[test]
 fn batch_keys_cross_kind_and_same_kind_names_have_indexed_diagnostics() {
-    // Definitions are visited in protocol order. Exhaust every cross-kind pair
-    // and repeated observation/memory/review definitions with fixed permutations.
     let paths = [
         "session.client_ref",
         "observations[0].client_ref",
@@ -450,8 +445,6 @@ fn batch_keys_failed_raw_capture_is_once_pending_then_fresh_key_repairs_and_repl
         1
     );
 
-    // Correct with a fresh receipt key and explicitly reuse the independently
-    // captured original input in its support role; no second raw record.
     request["request_id"] = json!("corrected-batch");
     request["observations"][0]["events"]
         .as_array_mut()
@@ -688,7 +681,6 @@ fn batch_keys_generated_runtime_schema_describes_local_namespace_and_disposition
             .unwrap()["properties"]["client_ref"]
             .clone()
     };
-    // The operation schemas may be nullable; inspect each actual typed shape.
     let session = serde_json::to_value(schemars::schema_for!(StartSessionEdit)).unwrap();
     let fields = [
         properties["observations"]["items"]["properties"]["client_ref"].clone(),

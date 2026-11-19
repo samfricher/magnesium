@@ -1,10 +1,3 @@
-// The lesson as it fills the surface: the tutor's words in the reading face,
-// the learner's in the face they type in, and the record's lines (a mark, a
-// change to the plan) small and in ink under what they are about. Every
-// message of the learner's is drawn the same way: the window sends them all
-// alike, and only a mark under one says the record took it as an answer.
-// Nothing here reads a mark or a change from the tutor's words.
-
 import { memo, useEffect, useRef, useState } from "react";
 
 import { isHelp, opening, splitAttached, splitConfidence, splitQuote, type Card, type LessonTurn, type Live, type Notice } from "../lesson";
@@ -19,7 +12,6 @@ function Said({ text, className }: { text: string; className: string }) {
   return <div className={className} dangerouslySetInnerHTML={{ __html: renderPlain(text) }} />;
 }
 
-/** Files that went with a message, by their own names: never the folder they were kept in. */
 function Sent({ files, working }: { files: string[]; working: boolean }) {
   if (files.length === 0) return null;
   return (
@@ -30,27 +22,20 @@ function Sent({ files, working }: { files: string[]; working: boolean }) {
   );
 }
 
-// Marks the runtime sent while this window was open, and those of them whose day has already filled once. A mark
-// read back from the record when a session is drawn again is in neither, so its day is drawn filled and still.
 const arrived = new Set<string>();
 const filled = new Set<string>();
 
-/** A mark has just come from the runtime: its day fills as it is drawn, once. */
 export function markArrived(id: string): void {
   arrived.add(id);
 }
 
-/** The skill's three days beside a mark that earned one: those earned filled, the one just earned filling as it comes.
- * They hang in the margin left of the mark while it has room for them, else they start the mark's line. */
 function PassDays({ mark, day }: { mark: Mark; day: number }) {
-  // Decided once, when first drawn: a turn drawn again later (folded into the lesson, or the tab reopened) is still.
   const [fresh] = useState(() => arrived.has(mark.id) && !filled.has(mark.id));
   const days = useRef<HTMLSpanElement | null>(null);
   const edge = useRef<HTMLElement | null>(null);
   useEffect(() => {
     filled.add(mark.id);
   }, [mark.id]);
-  // The mark's own line is the column's edge; the rings and their gap must fit left of it.
   const hangs = useHangs(edge, ".surface", () => {
     const rings = days.current;
     return rings ? rings.offsetWidth + parseFloat(getComputedStyle(rings).getPropertyValue("--pass-gap") || "0") * parseFloat(getComputedStyle(document.documentElement).fontSize) : 0;
@@ -84,7 +69,6 @@ function Marks({ marks }: { marks: Mark[] }) {
           <p key={mark.id} className="record mark" data-mark={mark.mark}>
             {day !== null && <PassDays mark={mark} day={day} />}
             {markWords(mark)}
-            {/* The rings are hidden from a screen reader, so the day they show is said to it in words. */}
             {spoken && <span className="visually-hidden"> {spoken}</span>}
             {pass && <span className="record-pass"> {pass}</span>}
             {pass && mark.receipt && (
@@ -100,8 +84,6 @@ function Marks({ marks }: { marks: Mark[] }) {
   );
 }
 
-/** The sitting's closing lines, as the runtime worked them out from the record: drawn as they are, never reworded,
- * with a skill's name drawn as it is everywhere else, formulas and all. */
 function Closing({ lines }: { lines: string[] }) {
   return (
     <div className="record closing" data-role="closing">
@@ -114,7 +96,6 @@ function Closing({ lines }: { lines: string[] }) {
   );
 }
 
-/** What changed, one row for each thing that changed: "now before Confidence intervals, on Sun 15 Nov". */
 function byThing(changes: PlanDiff["changes"]): { what: string; detail: string }[] {
   const rows: { what: string; detail: string }[] = [];
   for (const each of changes) {
@@ -125,7 +106,6 @@ function byThing(changes: PlanDiff["changes"]): { what: string; detail: string }
   return rows;
 }
 
-/** "Midterm 2, Hypothesis tests and Confidence intervals". */
 function namesOf(rows: { what: string }[]): string {
   const names = rows.map((row) => row.what);
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
@@ -134,7 +114,6 @@ function namesOf(rows: { what: string }[]): string {
 export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief?: boolean; planKey?: string | null }) {
   const shown = byThing(change.changes.filter((each) => !each.route));
   if (shown.length === 0) return null;
-  // Once read, the change settles to one quiet line: what changed, by name; the plan says how.
   if (brief) {
     return (
       <p className="record plan-brief" data-role="plan-change">
@@ -162,7 +141,6 @@ export function PlanChange({ change, brief, planKey }: { change: PlanDiff; brief
   );
 }
 
-/** What the learner said: the passage it quoted, the words, the files that went with it, and the record's marks for it. */
 function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boolean }) {
   const text = turn.learner;
   if (text.trim() === "") return null;
@@ -171,11 +149,9 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
   const attached = splitAttached(quoted.text);
   const { text: words, confidence } = splitConfidence(attached.text);
   const marks = turn.marks ?? [];
-  // A choice picked on a card, and help asked for in the window's own words, are said the same way, quieter.
   const quiet = turn.pick || turn.said === "help" || (turn.said === undefined && isHelp(text));
   return (
     <>
-      {/* A mark on an answer to a task that is not just above it says which task it was. */}
       {showQuestion && marks.length > 0 && turn.question && (
         <p className="question">
           <Line text={firstWords(turn.question)} />
@@ -192,34 +168,22 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
 
 type TurnProps = {
   turn: LessonTurn;
-  /** This turn's reply holds the open task. */
   open: boolean;
-  /** The line is in that task. */
   held: boolean;
-  /** Links to a source stay shut until the task in this reply is answered. */
   linksOpen: boolean;
-  /** A file that opens even while this reply's links are shut: a past paper. */
   opensNow?: (path: string) => boolean;
-  /** The reply is still being written. */
   writing: boolean;
-  /** A sitting began here, in an earlier part of the conversation. */
   divider: boolean;
-  /** The open task's words, when this turn's reply posed it. */
   task?: string;
-  /** Say above an answer which task it answered: the task is not just above it. */
   showQuestion: boolean;
-  /** A later turn follows: what this one changed in the plan is one quiet line now. */
   settled?: boolean;
-  /** The key that shows the plan, while it is not shown beside the lesson; null while it is. */
   planKey: string | null;
   onSource: (source: SourceRef, from?: HTMLElement) => void;
   onNote: (text: string) => void;
   onHold: () => void;
-  /** The learner's words are held until the tutor finishes, and not sent yet. */
   waiting?: boolean;
 };
 
-/** One exchange. Finished exchanges are drawn once and kept: a new word in the live reply redraws only the live one. */
 export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, onHold, waiting }: TurnProps) {
   const reply = turn.tutor;
   return (
@@ -236,8 +200,6 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
         </p>
       )}
       {turn.step && (
-        // Where the step's work began: set in above the reply that moved the lesson on to it, numbered by the route as
-        // it stood then. The number is for the eye; a screen reader hears it with the route's length.
         <h2 className="step-head" data-role="step-head">
           <span className="step-n" aria-hidden="true">
             {turn.step.n}
@@ -259,7 +221,6 @@ export const Turn = memo(function Turn({ turn, open, held, linksOpen, opensNow, 
 });
 
 export function Working({ live }: { live: Live }) {
-  // While words come, the caret is at their end, inside the reply.
   if (live.status === "idle" || (live.status === "writing" && (live.streaming !== "" || live.done.length > 0))) return null;
   const words = live.status === "working" && live.doing ? live.doing : null;
   return (
@@ -281,7 +242,6 @@ export function Notices({
   onDismiss: (text: string) => void;
   onStartAgain?: (text: string, atUsualEffort: boolean) => void;
   onSignIn?: () => void;
-  /** Open the session's list of models, as More's Model row does. */
   onPickModel?: () => void;
 }) {
   if (notices.length === 0) return null;
@@ -289,7 +249,6 @@ export function Notices({
     <div className="notices">
       {notices.map((notice) =>
         (notice.kind === "record_unopened" || notice.kind === "record_unopened_at_effort") && onStartAgain ? (
-          // A lesson that never opened the record: the way on is to start it again, at the agent's own effort when another was picked.
           <p key={notice.text} className="record note" role="alert">
             {withoutPaths(notice.text)}
             <span className="note-acts">
@@ -302,8 +261,6 @@ export function Notices({
             </span>
           </p>
         ) : notice.kind === "sign_in" && onSignIn ? (
-          // Claude Code's sign-in is started from here: ⌘K no longer holds it, and Settings offers it only once
-          // the window has asked Claude Code again.
           <p key={notice.text} className="record note" role="alert">
             {withoutPaths(notice.text)}
             <span className="note-acts">
@@ -340,9 +297,6 @@ export function Notices({
   );
 }
 
-// A card that arrives while the learner is typing would catch their next Space or Return and allow, or answer,
-// without their meaning to. So it takes the keyboard only from nowhere, or from a line that is empty and has had no
-// key for this long; otherwise the keyboard stays where it is, and ⇧⇥ from the line goes to the card.
 const TYPING_MS = 2000;
 let lastKeyAt = -Infinity;
 if (typeof window !== "undefined") window.addEventListener("keydown", () => (lastKeyAt = performance.now()), true);
@@ -355,7 +309,6 @@ function mayTakeKeys(): boolean {
   return at.value.trim() === "" && !at.closest(".line")?.querySelector(".attached .file");
 }
 
-/** The card's first choice, given the keyboard as the card arrives when the learner is not typing. */
 function useFirstChoice() {
   const first = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -364,7 +317,6 @@ function useFirstChoice() {
   return first;
 }
 
-/** A request from the tutor that waits on the learner: a permission, or a question with choices. */
 export function Cards(props: { cards: Card[]; onDecide: (id: string, decision: Decision) => void; onAnswer: (id: string, answers: Answer[]) => void }) {
   return (
     <>
@@ -386,7 +338,6 @@ function PermissionCard({ card, onDecide }: { card: Extract<Card, { kind: "permi
     <div className="card" role="group" aria-label={card.title}>
       <p className="record-head">{card.title}</p>
       {card.detail && <p className="card-what">{withoutPaths(card.detail)}</p>}
-      {/* The command or call itself, whole: the learner allows what it does, not what it is said to do. */}
       {card.exact && <p className="card-detail">{card.exact}</p>}
       <p className="card-acts">
         <button ref={first} className="act" data-drive="allow" onClick={() => onDecide(card.id, "allow_once")}>
@@ -397,7 +348,6 @@ function PermissionCard({ card, onDecide }: { card: Extract<Card, { kind: "permi
         </button>
       </p>
       {card.canAlways && (
-        // The engine's own words for what the grant covers ("Always allow tectonic commands"), after an "or".
         <p className="card-always">
           <button className="act" data-drive="allow-always" onClick={() => onDecide(card.id, "allow_always")}>
             or {always.charAt(0).toLowerCase() + always.slice(1)}

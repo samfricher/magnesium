@@ -1,4 +1,3 @@
-//! The error path preserves intended lesson state rather than encouraging its removal.
 use crate::support::{TestEnvironment, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -142,8 +141,6 @@ fn missing_guard_does_not_suggest_using_a_session_paused_by_another_conversation
         "learning_step",
         json!({"schema":"learner-model/v2","action":"update","request_id":"other-pause","session":{"operation":"pause","session_id":session,"expected_revision":2}}),
     );
-    // Pausing the shared lesson stops capture in this conversation too, so the
-    // update is refused before the guard and nothing suggests the paused session.
     let rejected = call(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint-after-other-pause","checkpoint":{"current_problem":"Problem","working_diagnosis":"Uncertain","next_action":"Read current session state"}}),

@@ -30,9 +30,6 @@ pub(crate) fn load_or_start_reconciliation(
     initial_cursor_json: &str,
     cancellation: &OperationCancellation,
 ) -> Result<ReconciliationState, ManifestError> {
-    // Creating the index must not stop at a search's deadline: a half-created
-    // index is an empty file, or a cache that never switches to WAL mode. The
-    // caller's deadline still bounds every wait for an existing index.
     let creating = fs::metadata(index_path).map_or(true, |metadata| metadata.len() == 0);
     let initialization = if creating {
         OperationCancellation::none()
@@ -40,9 +37,6 @@ pub(crate) fn load_or_start_reconciliation(
         cancellation.clone()
     };
     let connection = initialize_index(index_path, INDEX_INITIALIZATION_BUDGET, &initialization)?;
-    // Immediate: the read that decides whether a cursor exists must happen
-    // under the write lock, or two writers can both decide to insert and the
-    // loser observes a stale snapshot instead of the committed cursor.
     let transaction = begin_write(
         &connection,
         index_path,
@@ -146,10 +140,6 @@ pub(crate) fn reconcile_batch_with_policy(
     let (hashed, hashed_bytes) =
         hash_before_lock(&discovery, index_path, &mut after_open, cancellation)?;
     let connection = open_index_for_write(index_path)?;
-    // Immediate: the compare-and-swap guard must read the persisted cursor
-    // under the same write lock it commits with. A deferred transaction can
-    // read a stale snapshot and then fail with SQLITE_BUSY_SNAPSHOT instead
-    // of a truthful reconciliation conflict.
     let transaction = begin_write(
         &connection,
         index_path,
@@ -266,9 +256,6 @@ pub(crate) fn reconcile_batch_with_policy(
                     sqlite(index_path, "clear completed reconciliation cursor", source)
                 })?;
             if cleared != 1 {
-                // A competing owner advanced the cursor while this pass scanned.
-                // Rolling back prevents a stale completion from deleting unseen
-                // sources or bumping the generation.
                 return Err(ManifestError::ReconciliationConflict);
             }
         }
@@ -287,9 +274,6 @@ pub(crate) fn reconcile_batch_with_policy(
     Ok(progress.report)
 }
 
-/// A content hash read before the write lock, with the size and modified time
-/// the file had then. The locked pass reuses it only while the file still has
-/// both, the same evidence that lets it skip an unchanged file.
 pub(crate) struct HashedContent {
     file_size: Option<i64>,
     modified_unix_ns: Option<i64>,
@@ -297,11 +281,6 @@ pub(crate) struct HashedContent {
     sensitivity: Option<SensitivityClass>,
 }
 
-/// Hashing reads every byte of a new file and scans it for credentials, which
-/// takes seconds for a large PDF, and every other writer waits for the lock
-/// meanwhile, including a search with a 150 ms budget. So a batch hashes new
-/// and resized sources before it takes the lock. A file whose size stays the
-/// same but whose modified time changed is still hashed under the lock.
 fn hash_before_lock(
     discovery: &DiscoveryReport,
     index_path: &Path,
@@ -594,8 +573,6 @@ pub(crate) fn reconcile_entry(
     let move_matches = existing
         .iter()
         .filter(|(old_key, record)| {
-            // In-memory checks first: the filesystem check runs only for a
-            // row with the same content, not for every row per new file.
             record.present
                 && !current_keys.contains(*old_key)
                 && !progress.moved_ids.contains(&record.manifest_id)

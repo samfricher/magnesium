@@ -1,8 +1,3 @@
-/*
- * The tutor's words: Markdown and mathematics in the reading face. A task is
- * set apart by a rule hung in the margin, the same rule an answer sits on.
- */
-
 .tutor { margin: 0 0 0.4rem; }
 
 .prose {
@@ -13,7 +8,6 @@
 }
 .prose > :first-child { margin-top: 0; }
 .prose p { margin: 0 0 0.85em; }
-/* Headings in the reading face's own weight: the title leads by its size, never by bold. */
 .prose h1,
 .prose h2,
 .prose h3,
@@ -71,10 +65,7 @@
 .prose .diagram svg { max-width: 100%; height: auto; }
 
 .prose .katex { font-size: 1.06em; }
-/* An inline fraction hangs a little below the line box and pushed the next line about 1px down; it may hang into the
-   leading instead, so every line of a paragraph keeps one pitch. */
 .prose p .katex .base { margin-bottom: -0.3em; }
-/* Not in a task: its rule runs the height of its lines, and a hanging fraction would end below it. */
 .prose div.task p .katex .base { margin-bottom: 0; }
 .prose .katex-display { margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
 .line .katex,
@@ -82,7 +73,6 @@
 
 .math-wait { height: 2.4rem; }
 
-/* The task: the last part of a reply, on a rule hung in the margin. */
 .prose div.task {
   margin: 1.2rem 0 0 calc(-1 * var(--hang));
   padding: 0.05rem 0 0.05rem calc(var(--hang) - 2px);
@@ -95,8 +85,6 @@
 .prose p.task > strong:first-child { font-weight: 600; }
 .prose p.task > strong:first-child::after { content: "."; }
 
-/* The task the record names, inside a reply that did not set it apart: the line runs beside its own lines, drawn
-   over the reply so no text moves when it appears (taskRule.ts places it). */
 .prose.has-task-rule { position: relative; }
 .prose.has-task-rule::before {
   content: "";
@@ -111,29 +99,11 @@
 .turn.open .prose.has-task-rule::before { background: color-mix(in srgb, var(--ink) 45%, var(--faint)); }
 .turn.held .prose.has-task-rule::before { background: var(--ink); }
 
-/* The open task's rule runs on into its line, under it. */
 .turn.open .tutor { margin-bottom: 0; }
 .turn.open .prose div.task { padding-bottom: 0.2rem; }
 
-/* The words the engine needs a due question to open with, drawn quiet and unnumbered. */
 .prose .earlier { font: 400 0.765rem/1 var(--app); color: var(--quiet); margin-right: 0.35em; }
 
-/* A long lesson holds up to 150 turns. The replies of the finished ones are
-   not laid out or painted while they are out of view (content-visibility),
-   and each keeps the height it last had on screen. Not the reply being
-   written (the last turn's), nor the one holding the open task, which the
-   copy over the line measures. Only once every turn has been laid out once
-   (`data-measured`, set by the session, and again when the column's width
-   or the text size changes), so each has its real height kept. Never a reply
-   with an image or a diagram: one that loads after its height was kept
-   would change the page's length as it scrolls into view.
-   Never while text is selected (`data-whole`, main.tsx): WebKit leaves a
-   skipped reply out of the page's text, so a copy would lose it.
-   Skipping needs the reply contained, and a contained box keeps its last
-   margin inside instead of letting it merge with the gap under it. So that
-   the page is laid out as before, the reply's last margin (0.85em, which
-   prose blocks all share) moves out to the reply's holder, and the reply's
-   box reaches into the hang on the left, where a task's rule is drawn. */
 .now > article.turn:not(.open):not(:last-of-type) > .tutor {
   margin-bottom: 0.85rem;
 }

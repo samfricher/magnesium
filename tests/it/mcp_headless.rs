@@ -56,7 +56,6 @@ fn mcp_advertises_five_headless_tools_and_serves_no_resources() {
             assert_eq!(actions, BTreeSet::from(["inspect".into(), "status".into()]));
         }
     }
-    // The server declares no resources capability, so it serves no resource.
     write_message(
         &mut c.stdin,
         &json!({"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"file:///lesson.md"}}),

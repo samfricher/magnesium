@@ -1,16 +1,3 @@
-//! The Magnesium runtime, reached the way Claude Code reaches it.
-//!
-//! The direct engine keeps the learner record from code. It writes through
-//! the runtime's two host protocols, as a client, so that the same checks,
-//! capture tickets and spacing apply as in a lesson Claude Code runs:
-//!
-//! - hook events: `magnesium _internal hook <event>`, one process each, with
-//!   the JSON Claude Code would send on standard input;
-//! - the tool server: one `magnesium _internal mcp-server` for the whole
-//!   conversation, spoken to over JSON-RPC on its standard input and output,
-//!   with the conversation's id in `CLAUDE_CODE_SESSION_ID`, as Claude Code
-//!   sets it.
-
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
@@ -22,25 +9,15 @@ use serde_json::{json, Value};
 
 use crate::paths;
 
-/// The adapter protocol the hooks and the tool server speak.
 const PROTOCOL: &str = "2";
 const HOST_KIND: &str = "claude";
-/// Claude Code's own session variable: the tool server's only way to know
-/// the conversation.
 const SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 const HOOK_LIMIT: Duration = Duration::from_secs(5);
-/// How long one tool call may take. A call is a few milliseconds; one that
-/// takes this long is taken for a hung server, which is replaced.
 const CALL_LIMIT: Duration = Duration::from_secs(8);
-/// Set to milliseconds to use another limit per tool call. For tests.
 pub const CALL_LIMIT_ENV: &str = "MAGNESIUM_APP_RUNTIME_CALL_MS";
-/// Asks the tool server for a sitting's quick checks and paper redos as data.
 const CHECKS_ENV: &str = "MAGNESIUM_SITTING_CHECKS";
-/// The start of an error whose outcome is unknown: the call may or may not
-/// have been carried out.
 const UNKNOWN: &str = "unknown outcome: ";
 
-/// Whether an error leaves the call's outcome unknown.
 pub fn unknown(error: &str) -> bool {
     error.starts_with(UNKNOWN)
 }
@@ -53,14 +30,12 @@ fn call_limit() -> Duration {
         .unwrap_or(CALL_LIMIT)
 }
 
-/// The runtime, for one conversation in one study folder.
 pub struct HostClient {
     program: PathBuf,
     folder: PathBuf,
     session: String,
     version: String,
     server: Mutex<Option<Server>>,
-    /// A learning_step result said a sitting ended, since this was last taken.
     sitting_ended: std::sync::atomic::AtomicBool,
 }
 
@@ -79,11 +54,7 @@ impl Drop for Server {
 }
 
 impl HostClient {
-    /// `version` is the runtime's own version: a hook or tool call names
-    /// the plugin version it comes from, and the runtime takes only its own.
     pub fn new(program: PathBuf, folder: PathBuf, session: String, version: String) -> Self {
-        // Build metadata, as in "0.3.0+abc123", is not part of the version
-        // the runtime compares.
         let version = version.split('+').next().unwrap_or_default().to_owned();
         Self {
             program,
@@ -110,8 +81,6 @@ impl HostClient {
         ]
     }
 
-    /// Send one hook event and return its `additionalContext`, if it gave
-    /// one. `fields` adds the event's own fields to the common ones.
     pub fn hook(&self, event: &str, name: &str, fields: Value) -> Result<Option<String>, String> {
         let mut payload = json!({
             "session_id": self.session,
@@ -133,9 +102,6 @@ impl HostClient {
         let mut child = command
             .spawn()
             .map_err(|e| format!("the hook did not start: {e}"))?;
-        // Written on its own thread: a large payload to a hook slow to read
-        // it must not hold the turn past the hook's limit, when the hook is
-        // stopped and the write ends.
         if let Some(mut stdin) = child.stdin.take() {
             let payload = payload.to_string();
             std::thread::spawn(move || {
@@ -225,18 +191,10 @@ impl HostClient {
         Ok(server)
     }
 
-    /// Call one of the runtime's tools and return its JSON result. A result
-    /// the tool marks as an error, or that holds only an error, comes back
-    /// as `Err` with its text.
     pub fn call(&self, tool: &str, arguments: Value) -> Result<Value, String> {
         self.call_by(tool, arguments, Instant::now() + call_limit() * 2)
     }
 
-    /// The same, finished by `deadline`. A server that dies or hangs is
-    /// replaced, and a call whose outcome that leaves unknown is sent once
-    /// more exactly as it was: the runtime answers a replayed request with
-    /// its first result. An error that starts as [`unknown`] says the
-    /// outcome is still unknown.
     pub fn call_by(
         &self,
         tool: &str,
@@ -272,12 +230,10 @@ impl HostClient {
                     return answered;
                 }
                 Err(Failure::Refused(error)) => return Err(error),
-                // Not carried out: start the server again and send it.
                 Err(Failure::NotSent(error)) => {
                     *guard = None;
                     last = Some(error);
                 }
-                // Dropping the server stops its process.
                 Err(Failure::Unknown(error)) => {
                     *guard = None;
                     last = Some(format!("{UNKNOWN}{error}"));
@@ -287,14 +243,11 @@ impl HostClient {
         Err(last.unwrap_or_else(|| "no time was left for the call".to_owned()))
     }
 
-    /// Whether a learning_step result said a sitting ended since the last
-    /// time this was asked.
     pub fn take_sitting_ended(&self) -> bool {
         self.sitting_ended
             .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// End the tool server.
     pub fn close(&self) {
         let mut guard = self.server.lock().unwrap_or_else(|p| p.into_inner());
         *guard = None;
@@ -305,13 +258,9 @@ impl HostClient {
     }
 }
 
-/// How a request to the tool server failed.
 enum Failure {
-    /// The server answered with an error: it was refused.
     Refused(String),
-    /// It never reached the server, so it was not carried out.
     NotSent(String),
-    /// It reached the server and no answer came: it may have been.
     Unknown(String),
 }
 
@@ -323,7 +272,6 @@ impl Failure {
     }
 }
 
-/// A tool call's result as JSON, or the error it holds.
 fn answer(tool: &str, result: &Value) -> Result<Value, String> {
     let text: String = result["content"]
         .as_array()
@@ -336,8 +284,6 @@ fn answer(tool: &str, result: &Value) -> Result<Value, String> {
     }
     let value: Value =
         serde_json::from_str(&text).map_err(|e| format!("the {tool} result is not JSON: {e}"))?;
-    // A refused write comes back as a result that holds only an error, such
-    // as recording_disabled.
     if let Some(error) = value.get("error").filter(|e| e.is_object()) {
         return Err(format!(
             "{}: {}",
@@ -396,8 +342,6 @@ impl Server {
     }
 }
 
-/// The capture ticket in a prompt hook's notice, issued when no lesson is
-/// active in this conversation.
 pub fn ticket(notice: &str) -> Option<String> {
     let start = notice.find("native_capture.ticket=")? + "native_capture.ticket=".len();
     let ticket: String = notice[start..]
@@ -407,8 +351,6 @@ pub fn ticket(notice: &str) -> Option<String> {
     (!ticket.is_empty()).then_some(ticket)
 }
 
-/// The event a prompt hook captured the learner's words as, while a lesson
-/// is active.
 pub fn current_event(notice: &str) -> Option<String> {
     let start = notice.find("current event e-")? + "current event ".len();
     let id: String = notice[start..]

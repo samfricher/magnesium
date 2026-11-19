@@ -107,8 +107,6 @@ fn wal_peer_process_helper() {
     };
     let connection = Connection::open(index).unwrap();
     connection.busy_timeout(Duration::ZERO).unwrap();
-    // Taking the exclusive lock succeeds only if no other process holds a lock.
-    // Its close then checkpoints and deletes the WAL.
     let _ = connection.query_row("PRAGMA locking_mode=EXCLUSIVE", [], |row| {
         row.get::<_, String>(0)
     });
@@ -705,9 +703,6 @@ fn incompatible_source_caches_are_rejected_byte_preserved_with_rebuild_guidance(
 
 #[test]
 fn cancellation_during_pdf_extraction_aborts_before_storing_candidates() {
-    // The production token must reach the extraction stage: cancellation that
-    // starts after extraction begins aborts before candidates are stored and
-    // is not recorded as a source defect.
     let fixture = Fixture::new("pdf-cancelled-extraction");
     fixture.write("book.pdf", &pdf_fixture());
     let index = fixture.index();
@@ -722,7 +717,6 @@ fn cancellation_during_pdf_extraction_aborts_before_storing_candidates() {
         &index,
         Path::new("book.pdf"),
         Some(Box::new(move |_bytes| {
-            // Extraction has started; cancellation begins mid-extraction.
             flag.store(true, Ordering::Relaxed);
             Ok(vec!["extracted page".to_owned()])
         })),
@@ -1364,17 +1358,12 @@ fn a_search_past_its_deadline_still_finishes_creating_a_missing_index() {
 
 #[test]
 fn open_workspace_source_rejects_traversal_and_symlink_before_any_bytes() {
-    // LEARN-206 reuses this boundary for original-byte inspection: absolute
-    // paths, traversal, symlinks and non-files fail before any read, so a
-    // `sources` caller can never escape the workspace through a crafted path.
     use super::source::open_workspace_source;
     use std::cell::Cell;
 
     let fixture = Fixture::new("open-boundary");
     fixture.write("lesson.md", b"bounded original\n");
     fs::create_dir(fixture.root.join("notes")).expect("create notes directory");
-    // The outside target exists and is reachable from every path below, so
-    // only the workspace-relative guard rejects it before the file is opened.
     let outside = Fixture::new("open-boundary-outside");
     outside.write("secret.md", b"outside secret\n");
     let outside_name = outside.root.file_name().expect("outside fixture name");
@@ -1426,9 +1415,6 @@ fn open_workspace_source_rejects_traversal_and_symlink_before_any_bytes() {
     assert_eq!(opened.get(), 1);
 }
 
-/// Two-page PDF with empty content streams: the native text layer is
-/// blank, which is exactly the image-only/scanned shape an optional
-/// local converter exists for.
 fn blank_pdf_fixture() -> Vec<u8> {
     let mut document = Document::with_version("1.5");
     let pages_id = document.new_object_id();
@@ -1488,8 +1474,6 @@ fn current_source_for(index: &Path, display_path: &str) -> CurrentSource {
         .expect("read manifest source")
 }
 
-/// Fake conversion worker: a shell script serving one canned framed
-/// response. Configs pass explicitly; no environment is touched.
 #[cfg(unix)]
 struct ConversionWorker {
     dir: PathBuf,
@@ -1572,9 +1556,6 @@ impl Drop for ConversionWorker {
 
 #[test]
 fn blank_pdf_without_worker_keeps_the_native_result() {
-    // No worker is configured in this process, so the #208 hook is inert
-    // and the core install behaves exactly as before: blank pages index
-    // as blank candidates with truthful unavailable coverage downstream.
     let fixture = Fixture::new("blank-pdf-native");
     fixture.write("blank.pdf", &blank_pdf_fixture());
     let index = fixture.index();
@@ -1624,8 +1605,6 @@ fn blank_pdf_uses_a_configured_worker_and_maps_anchors() {
             assert_eq!(drafts.len(), 2);
             assert_eq!(drafts[0].body, "First");
             assert_eq!(drafts[1].body, "Second");
-            // Converter identity travels beside the drafts so the derived
-            // index never misattributes worker text to the native worker.
             assert_eq!(provenance.method, "fake-worker");
             assert_eq!(provenance.method_version, "hook-test");
             assert_eq!(provenance.coverage, "complete");
@@ -1670,7 +1649,6 @@ fn readable_pages_and_missing_workers_never_spawn() {
     let source = current_source_for(&index, "book.pdf");
     let body = ConversionWorker::response_for(&source.content_sha256, &["X"]);
     let worker = ConversionWorker::new(&ConversionWorker::framed(&body), "sentinel");
-    // Readable pages: the worker is never consulted.
     let native: Result<Vec<String>, ManifestError> = Ok(vec!["readable".to_owned()]);
     let outcome = try_worker_for_blank_pdf(
         &source,
@@ -1681,7 +1659,6 @@ fn readable_pages_and_missing_workers_never_spawn() {
     )
     .expect("readable pages skip the worker");
     assert!(outcome.is_none());
-    // No configured worker: blank pages still skip spawning.
     let blank: Result<Vec<String>, ManifestError> = Ok(vec!["".to_owned()]);
     let outcome =
         try_worker_for_blank_pdf(&source, &blank, &fixture.root.join("book.pdf"), None, None)
@@ -1778,7 +1755,6 @@ fn worker_provenance_persists_in_the_derived_index_and_clears_on_native() {
     let super::extract::PdfOutcome::Drafts(drafts) = outcome else {
         panic!("worker must supply drafts");
     };
-    // Partial worker coverage with a missing range must survive the store.
     let provenance = ConverterProvenance {
         coverage: "partial".to_owned(),
         missing: vec!["remainder beyond worker bounds (1 blocks kept)".to_owned()],
@@ -1827,8 +1803,6 @@ fn worker_provenance_persists_in_the_derived_index_and_clears_on_native() {
             .is_some_and(|warnings| warnings.contains("uncertain table structure")),
         "{row:?}"
     );
-    // A later native generation supersedes the worker one: provenance
-    // clears instead of misattributing native text to the converter.
     let source = current_source_for(&index, "blank.pdf");
     let native_pages = crate::retrieval::chunking::ChunkDraft {
         kind: crate::retrieval::chunking::ChunkKind::Page,

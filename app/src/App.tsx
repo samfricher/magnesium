@@ -1,19 +1,3 @@
-// The window: a quiet row of tabs over three levels.
-//
-//   Home       every workspace in the library, and the most recent session
-//              first, so Return carries on. A workspace's page opens in the
-//              tab Home was in: its sessions under a visible "New session",
-//              its material, papers, and the folder itself. Any tab can show
-//              Home, and + opens it; none is kept open for it. Closing the
-//              last tab closes the window.
-//   Session    the one-surface lesson of #67, in a tab of its own.
-//   Settings   a readable page, in a tab of its own.
-//
-// Every command is a visible control, an item in the menu bar, and, for the
-// few the window itself has, a row in ⌘K. The menu sends what a click sends.
-// How the window was left (the tabs, the one in front, the plan beside the
-// lesson) is kept in the window's own state, as fields an older build skips.
-
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { core, isDemo } from "./bridge";
@@ -34,21 +18,17 @@ import { PasteSheet } from "./surface/Sheets";
 import type { About, AgentEvent, Core, Engine, EngineChoice, MenuChoice, MenuSpec, Payment, Permissions, Setup, Workspace } from "./types";
 import { displayName, withoutPaths } from "./words";
 
-/** A tab that shows Home, or the page of a workspace opened from it (`folder`). */
 type HomeTab = { key: string; kind: "home"; folder: string | null };
 type SettingsTab = { key: "settings"; kind: "settings" };
 export type Tab = HomeTab | SessionTab | SettingsTab;
 
 type Overlay = { kind: "commands" } | { kind: "paste"; folder: string } | null;
 
-/** How the window was left, as kept in its state file. */
 type Saved = {
   v: 1;
   tabs: ({ kind: "home"; folder: string | null } | { kind: "session"; key: string; folder: string; session: string | null; title: string } | { kind: "settings" })[];
   active: number;
-  /** The workspace whose page the first Home tab showed, or null for Home itself: what an older build reads. */
   home: string | null;
-  /** `tabs` holds the Home tabs too, in their places. An older build kept one Home tab, first and out of the list. */
   homes?: boolean;
   panel: boolean;
   seen_ms: number;
@@ -57,15 +37,12 @@ type Saved = {
 const HOME: HomeTab = { key: "home", kind: "home", folder: null };
 const SETTINGS: SettingsTab = { key: "settings", kind: "settings" };
 
-/** A session not begun yet, until the tutor names it. The page above it already says the course. */
 const NEW_TITLE = "New session";
-/** How long a lesson is quiet before the pages behind it read the record again. */
 const PAGES_QUIET_MS = 1500;
 
 let counter = 0;
 const newKey = () => `s${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-/** A tab opened from the window goes after the others, before Settings. */
 function insertTab(tabs: Tab[], tab: Tab): Tab[] {
   const settings = tabs.findIndex((each) => each.kind === "settings");
   const next = [...tabs];
@@ -73,15 +50,12 @@ function insertTab(tabs: Tab[], tab: Tab): Tab[] {
   return next;
 }
 
-/** What the self-check and the demo drive the window with. */
 export type Actions = {
   run: (command: string, arg?: string) => void;
-  /** Home's first row: carry on the most recent session, or start one. */
   continueRecent: () => void;
   newSession: (folder?: string, pending?: Pending) => void;
   openSession: (folder: string, session: string, title: string) => void;
   goWorkspace: (folder: string | null) => void;
-  /** The session in front, or null. */
   session: () => SessionHandle | null;
   tabs: () => { key: string; kind: Tab["kind"]; title: string }[];
   active: () => string;
@@ -98,11 +72,8 @@ export function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([HOME]);
   const [active, setActive] = useState<string>("home");
-  // The first reading of a folder's page, made before the page was opened, by the tab it opened in.
   const [firsts, setFirsts] = useState<Record<string, { folder: string; first: Reading | Promise<Reading> }>>({});
   const [panel, setPanel] = useState(false);
-  // The panel's width as the learner left it, and the window's: the panel is drawn at the first fitted to the
-  // second, so a window made narrow for a moment does not shrink the panel for good.
   const [panelWanted, setPanelWanted] = useState(panelWidthKept);
   const [room, setRoom] = useState(() => window.innerWidth);
   useEffect(() => {
@@ -111,47 +82,35 @@ export function App() {
     return () => window.removeEventListener("resize", seen);
   }, []);
   const panelWidth = fitPanelWidth(panelWanted, room);
-  // Bumped when a panel's documents change, so the menu's titles and what it enables follow.
   const [docsSeen, setDocsSeen] = useState(0);
   const onDocsChange = useCallback(() => setDocsSeen((n) => n + 1), []);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [liveKey, setLiveKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [taskOpen, setTaskOpen] = useState<Record<string, boolean>>({});
-  // Each session's page while a task is open: folded to the task, or the whole lesson opened over it.
   const [answerPages, setAnswerPages] = useState<Record<string, AnswerPage>>({});
   const [notes, setNotes] = useState<string[]>([]);
   const [signingIn, setSigningIn] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [restored, setRestored] = useState(false);
-  // Home holds its column back until its first row is known (PLAN_WAIT_MS at most): the first screen waits for it.
   const [homeShown, setHomeShown] = useState(false);
   const onHomeShown = useCallback(() => setHomeShown(true), []);
-  // The section of Settings asked for last, and how many times one was asked for: asked again, it comes into view
-  // again, though Settings stayed open at another place in between.
   const [settingsSection, setSettingsSection] = useState<{ name: string | null; asked: number }>({ name: null, asked: 0 });
   const [blockMinutes, setBlockMinutes] = useState(50);
-  // Counts the times the pages kept behind other tabs (a workspace's page, Home) should read the record again.
   const [readAgain, setReadAgain] = useState(0);
-  // The quick checks due in each folder, as Home and a workspace's page last read them: the menu offers Just the
-  // Quick Checks where some are.
   const [checksDue, setChecksDue] = useState<Record<string, number>>({});
   const onChecksDue = useCallback((folder: string, due: number) => setChecksDue((old) => (old[folder] === due ? old : { ...old, [folder]: due })), []);
   const handles = useRef<Record<string, SessionHandle>>({});
-  // The workspace page in front takes the panel's commands for the material open beside it.
   const workspaceDocs = useRef<((command: string) => boolean) | null>(null);
   const registerWorkspacePanel = useCallback((run: ((command: string) => boolean) | null) => (workspaceDocs.current = run), []);
-  // The folders whose pages show a timed paper running.
   const paperIn = useRef(new Set<string>());
   const onPaper = useCallback((folder: string, running: boolean) => {
     if (running) paperIn.current.add(folder);
     else paperIn.current.delete(folder);
   }, []);
   const setupWait = useRef<Promise<Setup> | null>(null);
-  // The commands a key just ran: the menu's echo of the same press is not run twice.
   const pressed = useRef<Record<string, number>>({});
 
-  // The newest values, for handlers that outlive a render.
   const now = useRef({ api, setup, prefs, workspaces, tabs, active, panel, overlay, liveKey, busyKey });
   now.current = { api, setup, prefs, workspaces, tabs, active, panel, overlay, liveKey, busyKey };
 
@@ -188,10 +147,6 @@ export function App() {
     }
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Tabs
-
-  // The Home tab used last: a command that goes to Home or to a workspace from another kind of tab opens it there.
   const lastHome = useRef("home");
   const activate = useCallback((key: string) => {
     setOverlay(null);
@@ -201,18 +156,11 @@ export function App() {
     if (tab?.kind === "session" && tab.session) void now.current.api?.touchSession(tab.folder, tab.session).catch(() => {});
   }, []);
 
-  // A page in a Home tab is put in front once it can be drawn whole: a folder's page once it is read, Home's list
-  // once its first row is known. Until then (OPEN_WAIT_MS at most) the page in front stays as it is. Opened at once,
-  // a folder's page drew its head and a placeholder, and then its parts came in over the next frames, each pushing
-  // the ones under it down; Home's list drew nothing until its first row was known.
   const opening = useRef<{ asked: number; key: string | null; folder: string | null } | null>(null);
   const asks = useRef(0);
-  // The Home tab that came to the front just read: coming back, it does not read again.
   const justRead = useRef<string | null>(null);
-  /** Show Home (`folder` null) or a folder's page in the Home tab `key`, or in a new tab when `key` is null. */
   const navigate = useCallback(
     (key: string | null, folder: string | null) => {
-      // Asked again while it is read, as by a second click on its row: the reading under way is waited for.
       if (opening.current && opening.current.key === key && opening.current.folder === folder) return;
       const asked = ++asks.current;
       opening.current = null;
@@ -220,7 +168,6 @@ export function App() {
       const tab = key === null ? null : tabs.find((each): each is HomeTab => each.key === key && each.kind === "home");
       if (key !== null && !tab) return;
       const show = (first?: Reading | Promise<Reading>) => {
-        // The tab closed while its page was read (a tab behind can be, by its close mark): nothing to show it in.
         if (key !== null && !now.current.tabs.some((each) => each.key === key)) return;
         const into = key ?? newKey();
         justRead.current = first !== undefined && now.current.active !== into ? into : null;
@@ -232,14 +179,11 @@ export function App() {
         setTabs((old) => (key === null ? insertTab(old, { key: into, kind: "home", folder }) : old.map((each) => (each.key === into && each.kind === "home" ? { ...each, folder } : each))));
         activate(into);
       };
-      // The page already in the tab is read again while it is behind.
       if (!api || (tab && folder === tab.folder)) return show();
       let read: Reading | null = null;
       let reading: Promise<Reading> | null = null;
       let ready: Promise<unknown> | null;
       if (folder) {
-        // Opening the page notes the visit, which puts the folder first in the library. The library is read again once
-        // the page is read, so Home's list does not change order while it is still on screen.
         reading = readWorkspace(api, folder, true).then((done) => (read = done));
         void reading.then(() => loadWorkspaces());
         ready = reading;
@@ -250,7 +194,6 @@ export function App() {
       if (!ready) return show();
       opening.current = { asked, key, folder };
       void Promise.race([ready, new Promise((done) => window.setTimeout(done, OPEN_WAIT_MS))]).then(() => {
-        // Another page asked for since, or another tab put in front: the learner has moved on from this one.
         if (asked !== asks.current) return;
         opening.current = null;
         if (now.current.active === active) show(read ?? reading ?? undefined);
@@ -259,9 +202,6 @@ export function App() {
     [activate, loadWorkspaces],
   );
 
-  // Home or a workspace's page, asked for from anywhere (a row, the menu, ⌘K, a key). A folder's page already open
-  // in a tab is gone to, so one folder has one page. A Home tab in front shows it; from another kind of tab, the
-  // Home tab used last does, or a new one when none is open.
   const goWorkspace = useCallback(
     (folder: string | null) => {
       const { tabs, active } = now.current;
@@ -276,7 +216,6 @@ export function App() {
     [activate, navigate],
   );
 
-  // + and New Tab: Home, in a tab of its own. A tab already showing Home is gone to instead of a second one.
   const newTab = useCallback(() => {
     const atHome = now.current.tabs.find((each) => each.kind === "home" && each.folder === null);
     if (atHome) activate(atHome.key);
@@ -294,7 +233,6 @@ export function App() {
     [],
   );
 
-  /** The workspace in front: the page in a Home tab, or the session's. */
   const folderInFront = (): string | null => {
     const { tabs, active, workspaces } = now.current;
     const tab = tabs.find((each) => each.key === active);
@@ -311,7 +249,6 @@ export function App() {
         note("Open a space first.");
         return;
       }
-      // A workspace has one session not begun at a time: New session goes to it.
       const waiting = now.current.tabs.find((each) => each.kind === "session" && each.folder === where && each.session === null && !each.pending && !handles.current[each.key]?.state().live);
       if (waiting) {
         activate(waiting.key);
@@ -322,11 +259,9 @@ export function App() {
       addSession({ folder: where, session: null, title: NEW_TITLE, ...(pending ? { pending } : {}) });
       void loadWorkspaces();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activate, addSession, goWorkspace, note, loadWorkspaces],
   );
 
-  /** A kept session, in its tab as it was left: its turns, its open task and the line in it. Nothing is sent. */
   const openSession = useCallback(
     (folder: string, session: string, title: string) => {
       const open = now.current.tabs.find((each) => each.kind === "session" && each.folder === folder && each.session === session);
@@ -344,14 +279,10 @@ export function App() {
     else if (list[0]) newSession(list[0].folder, { kind: "start" });
   }, [openSession, newSession]);
 
-  // Closing the last tab closes the window, as a browser's does. Its state is kept with no tabs, so the next window
-  // opens on Home, not on the tab just closed. The tab itself stays drawn until the window is gone: an empty window
-  // would show for a moment otherwise.
   const leaving = useRef(false);
   const closeWindow = useCallback(async () => {
     const { api, panel } = now.current;
     if (!api) return;
-    // From here the window's state is not written again: a save still waiting would put the closed tab back.
     leaving.current = true;
     const left: Saved = { v: 1, tabs: [], active: 0, home: null, homes: true, panel, seen_ms: Date.now() };
     if (!isDemo) await api.setWindowState(left).catch(() => {});
@@ -366,7 +297,6 @@ export function App() {
       await handles.current[key]?.close();
       if (now.current.liveKey === key) setLiveKey(null);
       if (now.current.busyKey === key) setBusyKey(null);
-      // The tabs as they are now: another may have closed while this one's lesson was stopped.
       const { tabs } = now.current;
       const at = tabs.findIndex((each) => each.key === key);
       if (at === -1) return;
@@ -378,7 +308,6 @@ export function App() {
         const { [key]: _, ...rest } = old;
         return rest;
       });
-      // The tab before it comes in front, or the one after when it was first.
       if (now.current.active === key) activate((tabs[at - 1] ?? tabs[at + 1]).key);
       void loadWorkspaces();
     },
@@ -397,9 +326,6 @@ export function App() {
     const at = tabs.findIndex((each) => each.key === active);
     activate(tabs[(at + by + tabs.length) % tabs.length].key);
   };
-
-  // ---------------------------------------------------------------------------
-  // Commands: one place for the menu, the keys, ⌘K and the visible controls
 
   const pickFolder = async () => {
     const { api } = now.current;
@@ -441,7 +367,6 @@ export function App() {
     }
   };
 
-  /** Just the quick checks due in a folder, in a session of their own; read again first, so a stale count starts nothing. */
   const justChecks = async (folder: string | null) => {
     const { api, workspaces } = now.current;
     if (!api || !folder) return note("Open a space first.");
@@ -527,14 +452,10 @@ export function App() {
           return;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activate, changePrefs, closeTab, goWorkspace, newSession, newTab, note, openSettings],
   );
   const runRef = useRef(run);
   runRef.current = run;
-
-  // ---------------------------------------------------------------------------
-  // Starting up
 
   useEffect(() => {
     let alive = true;
@@ -543,7 +464,6 @@ export function App() {
       mark("page");
       const api = await core();
       mark("core");
-      // The first calls go together: nothing waits on another it does not need.
       const [offEvents, offMenu, initial, kept, found] = await Promise.all([
         api.onEvent((event: AgentEvent) => onEventRef.current(event)),
         api.onMenu((choice: MenuChoice) => onMenuRef.current(choice)),
@@ -559,23 +479,17 @@ export function App() {
       const looking = api.setup();
       setupWait.current = looking;
       void api.about().then(setAbout, () => {});
-      // The tabs as they were left: Home tabs, sessions of folders still in the library, and Settings. A Home tab
-      // shows the workspace's page it was left on, within the runtime's gap for a new sitting; after it, Home.
       const library = new Set(found.map((each) => each.folder));
       const saved = (kept ?? null) as Saved | null;
       const recently = saved ? Date.now() - (saved.seen_ms ?? 0) < SITTING_GAP_MS : false;
       const page = (folder: string | null | undefined) => (recently && folder && library.has(folder) ? folder : null);
       let back: Tab[] = [];
-      // The tab left in front, or the nearest before it that was kept: a session never begun, or of a folder gone
-      // from the library, is not, and counting by position put the tab after it in front.
       let left: Tab | undefined;
       const addHome = (folder: string | null) => {
-        // After the gap every Home tab is back on Home: one is kept, not a row of tabs that all show the same list.
         if (!recently && back.some((each) => each.kind === "home")) return;
         back.push({ key: back.some((each) => each.key === "home") ? newKey() : "home", kind: "home", folder });
       };
       if (saved?.v === 1 && Array.isArray(saved.tabs)) {
-        // Kept by an older build: its one Home tab was first, and not in the list, and `active` counted it.
         const list: Saved["tabs"] = saved.homes ? saved.tabs : [{ kind: "home", folder: saved.home }, ...saved.tabs];
         list.forEach((each, at) => {
           if (each.kind === "settings") back.push(SETTINGS);
@@ -586,10 +500,8 @@ export function App() {
         });
         setPanel(Boolean(saved.panel));
       }
-      // In front: the tab left in front, within the gap; after it, Home, so starting is one key again.
       let wanted = saved && recently ? (left ?? back[0]) : undefined;
       if (initial) {
-        // A folder the window was opened on shows its page, in the tab that has it or in the first Home tab.
         await api.visitFolder(initial).catch(() => null);
         const home = back.find((each) => each.kind === "home" && each.folder === initial) ?? back.find((each) => each.kind === "home");
         if (home?.kind === "home") back = back.map((each) => (each === home ? { ...home, folder: initial } : each));
@@ -627,13 +539,8 @@ export function App() {
       alive = false;
       stops.forEach((stop) => stop());
     };
-    // Runs once: every handler it uses reads the newest values through refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The first screen is drawn whole (reveal.ts): let the window be seen, which
-  // the shell keeps see-through until now so it never shows a page half
-  // drawn, and tell the harness.
   const shown = useRef(false);
   const [firstScreen, setFirstScreen] = useState(false);
   useEffect(() => {
@@ -648,7 +555,6 @@ export function App() {
     });
   }, [restored, workspaces, active, tabs, homeShown]);
 
-  // While Claude Code's sign-in waits for the browser, look every few seconds whether it finished.
   useEffect(() => {
     if (!signingIn) return;
     const started = Date.now();
@@ -697,13 +603,11 @@ export function App() {
     const { api, setup } = now.current;
     if (!api || !setup) return;
     setSetup({ ...setup, permissions });
-    // A running lesson that cannot change keeps its way until it ends; the choice is saved either way.
     await api.setPermissions(permissions).catch(() => undefined);
   };
 
   const lessonOpen = () => Object.values(handles.current).some((handle) => handle.state().open);
 
-  /** Pick the engine for the next lesson. Saved at once; refused while a lesson is open. */
   const chooseEngine = async (chosen: Engine) => {
     const { api } = now.current;
     if (!api || !engine || lessonOpen() || engine.chosen === chosen) return;
@@ -721,20 +625,11 @@ export function App() {
     void now.current.api?.setBlockMinutes(minutes);
   };
 
-  // Settings reads a paper's time from a workspace, where the core keeps it.
   useEffect(() => {
     if (active !== "settings" || !api || !workspaces?.[0]) return;
     void api.home(workspaces[0].folder).then((home) => setBlockMinutes(home.block_minutes), () => {});
   }, [active, api, workspaces]);
 
-  // ---------------------------------------------------------------------------
-  // The tutor's events go to the session that holds its program
-
-  // Home and a workspace's page stay behind the tab in front. What a lesson changes in the record (a mark, the plan,
-  // a turn ended) is read into them while they are behind, so they come back current and do not move as they are
-  // shown. The reads wait until the lesson has been quiet a moment: a turn's mark and plan come just after it ends.
-  // The library is read again (Home reads the rows that changed); a workspace's page reads again only when the lesson
-  // was in its folder. `folder` null: whatever changed, read everything.
   const pagesTimer = useRef<number | null>(null);
   const pagesFolder = useRef<string | null | undefined>(undefined);
   const readPagesAgain = useCallback(
@@ -750,7 +645,6 @@ export function App() {
   const readPagesSoon = useCallback(
     (folder: string | null) => {
       if (pagesTimer.current !== null) window.clearTimeout(pagesTimer.current);
-      // Two folders waiting at once: both are read, as everything.
       const waiting = pagesFolder.current === undefined || pagesFolder.current === folder ? folder : null;
       pagesFolder.current = waiting;
       pagesTimer.current = window.setTimeout(() => readPagesAgain(waiting), PAGES_QUIET_MS);
@@ -758,8 +652,6 @@ export function App() {
     [readPagesAgain],
   );
 
-  // Back in front, a Home tab reads again too, for what changed where the window does not hear of it (a lesson in
-  // a terminal). Usually nothing has, and nothing moves.
   const lastActive = useRef(active);
   useEffect(() => {
     const was = lastActive.current;
@@ -780,8 +672,6 @@ export function App() {
       const tab = now.current.tabs.find((each) => each.key === key);
       readPagesSoon(tab?.kind === "session" ? tab.folder : null);
     }
-    // Claude Code was asked whether it is signed in when the window opened. A lesson that says it is signed out
-    // knows better: ask again, so Home and Settings stop saying it is signed in.
     if (event.type === "notice" && event.kind === "sign_in") {
       const { api } = now.current;
       void api?.account().then((account) => {
@@ -816,7 +706,6 @@ export function App() {
   const onTitle = useCallback((key: string, title: string) => {
     setTabs((old) => old.map((each) => (each.key === key && each.kind === "session" ? { ...each, title } : each)));
   }, []);
-  // A session named anew from a workspace's page: any tab it is open in takes the name.
   const onSessionRenamed = useCallback((folder: string, session: string, title: string) => {
     setTabs((old) => old.map((each) => (each.kind === "session" && each.folder === folder && each.session === session ? { ...each, title } : each)));
   }, []);
@@ -837,7 +726,6 @@ export function App() {
     setPanel(true);
     widenPanel();
   }, []);
-  // A document wants more room than the plan: it opens at half the window, unless the panel is already wider.
   const widenPanel = useCallback(() => {
     setPanelWanted((old) => {
       if (fitPanelWidth(old) >= window.innerWidth * 0.5) return old;
@@ -854,29 +742,19 @@ export function App() {
     );
   }, [note]);
 
-  // ---------------------------------------------------------------------------
-  // The menu bar: what it holds follows the window, and a choice runs the same command
-
   const onMenuRef = useRef<(choice: MenuChoice) => void>(() => {});
   onMenuRef.current = (choice: MenuChoice) => {
-    // The same press, seen by the page and then by the menu, runs once.
     if (Date.now() - (pressed.current[choice.command] ?? 0) < 400) return;
     runRef.current(choice.command, choice.arg);
   };
 
   const activeTab = tabs.find((each) => each.key === active) ?? tabs[0] ?? HOME;
   const inSession = activeTab.kind === "session";
-  // The workspace whose page is in front, in a Home tab.
   const pageFolder = activeTab.kind === "home" ? activeTab.folder : null;
-  // The pages of Home tabs and Settings, each made the first time its tab comes to the front and kept until the tab
-  // closes. Home tabs' are made behind the tab in front once the first screen is drawn, so their first showing is
-  // drawn already, and their reading never holds up the first screen of a window that opens on a session.
   const opened = useRef(new Set<string>()).current;
   if (activeTab.kind !== "session") opened.add(activeTab.key);
   if (firstScreen) for (const tab of tabs) if (tab.kind === "home") opened.add(tab.key);
   for (const key of opened) if (!tabs.some((tab) => tab.key === key)) opened.delete(key);
-  // Each tab's name; two tabs with one name are told apart by a number, in the bar and the Window menu.
-  // A Home tab showing a workspace's page is named by that workspace.
   const folderName = useCallback((folder: string) => displayName(workspaces?.find((each) => each.folder === folder)?.name ?? folder.split("/").pop() ?? ""), [workspaces]);
   const tabTitles = useMemo(() => {
     const seen: Record<string, number> = {};
@@ -895,12 +773,9 @@ export function App() {
     const page = inSession ? (answerPages[activeTab.key] ?? null) : null;
     if (!page) disabled.push("look-back");
     if (!inSession) disabled.push("plan");
-    // The panel's commands work in a session, and on a workspace's page with material open beside it.
     const docs = inSession ? (handles.current[activeTab.key]?.docs() ?? null) : pageFolder ? docsOf(workspaceDocsKey(pageFolder)) : null;
-    // A document in front that can be seen: not hidden with the panel, nor behind the lesson it was flipped from.
     const withDoc = docs !== null && docs.shown !== null && (inSession ? panel : true) && !(docs.expanded && docs.lessonFront);
     if (!inSession && !(docs && docs.open.length > 0)) disabled.push("expand-panel", "flip-panel");
-    // Flipping needs a document to flip to, or a panel that fills the session; zoom needs a PDF in front.
     else if (!(docs && docs.shown !== null) && !docs?.expanded) disabled.push("flip-panel");
     if (!withDoc) disabled.push("close-document", "share-document");
     if (!withDoc || !/\.pdf$/i.test(docs?.shown ?? "")) disabled.push("zoom-in-document", "zoom-out-document", "zoom-fit-document");
@@ -916,7 +791,6 @@ export function App() {
       titles: {
         plan: panel ? "Hide Plan" : "Show Plan",
         "expand-panel": docs?.expanded && !docs.lessonFront ? (inSession ? "Put the Panel Beside the Lesson" : "Put the Panel Beside the Page") : "Expand Panel",
-        // A document that filled the session and stepped aside for the task is switched to as if the lesson were in front.
         "flip-panel":
           docs?.expanded && !docs.lessonFront && !(page === "folded" && handles.current[activeTab.key]?.docClosed())
             ? inSession
@@ -933,9 +807,6 @@ export function App() {
     const timer = window.setTimeout(() => void api.setMenu(spec).catch(() => {}), 80);
     return () => window.clearTimeout(timer);
   }, [api, spec]);
-
-  // ---------------------------------------------------------------------------
-  // How the window was left, kept as it changes
 
   useEffect(() => {
     if (!api || !restored || isDemo) return;
@@ -967,20 +838,14 @@ export function App() {
     return () => window.removeEventListener("pagehide", save);
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Keys
-
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      // A key an input method is composing with is its own: Esc there cancels the composition, not the reply or the task.
       if (event.isComposing || event.keyCode === 229) return;
       const { prefs, overlay, tabs, active } = now.current;
       const action: KeyAction | null = actionOf(event, prefs.keys);
       if (action) {
-        // ⌘K is the one command a layer over the window leaves to the window.
         if (overlay && action !== "commands") return;
-        // Where no task's page can be turned, its key (⌘↑ at first) moves the caret or the page as it always did.
         if (action === "look-back") {
           const tab = tabs.find((each) => each.key === active);
           if (tab?.kind !== "session" || handles.current[tab.key]?.answerPage() == null) return;
@@ -1013,17 +878,14 @@ export function App() {
         if (tab?.kind === "session" && handles.current[tab.key]?.escape()) event.preventDefault();
         else if (tab?.kind === "home" && tab.folder) {
           event.preventDefault();
-          // Esc leaves a document beside the page before it leaves the page.
           if (!workspaceDocs.current?.("escape")) goWorkspace(null);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // What the evidence harness may ask of the session in front: inert without it.
   useEffect(() => {
     setProbe({
       session: () => {
@@ -1040,10 +902,6 @@ export function App() {
     });
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Files dropped on the window: on a session they join its line; on a
-  // workspace's page they are its material.
-
   const dropRef = useRef<(paths: string[]) => void>(() => {});
   dropRef.current = (paths: string[]) => {
     const { api, tabs, active } = now.current;
@@ -1052,7 +910,6 @@ export function App() {
     if (!api) return;
     if (tab?.kind === "session") handles.current[tab.key]?.drop(paths);
     else if (homeFolder && paperIn.current.has(homeFolder)) {
-      // The page is the paper then, with no material to add to: files dropped during it are most likely its working.
       note("While a paper runs, nothing is added to the material. Your working goes in when you hand the paper in.");
     } else if (homeFolder) {
       void api.addMaterial(paths, homeFolder).then(
@@ -1079,9 +936,6 @@ export function App() {
       off();
     };
   }, [api]);
-
-  // ---------------------------------------------------------------------------
-  // What the window shows
 
   const actions: Actions = {
     run: (command, arg) => runRef.current(command, arg),
@@ -1110,8 +964,6 @@ export function App() {
     keep: () => void answerRuntime((api) => api.keepRuntime()),
   });
 
-  // A tab's place is its key, ⌘1 to ⌘9, unless a command has that key: the command runs first (Home's is ⌘1 at
-  // first, and the first tab is not always Home). A tab showing Home is said with Home's key.
   const commandKeys = new Set(Object.values(prefs.keys));
   const tabViews: TabView[] = tabs.map((tab, at) => ({
     keyName: at < 9 && !commandKeys.has(`cmd+${at + 1}`) ? `⌘${at + 1}` : tab.kind === "home" && tab.folder === null ? keyName(prefs.keys.home) : "",
@@ -1123,7 +975,6 @@ export function App() {
     folder: tab.kind === "session" ? tab.folder : null,
   }));
   const k = (action: KeyAction) => keyName(prefs.keys[action]);
-  // While a panel fills the session (or the workspace's page), the tab bar says which way the switch goes.
   void docsSeen;
   const frontDocs = activeTab.kind === "session" ? (panel ? (handles.current[activeTab.key]?.docs() ?? null) : null) : pageFolder ? docsOf(workspaceDocsKey(pageFolder)) : null;
   const flipState: string | null =

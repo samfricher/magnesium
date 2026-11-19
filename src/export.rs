@@ -1,4 +1,3 @@
-//! Private, consistent snapshots of the workspace learner model.
 use crate::{
     learner::store::LearnerStore,
     workspace::{Workspace, create_private_dir, reject_symlink_components, restrict_private_path},
@@ -68,7 +67,6 @@ fn workspace(root: &Path) -> Result<Workspace, String> {
         .ok_or_else(|| "workspace_not_initialized".into())
 }
 fn rows(conn: &Connection, table: &str) -> Result<Value, String> {
-    // Table identifiers come exclusively from the fixed schema inventory above.
     let mut statement = conn
         .prepare(&format!("SELECT * FROM {table}"))
         .map_err(|e| e.to_string())?;
@@ -97,8 +95,6 @@ fn rows(conn: &Connection, table: &str) -> Result<Value, String> {
         .map_err(|e| e.to_string())?;
     Ok(json!(result))
 }
-/// The sittings kept beside the learner record, when this study folder has
-/// any. A store from before #30 also kept its quick checks there.
 fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
     let path = w.control().join(crate::sittings::STORE_FILE);
     if !path.try_exists().map_err(|e| e.to_string())? {
@@ -111,7 +107,6 @@ fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
         .map_err(|e| e.to_string())?;
     let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut data = serde_json::Map::new();
-    // Table identifiers come from this fixed list, as for the learner tables.
     for table in [
         "items",
         "attempts",
@@ -132,7 +127,6 @@ fn sittings_data(w: &Workspace) -> Result<Option<Value>, String> {
     }
     Ok(Some(Value::Object(data)))
 }
-// Revalidate an existing directory before touching even its reserved marker.
 fn validate_export_directory(destination: &Path) -> Result<(), String> {
     let manifest = destination.join("manifest.json");
     let meta = fs::symlink_metadata(&manifest)
@@ -162,10 +156,6 @@ fn protect_previous_export(directory: &Path) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
     }
-    // A manifest-validated export whose marker was deleted gets it back before
-    // the backup rename, so the backup stays outside source discovery. Create
-    // only this reserved file: never replace a user file or follow a
-    // concurrently added marker.
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -256,9 +246,6 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
         data["attempts"].as_array().map_or(0, Vec::len)
     ));
     let mut files = vec![
-        // Publish the exclusion marker before any private content enters the
-        // staging directory. Copies, renames, backups and extracted ZIPs keep
-        // the same source boundary without a path registry.
         (
             crate::retrieval::EXPORT_BOUNDARY_MARKER.to_owned(),
             EXPORT_MARKER_CONTENT.to_vec(),
@@ -428,7 +415,6 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
         }
         cancellation.check().map_err(|error| error.to_string())?;
         let backup = if existing {
-            // Keep the previous artifact intact, including any user additions.
             let backup = parent.join(
                 crate::learner::store::new_id(".magnesium-export-previous")
                     .map_err(|e| e.to_string())?,
@@ -476,7 +462,6 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
         Ok(backup)
     })();
     if publication.is_err() {
-        // Only the fresh, runtime-created staging artifact is cleaned up.
         if stage.is_dir() {
             let _ = fs::remove_dir_all(&stage);
         } else {
@@ -546,7 +531,6 @@ fn build_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
         }
         let crc = crc32(bytes);
         let header_offset = output.len() as u32;
-        // Local file header.
         write_u32(&mut output, 0x0403_4b50);
         write_u16(&mut output, 20);
         write_u16(&mut output, 1 << 11);
@@ -563,7 +547,6 @@ fn build_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
             cancellation.check().map_err(|error| error.to_string())?;
             output.extend_from_slice(chunk);
         }
-        // Central directory entry.
         write_u32(&mut central, 0x0201_4b50);
         write_u16(&mut central, 20);
         write_u16(&mut central, 20);

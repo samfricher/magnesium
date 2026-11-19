@@ -1,17 +1,3 @@
-//! Facts the runtime stores and prints through no command yet.
-//!
-//! The window reads them straight from the runtime's files, read-only. This
-//! ties the window to two table layouts, so every query here fails quietly to
-//! "nothing known". Replace each reader with a command once the runtime has
-//! one.
-//!
-//! Quick checks moved in the runtime of issue 30. Before it, each check and
-//! its passes and due day were a row of `items` in `sittings.sqlite`. From it
-//! on, the learner store keeps what happened to each check, and the runtime
-//! works out the passes and the due day each time it is asked, so no stored
-//! row says either. The window does not work them out itself, because that
-//! rule belongs to the runtime. Against that runtime it says it cannot tell.
-
 use std::fs;
 use std::path::Path;
 
@@ -23,7 +9,6 @@ fn open(path: &Path) -> Option<Connection> {
     if !path.is_file() {
         return None;
     }
-    // Read-only, and never created: a look must not change the record.
     Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -31,8 +16,6 @@ fn open(path: &Path) -> Option<Connection> {
     .ok()
 }
 
-/// A quick check from chat: something the learner got wrong, to be reproduced
-/// alone on later days.
 #[derive(Clone, Debug)]
 pub struct Check {
     pub label: String,
@@ -43,8 +26,6 @@ pub struct Check {
     pub last_miss: Option<String>,
 }
 
-/// Whether the learner store keeps the quick checks, as the runtime of issue
-/// 30 does. Its `practice_items` table is the sign.
 fn checks_in_the_learner_store(root: &Path) -> bool {
     open(&root.join(".magnesium/state.sqlite")).is_some_and(|conn| {
         conn.query_row(
@@ -56,9 +37,6 @@ fn checks_in_the_learner_store(root: &Path) -> bool {
     })
 }
 
-/// The quick checks, or None when the window cannot tell: the runtime keeps
-/// them where only it can work out what is due, or their table is not as
-/// expected. A folder with no checks yet gives an empty list.
 pub fn checks(root: &Path) -> Option<Vec<Check>> {
     if checks_in_the_learner_store(root) {
         return None;
@@ -92,8 +70,6 @@ pub fn checks(root: &Path) -> Option<Vec<Check>> {
     Some(rows)
 }
 
-/// How many quick checks are due today or earlier, or None when the window
-/// cannot tell.
 pub fn checks_due(root: &Path, today: NaiveDate) -> Option<u32> {
     let checks = checks(root)?;
     Some(
@@ -104,10 +80,6 @@ pub fn checks_due(root: &Path, today: NaiveDate) -> Option<u32> {
     )
 }
 
-/// The goal of the lesson the record binds to one conversation (a window
-/// session's id: the runtime binds the host thread `…:claude:<id>` to a
-/// lesson). None when the record holds no such binding, or its tables are not
-/// as read here.
 pub fn goal_of_conversation(root: &Path, conversation: &str) -> Option<String> {
     if conversation.trim().is_empty() {
         return None;
@@ -124,28 +96,15 @@ pub fn goal_of_conversation(root: &Path, conversation: &str) -> Option<String> {
     .filter(|goal| !goal.trim().is_empty())
 }
 
-/// How long without a learner message ends a sitting, as the runtime counts
-/// it (`SITTING_GAP_MS` in the runtime's `src/sittings.rs`).
 const SITTING_GAP_MS: i64 = 3 * 60 * 60 * 1000;
-/// The most quick checks the runtime takes into one sitting
-/// (`MAX_CHECKS_PER_SITTING` there); the rest wait for a later one.
 const CHECKS_PER_SITTING: u32 = 3;
 
-/// What the learner's next message in this folder opens with, when it begins
-/// a sitting: the quick checks the runtime takes into it and the paper redos
-/// due.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Opening {
     pub checks: u32,
     pub redos: u32,
 }
 
-/// What the next learner message here opens with, or None when it opens with
-/// nothing: it would not begin a sitting (the runtime heard the learner less
-/// than three hours ago), the folder has the opener off, nothing is due, or
-/// the runtime's sitting store cannot be read. The runtime begins a sitting on
-/// the first learner message after the gap and gives the tutor what is due
-/// to open it with, before new material.
 pub fn opening(root: &Path, checks_due: u32, redos_due: u32, now_ms: i64) -> Option<Opening> {
     let checks = checks_due.min(CHECKS_PER_SITTING);
     if checks + redos_due == 0 || opener_off(root) {
@@ -161,9 +120,6 @@ pub fn opening(root: &Path, checks_due: u32, redos_due: u32, now_ms: i64) -> Opt
     })
 }
 
-/// When the runtime last noted a learner message in this folder: None when
-/// its sitting store cannot be read, Some(None) when it has noted none (no
-/// store yet, or no message yet).
 fn last_learner_ms(root: &Path) -> Option<Option<i64>> {
     let path = root.join(".magnesium/sittings.sqlite");
     if !path.exists() {
@@ -179,17 +135,12 @@ fn last_learner_ms(root: &Path) -> Option<Option<i64>> {
     }
 }
 
-/// Whether the folder's config turns the sitting opener off
-/// (`magnesium opener off`): a top-level `opener = "off"` in
-/// `.magnesium/config.toml`. Anything else, or no file, leaves it on, as the
-/// runtime reads it.
 fn opener_off(root: &Path) -> bool {
     let Ok(text) = fs::read_to_string(root.join(".magnesium/config.toml")) else {
         return false;
     };
     for line in text.lines() {
         let line = line.trim();
-        // Keys after the first table header belong to that table.
         if line.starts_with('[') {
             break;
         }
@@ -213,7 +164,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let now = 10 * SITTING_GAP_MS;
-        // No store yet: the first message begins one. At most three checks go in.
         assert_eq!(
             opening(root, 5, 0, now),
             Some(Opening {
@@ -234,14 +184,12 @@ mod tests {
                 redos: 2
             })
         );
-        // Heard an hour ago: the message carries the sitting on, and opens with nothing.
         conn.execute(
             "INSERT INTO meta VALUES(1, 2, ?1)",
             [now - SITTING_GAP_MS / 3],
         )
         .unwrap();
         assert_eq!(opening(root, 1, 2, now), None);
-        // Heard three hours ago: it begins a new one.
         conn.execute("UPDATE meta SET last_learner_ms=?1", [now - SITTING_GAP_MS])
             .unwrap();
         assert_eq!(
@@ -251,7 +199,6 @@ mod tests {
                 redos: 0
             })
         );
-        // The opener off: a sitting opens with nothing.
         std::fs::write(control.join("config.toml"), "opener = \"off\"\n").unwrap();
         assert_eq!(opening(root, 1, 0, now), None);
         std::fs::write(
@@ -303,7 +250,6 @@ mod tests {
         std::fs::create_dir_all(&control).unwrap();
         assert_eq!(goal_of_conversation(dir.path(), "window-1"), None);
         let conn = Connection::open(control.join("state.sqlite")).unwrap();
-        // A window session started with "Continue", then a newer lesson in a terminal in the same folder.
         conn.execute_batch(
             "CREATE TABLE learning_sessions(session_id TEXT PRIMARY KEY, goal TEXT, updated_at_ms INTEGER);
              CREATE TABLE host_bindings(host_kind TEXT, host_thread_id TEXT, session_id TEXT, PRIMARY KEY(host_kind, host_thread_id));
@@ -322,7 +268,6 @@ mod tests {
             goal_of_conversation(dir.path(), "terminal-7").as_deref(),
             Some("Hypothesis tests from the terminal")
         );
-        // A conversation the record has no lesson for, and one whose id only ends like another's, know nothing.
         assert_eq!(goal_of_conversation(dir.path(), "window-2"), None);
         assert_eq!(goal_of_conversation(dir.path(), "1"), None);
         assert_eq!(goal_of_conversation(dir.path(), ""), None);
@@ -342,11 +287,6 @@ mod tests {
         assert_eq!(checks_due(dir.path(), today), None);
     }
 
-    /// The sitting's rule here is the runtime's, copied by hand: the gap that
-    /// begins a sitting, the checks one sitting takes, and the column that
-    /// says when the runtime last heard the learner. This reads them out of
-    /// the runtime's own source in this checkout, so a change there fails
-    /// here until this file follows it.
     #[test]
     fn the_sitting_rule_is_the_runtimes_own() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/sittings.rs");

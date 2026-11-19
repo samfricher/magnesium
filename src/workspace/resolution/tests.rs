@@ -54,8 +54,6 @@ fn directory_move_preserves_local_identity_without_registry() {
     fs::rename(original, &moved).unwrap();
     let resolved = active(&moved);
     assert_eq!(resolved.workspace_id(), "moving");
-    // Workspace discovery canonicalizes its root. On macOS, the temporary
-    // path may use /var while the same directory resolves under /private/var.
     let canonical_moved = fs::canonicalize(&moved).unwrap();
     assert_eq!(
         resolved.store_path(),

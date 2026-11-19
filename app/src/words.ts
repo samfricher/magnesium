@@ -1,10 +1,6 @@
-// The window's own few words: what the record's marks say, what changed in a
-// plan, and how a day is written. Nothing here reads the tutor's words.
-
 import { opening, saidByTheWindow } from "./lesson";
 import type { Mark, Plan, PlanItem } from "./types";
 
-/** "Demo-Course" as "Demo Course". */
 export function displayName(name: string): string {
   return name.replace(/[-_]+/g, " ").trim() || name;
 }
@@ -19,13 +15,11 @@ function dateOf(day: string): Date | null {
   return found ? new Date(Number(found[1]), Number(found[2]) - 1, Number(found[3]), 12) : null;
 }
 
-/** "2026-11-24" as "Tue 24 Nov". */
 export function shortDay(day: string): string {
   const date = dateOf(day);
   return date ? `${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}` : day;
 }
 
-/** "2026-11-24" as "Tuesday 24 November". */
 export function longDay(day: string): string {
   const date = dateOf(day);
   return date ? `${LONG_DAYS[date.getDay()]} ${date.getDate()} ${LONG_MONTHS[date.getMonth()]}` : day;
@@ -37,10 +31,6 @@ const HELP_WORDS: Record<string, string> = {
   solution: "after the worked solution",
 };
 
-/**
- * What the record's row says of an answer, in plain words. The verdict is the
- * record's and nothing else: the tutor's words are never read for it.
- */
 export function markWords(mark: Mark): string {
   const help = HELP_WORDS[mark.help] ?? null;
   const on = mark.paper ? ` on ${mark.paper}` : "";
@@ -63,23 +53,17 @@ const PASS_WORDS = ["First", "Second", "Third"];
 
 const isoDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-/** Where a day the runtime names stands from today: "past" for today or before, "tomorrow", or "later". */
 export function fromToday(day: string, now = new Date()): "past" | "tomorrow" | "later" {
   if (day <= isoDay(now)) return "past";
   return day === isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) ? "tomorrow" : "later";
 }
 
-/** Which of three days an answer earned, in words ("First"), and the next day it names ("second"), from the record. */
 function passStep(mark: Mark): { said: string; next: string | null } | null {
   const said = mark.mark === "right" && mark.help === "none" && mark.pass ? PASS_WORDS[mark.pass - 1] : undefined;
   if (!said) return null;
   return { said, next: mark.pass && mark.pass < 3 && mark.next_day ? PASS_WORDS[mark.pass].toLowerCase() : null };
 }
 
-/**
- * The line under a mark that earned a day: when the next can count ("The second day can count from tomorrow."), or
- * which day it was when there is no next ("Third of three days."), or null. The rings beside it show the day.
- */
 export function passWords(mark: Mark, now = new Date()): string | null {
   const step = passStep(mark);
   if (!step) return null;
@@ -89,22 +73,16 @@ export function passWords(mark: Mark, now = new Date()): string | null {
   return `The ${step.next} day can count ${when}.`;
 }
 
-/**
- * The day the rings show, for a screen reader, which does not see them: "First of three days." when the line says the
- * next day instead, and null when the line already says which day it was, or no day was earned.
- */
 export function passDaySpoken(mark: Mark): string | null {
   const step = passStep(mark);
   return step && step.next && mark.next_day ? `${step.said} of three days.` : null;
 }
 
-/** Which of its skill's three days an answer earned, 1 to 3, when its line says it earned one; null otherwise. */
 export function passDay(mark: Mark): number | null {
   if (!passStep(mark)) return null;
   return mark.pass && mark.pass >= 1 && mark.pass <= 3 ? mark.pass : null;
 }
 
-/** A mark in a few words, for a list of past work: "right, with a hint". */
 export function markShort(mark: Mark): string {
   const help = HELP_WORDS[mark.help] ?? null;
   switch (mark.mark) {
@@ -121,31 +99,18 @@ export function markShort(mark: Mark): string {
   }
 }
 
-/**
- * One thing that changed in the plan, as a line under the tutor's reply.
- * `route` is a change to the lesson's goal or steps, which the tutor makes as
- * it teaches: the plan's layer shows it, and the line under the reply does not.
- */
 export type Change = { what: string; detail: string; route?: boolean };
 
-/** How an item moved, for the plan layer. */
 export type Moved = "up" | "down" | "new" | "day";
 
 export type PlanDiff = {
   changes: Change[];
-  /** By item id. */
   moved: Record<string, Moved>;
-  /** The exam's date before, when it moved. */
   examFrom: string | null;
 };
 
 const order = (items: PlanItem[]) => new Map(items.map((item, at) => [item.id, at]));
 
-/**
- * What changed between two readings of the plan, read from the plan itself:
- * the exam's date, the order of its items, items added or dropped, the goal,
- * the route. A change the window cannot name says only that the plan changed.
- */
 export function planDiff(before: Plan | null, after: Plan): PlanDiff {
   const changes: Change[] = [];
   const moved: Record<string, Moved> = {};
@@ -162,8 +127,6 @@ export function planDiff(before: Plan | null, after: Plan): PlanDiff {
   const was = order(before.items);
   const now = order(after.items);
   const kept = after.items.filter((item) => was.has(item.id));
-  // Order among the items both readings have: an item that is now ahead of
-  // one it used to follow moved up.
   const keptBefore = [...kept].sort((a, b) => (was.get(a.id) ?? 0) - (was.get(b.id) ?? 0));
   kept.forEach((item, at) => {
     const from = keptBefore.findIndex((other) => other.id === item.id);
@@ -175,7 +138,6 @@ export function planDiff(before: Plan | null, after: Plan): PlanDiff {
     const next = kept[kept.indexOf(item) + 1];
     changes.push({ what: item.title, detail: next ? `now before ${next.title}` : "moved up" });
   }
-  // Days the blocks are on: a change that only re-spaces them shows too.
   const redayed = kept.filter((item) => {
     const old = before.items.find((each) => each.id === item.id);
     return old && (old.day ?? "") !== (item.day ?? "") && item.day;
@@ -197,10 +159,6 @@ export function planDiff(before: Plan | null, after: Plan): PlanDiff {
   return { changes, moved, examFrom };
 }
 
-/**
- * A task's words, short enough for one line: whole sentences while they fit,
- * else the last sentence (the question), never cut inside a formula.
- */
 export function firstWords(text: string, limit = 90): string {
   const plain = text
     .replace(/^\s*\*\*[^*]{0,40}\*\*[.:]?\s*/, "")
@@ -211,22 +169,15 @@ export function firstWords(text: string, limit = 90): string {
   const question = [...sentences].reverse().find((each) => each.endsWith("?"));
   if (question && question.length <= limit) return question;
   let cut = plain.slice(0, limit - 1);
-  // A formula the cut ends inside of is left out whole.
   if ((cut.match(/(?<!\\)\$/g)?.length ?? 0) % 2 === 1) cut = cut.slice(0, cut.lastIndexOf("$"));
   return `${cut.trimEnd()}…`;
 }
 
-/** Where the learner stopped, as a sentence: the saved line, with its own punctuation. */
 export function stoppedWords(line: string): string {
   const text = line.trim();
   return /[.?!]$/.test(text) ? `You stopped at: ${text}` : `You stopped at ${text}.`;
 }
 
-/**
- * When something was last opened, as a list says it: "today, 14:05",
- * "yesterday", "Tuesday" within the week, else "Tue 10 Nov" (with the year
- * when it is not this one). Never "N days ago": a list is not a countdown.
- */
 export function whenOpened(ms: number | null | undefined, now = new Date()): string {
   if (!ms) return "";
   const then = new Date(ms);
@@ -240,21 +191,15 @@ export function whenOpened(ms: number | null | undefined, now = new Date()): str
   return then.getFullYear() === now.getFullYear() ? short : `${short} ${then.getFullYear()}`;
 }
 
-/**
- * A session's name: the goal the window kept when it began, else what its
- * first words asked for, else the folder's last goal; never a path.
- */
 export function sessionName(info: { title: string | null; opening: string }, fallback: string | null): string {
   if (info.title) return info.title;
   const topic = opening(info.opening)?.topic;
-  // The topic is cut from the middle of a sentence ("Let's work on taking reciprocals…"); as a name it starts with a capital.
   if (topic) return topic.replace(/^[a-z]/, (letter) => letter.toUpperCase());
   const plain = info.opening.trim();
   if (plain && !saidByTheWindow(plain)) return firstWords(plain, 80);
   return fallback ?? "A session";
 }
 
-/** A session named by the words the learner started it with: its kept name is those words, or it has none. */
 export function namedByItsWords(info: { title: string | null; opening: string }): boolean {
   const said = info.opening.trim();
   if (said === "" || saidByTheWindow(said)) return false;
@@ -262,10 +207,6 @@ export function namedByItsWords(info: { title: string | null; opening: string })
   return name === "" || name === said || name === firstWords(said, 80);
 }
 
-/**
- * The lesson's goal as a session's name: a line, with no path in it. None when it only says the learner's own
- * first words again, as the record's goal does for a lesson started from typed words ("Continue").
- */
 export function goalName(goal: string | null | undefined, said = ""): string | null {
   const name = firstWords(withoutPaths(goal ?? ""), 80);
   if (name === "") return null;
@@ -278,11 +219,6 @@ const SEGMENT = String.raw`[^\s/"'“”,;:()<>]+`;
 const ABSOLUTE = new RegExp(String.raw`(?:~|/(?:Users|private|var|tmp|Volumes|Library|opt|usr|home))(?:/${SEGMENT})+`, "g");
 const IN_FOLDER = new RegExp(String.raw`(?:\.\./)*\b(?:Study|\.magnesium)(?:/${SEGMENT})+`, "g");
 
-/**
- * The window's and the core's words with no path in them: a path is said by
- * its file's own name, the material folder as "the material", and
- * the record's backups in words. The tutor's own words are not changed.
- */
 export function withoutPaths(text: string): string {
   return text
     .replace(/\bin \.magnesium\/backups\b/g, "as a backup")
@@ -291,23 +227,14 @@ export function withoutPaths(text: string): string {
     .replace(IN_FOLDER, (path) => path.split("/").pop() ?? path);
 }
 
-/**
- * A file of course material as a title: its own name, with no folder before
- * it and no extension after it, its dashes as spaces. "Week 4/slides.pdf" is
- * "Slides (Week 4)"; "week5-sampling-distributions.md" is "Week5 sampling
- * distributions".
- */
 export function materialTitle(name: string): string {
   const parts = name.split("/").filter(Boolean);
-  // "week5" is "week 5": a number run onto the word that counts it.
   const file = (parts.pop() ?? name).replace(/\b(week|wk|lecture|lec|chapter|ch|unit|lab|part|session|tutorial|tut|problem|set|hw|homework|quiz|exam|midterm|paper|slides?)(\d)/gi, "$1 $2");
-  // Dashes between words are spaces; a date's or a time's stay as they are.
   const bare = file.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/_+/g, " ").replace(/(?<=\p{L})-+|-+(?=\p{L})/gu, " ").replace(/\s+/g, " ").trim() || file;
   const titled = bare.charAt(0).toUpperCase() + bare.slice(1);
   return parts.length > 0 ? `${titled} (${parts.join(", ")})` : titled;
 }
 
-/** What kind of material a file is, in a word: "PDF", "notes", "image", or nothing. */
 export function materialKind(name: string): string {
   const ext = (name.split(".").pop() ?? "").toLowerCase();
   if (ext === "pdf") return "PDF";

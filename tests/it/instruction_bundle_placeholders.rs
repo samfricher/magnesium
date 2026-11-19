@@ -100,7 +100,6 @@ fn packaged_bundle_holds_every_authored_file_and_its_hash() {
     assert_eq!(authored["minimum_learning_step_schema"], 2);
     assert_eq!(authored["entrypoint"], "MAGNESIUM.md");
 
-    // The folder holds the manifest and the files it lists, and nothing else.
     let mut actual = BTreeSet::new();
     let mut directories = vec![root.to_path_buf()];
     while let Some(directory) = directories.pop() {
@@ -130,8 +129,6 @@ fn packaged_bundle_holds_every_authored_file_and_its_hash() {
         .collect();
     assert_eq!(actual, expected);
 
-    // The pack is the manifest, with the hash the build worked out for each
-    // file, then the files as authored and in the manifest's order.
     let packaged = packaged_entries();
     assert_eq!(packaged.len(), FILES.len() + 1);
     assert_eq!(packaged[0].0, "manifest.json");

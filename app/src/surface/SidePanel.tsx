@@ -1,9 +1,3 @@
-// The panel beside a session (or a workspace's page): the plan, and the
-// documents open in this session, one in front. A switcher at its top names
-// each; a document closes from it. The panel is dragged wider by its left
-// edge, hidden with the tab bar's switch, or expanded to fill the session,
-// and a key flips between the lesson and the document.
-
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { core } from "../bridge";
@@ -15,25 +9,19 @@ import { Layer, type Row } from "./Layer";
 
 
 type Props = {
-  /** The plan's own view, first in the switcher; null where there is no plan (a workspace's page). */
   plan: ReactNode | null;
   docs: Docs;
   folder: string;
-  /** Bumped when a link asks for a document's page, so it goes there. */
   goTo: number;
   width: number;
   expanded: boolean;
-  /** The panel is the thing in front: it fills the session, or the learner flipped to it. */
   onDocs: (docs: Docs) => void;
   onWidth: (width: number) => void;
   onExpand: (expanded: boolean) => void;
   onNote: (note: string) => void;
-  /** The panel's document handle, for the window's commands (zoom, focus). */
   handle?: (handle: DocHandle | null) => void;
-  /** The list of the folder's material to open from is showing (its control, or File > Open Document…). */
   picking: boolean;
   onPicking: (picking: boolean) => void;
-  /** The document in front is closed while the learner answers: these words stand in its place. The plan is never closed. */
   closed?: string | null;
   id?: string;
 };
@@ -50,8 +38,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
   });
 
   const onKind = useCallback((found: { pages: number | null; zoom: number | null; refused: boolean }) => setKind(found), []);
-  // Where a document was left is written on the newest documents, and only while it is still open:
-  // a save that lands after a switch or a close does not bring the old state back.
   const docsNow = useRef(docs);
   docsNow.current = docs;
   const placeOf = useCallback(
@@ -63,7 +49,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
   );
   const onPlace = useMemo(() => (shown ? placeOf(shown.path) : () => {}), [shown?.path, placeOf]);
 
-  // The left edge is dragged to make the panel wider or narrower; ← and → do the same from the keyboard.
   const drag = useRef<{ x: number; width: number } | null>(null);
   const limit = (width: number) => fitPanelWidth(width, box.current?.parentElement?.clientWidth ?? window.innerWidth);
   const onGripDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -90,8 +75,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
 
   const pick = (path: string | null) => onDocs({ ...docs, shown: path });
 
-  // What can be opened: the folder's past papers, then its material, each by its title; an answer key is never
-  // listed (the runtime leaves keys out of both), and the core refuses one besides.
   type Openable = { path: string; title: string; kind: string };
   const [openable, setOpenable] = useState<Openable[] | null>(null);
   useEffect(() => {
@@ -140,7 +123,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
   };
   const isPdf = shown !== null && kind.pages !== null;
   const closed = shown !== null && props.closed ? props.closed : null;
-  // Closed, the document is out of reach of the keyboard and of a screen reader too.
   const docBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
     docBox.current?.toggleAttribute("inert", closed !== null);
@@ -211,7 +193,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
         </div>
         <div className="side-tools">
           {shown && !kind.refused && !closed && (
-            // The file itself to the Mac's share sheet, AirDrop first: an answer key never gets this far.
             <button type="button" className="bar-act" title="Share the document: AirDrop, Mail and the rest" data-drive="share-document" onClick={(event) => void share(shown.path, event.currentTarget)}>
               Share…
             </button>
@@ -243,7 +224,6 @@ export const SidePanel = memo(function SidePanel(props: Props) {
       </header>
       <div className="side-body">
         {shown ? (
-          // Kept drawn under its cover, at its page and zoom, so it is back at once when the task is answered.
           <div className="side-doc" ref={docBox}>
             <DocView key={shown.path} ref={view} doc={shown} folder={props.folder} goTo={props.goTo} onPlace={onPlace} onNote={props.onNote} onKind={onKind} />
           </div>

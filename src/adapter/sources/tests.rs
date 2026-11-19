@@ -2,8 +2,6 @@ use super::*;
 
 use std::fs;
 
-/// A temporary study folder that holds the `basic` fixture's lesson. It
-/// is removed when the test ends.
 struct TestEnvironment {
     root: PathBuf,
     workspace: PathBuf,
@@ -469,9 +467,6 @@ fn pending_pdf_inspection_keeps_empty_text_and_exact_hashed_physical_page() {
         "schema_version = 1\nworkspace_id = \"source-fixture\"\n",
     )
     .unwrap();
-    // The real coordinator discovers/hashes the PDF without starting
-    // extraction. This deterministically creates the state returned by a
-    // cold preparation that exhausted its budget; no sleeps or SQL writes.
     retrieve_workspace_sources(
         root,
         &index,
@@ -533,11 +528,6 @@ fn pending_pdf_inspection_keeps_empty_text_and_exact_hashed_physical_page() {
     assert_eq!(inspected["anchor"]["physical_end"], 2);
     assert_eq!(inspected["basis"]["visual_analysis"], false);
 
-    // A successful unbound source-open can describe this pending PDF and
-    // offer its original-page reference. That is not an indexed byte-read
-    // authorization. Hold the reconciliation writer without changing any
-    // rows so the next real requests deterministically stay pending: they
-    // defer within their budget instead of waiting for the writer.
     crate::learner::LearnerStore::initialize(
         &root
             .join(crate::workspace::CONTROL_DIR)
@@ -696,9 +686,6 @@ fn page_anchor() -> SourceAnchorRequest {
     }
 }
 
-/// A same-size replacement must never receive the previous file's
-/// hash: the PDF branch hashes the opened bytes exactly like the
-/// text branch instead of trusting manifest memory.
 #[test]
 fn pdf_inspection_hashes_opened_bytes_not_manifest_memory() {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -709,7 +696,6 @@ fn pdf_inspection_hashes_opened_bytes_not_manifest_memory() {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&root).expect("fixture root");
-    // Two revisions with identical byte length but different bytes.
     let first = b"%PDF-1.4 revision one payload ............";
     let mut second = first.to_vec();
     second[11] = b't';

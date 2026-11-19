@@ -1,79 +1,37 @@
-//! What the direct engine tells the tutor about the lesson, in plain lines.
-//!
-//! The whole state goes with the first message of a conversation. After
-//! that only what changed goes, so each turn's text stays small: the time,
-//! newly due quick checks and paper redos, the help a kind of problem now
-//! needs, and the names already in use for skills with an open quick check.
-
 use serde_json::Value;
 
 use crate::record::{clip, DueCheck, DueRedo, Lesson, WaitingRepair};
 
-/// The facts a turn's state is made from, beyond the lesson itself.
 #[derive(Debug, Default)]
 pub struct Facts {
-    /// The local time, as "Thu 12 Nov 2026, 09:10".
     pub now: String,
-    /// A line on a stop, pause or recording off the learner asked for.
     pub halt: Option<String>,
-    /// Send the whole state, as at the start of a conversation.
     pub full: bool,
-    /// Where the lesson stopped last time: the checkpoint's next action.
     pub stopped_at: Option<String>,
-    /// The learner chose to go on without what is due for now.
     pub skip_checks: bool,
-    /// The learner asked for the quick checks due and nothing else: the
-    /// runtime ends the sitting after the last of them.
     pub checks_only: bool,
-    /// They asked for the checks alone, and none is due.
     pub checks_none: bool,
-    /// The quick checks newly due, to list in this turn.
     pub new_checks: Vec<DueCheck>,
-    /// The paper redos newly due, to list in this turn.
     pub new_redos: Vec<DueRedo>,
-    /// How long the learner took to answer the open task, when it is a
-    /// timed paper redo and the window saw it posed.
     pub took: Option<std::time::Duration>,
-    /// The open task is a timed paper redo the window did not see posed,
-    /// as after a resume: no clock ran on it.
     pub no_clock: bool,
-    /// What the record made of the last answer to a paper redo or a due
-    /// quick check.
     pub outcome: Option<String>,
-    /// Why no task is open, after a reply the learner stopped or one whose
-    /// record could not be read.
     pub no_task: Option<String>,
-    /// The repairs newly waiting, to list in this turn.
     pub new_repairs: Vec<WaitingRepair>,
-    /// What the record made of the last repair.
     pub repair_outcome: Option<String>,
-    /// The runtime's `earlier_answers` on this goal.
     pub earlier_answers: Vec<Value>,
-    /// What the record knows about the learner on this goal: one line each.
     pub known: Vec<String>,
-    /// Lines on the help each kind of problem needs now.
     pub help: Vec<String>,
-    /// The names of skills with an open quick check.
     pub open_labels: Vec<String>,
-    /// The course graphs in the study folder, as paths from it. They do not
-    /// change during a conversation, so only the whole state names them.
     pub graphs: Vec<String>,
-    /// The study plans, one line each: the file, its exam and its date.
     pub plans: Vec<String>,
-    /// The window sent this message as talk, not as an answer.
     pub talk: bool,
 }
 
-/// The learner asked for the quick checks alone, as the runtime's opener for
-/// such a sitting says it to a tutor (`src/sittings/checks_only.rs`).
 const CHECKS_ONLY: &str = "The learner asked for the quick checks that are due and nothing else. Pose only these, one at a time: no paper redo, no new material, no plan and no other task. Each reply is only what the learner reads: the feedback on their answer, then the next check in its own words, never a word about posing, saving, recording, declining or waiting. After each answer, show the lettered options, say in a line which is right and why, and pose the next check in the same reply. Teach no repair and set no task for it: a check answered wrong comes back on its next day. A decline costs nothing, and the check stays due. When the last of them is answered or declined, the sitting ends and the window shows the learner what their record says of today: do not say it yourself, set no task and ask no question, and close in a line. If the learner asks for something else instead, record a decline for each check not yet answered, then do what they asked. Quick checks:";
-/// The same, on the turns after the checks were listed.
 const CHECKS_GOING: &str = "This sitting is quick checks alone, as the learner asked. Each reply is the feedback on their answer and the next check in its own words; after the last, close in a line with no task. If the learner asks for something else, do it: the checks not yet answered stay due.";
-/// The same, with none due.
 const CHECKS_NONE: &str = "The learner asked for the quick checks alone, and none is due now. Say so in a line, set no task and ask no question.";
 
-/// One quick check, as the tutor needs it. The key is the tutor's, to mark
-/// the answer, and is never shown before it.
 fn check_line(check: &DueCheck) -> String {
     let mut line = format!("{}. Skill \"{}\".", check.number, check.label);
     if !check.misses.is_empty() {
@@ -101,8 +59,6 @@ fn check_line(check: &DueCheck) -> String {
     line
 }
 
-/// One paper redo, as the tutor needs it: the rows are the program's to
-/// record, the rest is for making and marking the question.
 fn redo_line(redo: &DueRedo) -> String {
     let mut line = format!("{}. Tag \"{}\"", redo.number, redo.tag);
     if !redo.from.is_empty() {
@@ -136,7 +92,6 @@ fn redo_line(redo: &DueRedo) -> String {
     line
 }
 
-/// One repair, as the tutor needs it: the rows are the program's to record.
 fn repair_line(repair: &WaitingRepair) -> String {
     let mut line = format!("Repair {}. Tag \"{}\"", repair.number, repair.tag);
     if !repair.from.is_empty() {
@@ -157,7 +112,6 @@ fn repair_line(repair: &WaitingRepair) -> String {
     line
 }
 
-/// A time as the tutor reads it: "4 min 10 s".
 fn minutes(took: std::time::Duration) -> String {
     let seconds = took.as_secs();
     match seconds / 60 {
@@ -166,7 +120,6 @@ fn minutes(took: std::time::Duration) -> String {
     }
 }
 
-/// The text of `<lesson-state>` for one turn.
 pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     let mut lines = vec![format!("Now: {}", facts.now)];
     if let Some(halt) = &facts.halt {
@@ -332,12 +285,10 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     lines.join("\n")
 }
 
-/// The message the tutor receives: the state, then the learner's words.
 pub fn message(state: &str, words: &str) -> String {
     format!("<lesson-state>\n{state}\n</lesson-state>\n\n<learner>\n{words}\n</learner>")
 }
 
-/// The help lines from a result's `help_levels`.
 pub fn help_lines(levels: &Value) -> Vec<String> {
     levels["kinds"]
         .as_array()
@@ -423,7 +374,6 @@ mod tests {
         ] {
             assert!(full.contains(part), "{part}\n{full}");
         }
-        // The rows are the program's to record: the tutor is not shown them.
         assert!(!full.contains("midterm-1#"), "{full}");
         let later = text(
             &lesson,
@@ -437,7 +387,6 @@ mod tests {
         );
         assert!(!later.contains("Goal:"), "{later}");
         assert!(!later.contains("redo"), "{later}");
-        // A sitting with redos alone, the learner's skip, and a timed answer.
         let redos_only = text(
             &lesson,
             &Facts {
@@ -456,8 +405,6 @@ mod tests {
             redos_only.contains("this message came 4 min 10 s after the window showed it"),
             "{redos_only}"
         );
-        // A timed redo the window did not see posed, and the record's
-        // verdict on the last redo.
         let unclocked = text(
             &lesson,
             &Facts {
@@ -488,7 +435,6 @@ mod tests {
             "{skipped}"
         );
         assert!(!skipped.contains("Tag \"km\""), "{skipped}");
-        // The quick checks alone: the checks, no paper redo, and how it ends.
         let alone = text(
             &lesson,
             &Facts {
@@ -509,7 +455,6 @@ mod tests {
             },
         );
         assert!(none.contains(CHECKS_NONE), "{none}");
-        // A later turn of the same sitting keeps to the checks.
         let going = text(
             &lesson,
             &Facts {
@@ -551,7 +496,6 @@ mod tests {
                 .any(|line| line == "Course graph: Study/midterm-1/graph.yaml"),
             "{one}"
         );
-        // A later state says only what changed, and a graph does not change.
         let later = text(
             &lesson,
             &Facts {

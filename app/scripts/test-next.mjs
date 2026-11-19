@@ -1,13 +1,6 @@
-// Checks for what Next offers (src/next.ts), the rule Home's first row and a
-// workspace's page share. Run by scripts/check.sh; node runs the TypeScript
-// file as it is.
-//
-//   node scripts/test-next.mjs
-
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 
-// The page's modules import each other without the ".ts" that Vite adds and node does not.
 registerHooks({
   resolve(name, context, next) {
     try {
@@ -25,33 +18,25 @@ const session = (session, title, more = {}) => ({ session, title, opening: "", f
 
 const plan = [item("1", "Sampling distributions", "done"), item("2", "Confidence intervals", "todo", "2026-11-17", "z and t"), item("3", "Hypothesis tests", "todo")];
 
-// The first item not done, with nothing to carry on: Return starts a session.
 assert.deepEqual(nextOf(plan, []), { item: plan[1], carried: null });
-// The item the plan marks doing comes before an earlier one not done.
 const doing = [item("1", "A", "todo"), item("2", "B", "doing")];
 assert.equal(nextOf(doing, [])?.item.id, "2");
-// A session named by the item is carried on; one on something else is not.
 const named = namedSessions([session("s1", "Sampling distributions"), session("s2", " Confidence intervals ")], null);
 assert.equal(nextOf(plan, named)?.carried?.info.session, "s2");
 assert.equal(nextOf(plan, namedSessions([session("s3", "Bayes questions")], null))?.carried, null, "a session off the plan is not the plan's");
-// No plan, a plan that could not be read (read as empty), and every item done: nothing to offer.
 assert.equal(nextOf([], []), null);
 assert.equal(nextOf([item("1", "A", "done")], named), null);
-// A session an earlier window kept has no name of its own: the current one takes the folder's last goal.
 const kept = namedSessions([session("s4", null, { current: true }), session("s5", null)], "Confidence intervals");
 assert.equal(kept[0].title, "Confidence intervals");
 assert.equal(nextOf(plan, kept)?.carried?.info.session, "s4");
 
-// The day, as the window says it.
 const now = new Date(2026, 10, 16, 9);
 assert.equal(planDay("2026-11-16", now), "today");
 assert.equal(planDay("2026-11-17", now), "tomorrow");
 assert.equal(planDay("2026-11-19", now), "Thu 19 Nov");
 assert.equal(planDay(null, now), "");
 
-// What the session opens with, from the record's reading: nothing unless the next message begins a sitting.
 const opens = (checks, redos, sitting = null) => ({ opening: { checks, redos }, sitting });
-// As the cue's sentence: a time only when no paper redo is in it.
 assert.equal(startsWithWords(opens(1, 0)), "Starts with 1 quick check, about a minute.");
 assert.equal(startsWithWords(opens(3, 0)), "Starts with 3 quick checks, about 3 minutes.");
 assert.equal(startsWithWords(opens(0, 2)), "Starts with 2 paper redos.");
@@ -66,8 +51,6 @@ assert.equal(checksDueWords(0), null);
 assert.equal(checkKicker(1), "A quick check, about a minute.");
 assert.equal(checkKicker(3), "First of 3 quick checks, about 3 minutes.");
 
-// Just the quick checks: offered from what the runtime says it would pose, never while a paper runs, and never by a
-// runtime that cannot run them alone.
 const paper = { target: "midterm-2", name: "Midterm 2023", path: null, minutes: 75, started_ms: 1 };
 assert.equal(checksAlone({ checks_alone: 3, sitting: null }), 3);
 assert.equal(checksAlone({ checks_alone: 0, sitting: null }), 0);
@@ -77,7 +60,6 @@ assert.equal(checksAlone({ checks_alone: null, sitting: null }), 0);
 assert.equal(checksAlone(null), 0);
 
 
-// Home's first question: the record's stored question for the check a sitting of checks alone poses first.
 const due = (more = {}) => ({ checks_alone: 1, sitting: null, opening: { checks: 1, redos: 0 }, first_check: "What is $b$ in $2x^2 - 9x + 4$?", ...more });
 assert.deepEqual(firstQuestion(due()), { text: "What is $b$ in $2x^2 - 9x + 4$?", meta: "A quick check, about a minute.", id: null });
 assert.equal(firstQuestion(due({ first_check_id: "item-a" }))?.id, "item-a", "the record's ID for the check goes with it");
@@ -89,16 +71,12 @@ assert.equal(firstQuestion(due({ sitting: { paper: "P" } })), null, "not while a
 assert.equal(firstQuestion(due({ checks_alone: null })), null, "not from a runtime that cannot pose checks alone");
 assert.equal(firstQuestion(null), null);
 
-// An exam so many days ahead, for the course facts below.
 const exam = (days_left) => ({ target: "t", title: "Midterm 2", date: null, day: null, days_left });
 
-// Where Home's held answer goes once the posing reply has ended: only to the check Home showed. A wrong attempt on the
-// record is worse than words left on the line, so a near miss goes to the line.
 const { heldAnswerGoes } = await import("../src/render.ts");
 const Q = "Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?";
 const held = (question = Q, id = null) => ({ question, id });
 const after = (more) => ({ posed: undefined, task: null, taskUnseen: false, reply: "", ...more });
-// By the record's ID for the check, when it says which was posed.
 assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-a", task: `Quick check 1: ${Q}` })), "answer", "the record says Home's check was posed, as Home asked it");
 assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-a", reply: `Quick check 1: ${Q}` })), "answer", "the page sees no task; the record and the reply say it is Home's");
 assert.equal(
@@ -108,7 +86,6 @@ assert.equal(
 );
 assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: "item-b", task: `Quick check 1: ${Q}` })), "line", "another check was posed, whatever its words");
 assert.equal(heldAnswerGoes(held(Q, "item-a"), after({ posed: null, task: `Quick check 1: ${Q}` })), "line", "the record says none was posed");
-// Without an ID: the whole question, formulas and numbers included, spacing aside.
 assert.equal(heldAnswerGoes(held(), after({ task: `Quick check 1: ${Q}` })), "answer", "the open task is Home's question");
 assert.equal(heldAnswerGoes(held(), after({ task: `Quick check 1:\n${Q.replace(/ /g, "  ")}` })), "answer", "spacing aside");
 const otherNumbers = "Two samples of 10 students have variances $s_1^2 = 16$ and $s_2^2 = 25$. What is their pooled variance?";
@@ -123,13 +100,11 @@ assert.equal(heldAnswerGoes(held(), after({ taskUnseen: true, reply: `Quick chec
 assert.equal(heldAnswerGoes(held(), after({ taskUnseen: false, reply: `Quick check 1: ${Q}` })), "line", "the engine says no task is open");
 
 
-// The skill of the latest marked answer, joined through each row's newest answer; none without a marked answer.
 const row = (name, last) => ({ dots: [0, 0, 0], name, what: "", note: "", due: false, next_day: null, last_answer: last });
 const mark = (id, at) => ({ id, at, label: "", mark: "right", help: "none", cold: true, paper: null });
 assert.equal(latestSkill([row("pooled variance", "a"), row("margin of error", "b")], [mark("a", "2026-11-16 09:00"), mark("b", "2026-11-17 08:00")]), "margin of error");
 assert.equal(latestSkill([row("pooled variance", null)], []), null);
 
-// A course's one fact on Home.
 const day = new Date(2026, 10, 17, 12);
 const at = (daysAgo) => new Date(2026, 10, 17 - daysAgo, 9).getTime();
 assert.equal(openedDay(at(0), day), "today");
@@ -143,7 +118,6 @@ assert.equal(courseFact(course(0, null, 0), at(1), false, day), "studied yesterd
 assert.equal(courseFact(course(0, null, 0), null, false, day), "not studied yet");
 assert.equal(courseFact(null, null, false, day), "not studied yet");
 
-// What is due when the session carries on: checks with their time, a redo without one.
 assert.equal(dueWords({ checks_due: 2, redos_due: 0 }), "2 quick checks due, about 2 minutes.");
 assert.equal(dueWords({ checks_due: 1, redos_due: 1 }), "1 quick check and 1 paper redo due.");
 assert.equal(dueWords({ checks_due: null, redos_due: 2 }), "2 paper redos due.");

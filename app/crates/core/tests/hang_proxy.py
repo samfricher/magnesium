@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Stands between the direct engine and Magnesium's tool server, for tests.
-
-While the file named by HANG_FLAG exists, the answer to the first
-learning_step that records an answer is held back for HANG_SECONDS. The
-request itself goes through at once, so the record commits and only its
-answer is late: an outcome the engine cannot know. The flag may hold a
-number: that many such answers are held back, one in each server, the
-replays of the same request included. When none is left the flag is
-removed, so the server that replaces this one answers at once.
-
-With DELAY_EACH set, every tool call's answer is held back that many
-seconds instead, as on a machine under load.
-"""
 
 import json
 import os
@@ -21,8 +8,6 @@ import threading
 import time
 
 FLAG = os.environ.get("HANG_FLAG", "")
-# The same, for a learning_step that changes practice items and records no
-# answer, such as a repair.
 PRACTICE_FLAG = os.environ.get("HANG_PRACTICE_FLAG", "")
 DELAY_EACH = float(os.environ.get("DELAY_EACH", "0"))
 SECONDS = float(os.environ.get("HANG_SECONDS", "4"))

@@ -10,8 +10,6 @@ pub(super) fn apply_observations(
     used_events: &mut BTreeSet<String>,
     (now, notes): (i64, &mut Vec<String>),
 ) -> Result<()> {
-    // Attempts this request stored. A paper's answers arrive together, so
-    // they never make each other not cold.
     let mut this_request = BTreeSet::new();
     for (observation_index, o) in observations.iter().enumerate() {
         limits::text(
@@ -54,7 +52,6 @@ pub(super) fn apply_observations(
         }
         let mut observed = None;
         let mut learner_response = false;
-        // The first learner_response the host marked as talk, by its index.
         let mut talk = None;
         for (event_index, e) in o.events.iter().enumerate() {
             if e.excerpts.len() > 4 {
@@ -213,7 +210,6 @@ pub(super) fn apply_observations(
                 .iter()
                 .find(|e| e.role == ObservationRole::LearnerResponse)
                 .expect("an attempt was checked for a learner_response event");
-            // When: the learner's message, as the host dated or captured it.
             let answered_at: i64 = tx.query_row(
                 "SELECT COALESCE(MAX(COALESCE(e.occurred_at_ms,e.captured_at_ms)),?2)
                  FROM learning_events e JOIN observation_events oe ON oe.event_id=e.event_id
@@ -282,8 +278,6 @@ pub(super) fn apply_observations(
     }
     Ok(())
 }
-/// A source with a missing or unknown available_form is still saved: the
-/// tutor reported it, so it is labeled model_reported and the note says so.
 fn labeled_sources(
     sources: &[SourceRef],
     observation_index: usize,
@@ -312,8 +306,6 @@ fn labeled_sources(
     sources
 }
 
-/// Refuse an attempt whose facts contradict each other, before anything is
-/// written. The label rule is the quick checks' rule from #26.
 fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()> {
     let label = attempt.label.trim();
     if label.is_empty()
@@ -461,7 +453,6 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
     Ok(())
 }
 
-/// A kind of problem is named as a label is: a few words, never the problem.
 pub(crate) fn check_kind(path: &str, kind: &str, host: &HostContext) -> Result<()> {
     let kind = kind.trim();
     if kind.is_empty()
@@ -484,8 +475,6 @@ pub(crate) fn check_kind(path: &str, kind: &str, host: &HostContext) -> Result<(
     Ok(())
 }
 
-/// The question of an attempt on the same label answered earlier on the same
-/// local day, from an earlier request, if there is one.
 fn earlier_today(
     tx: &Connection,
     label: &str,
@@ -528,7 +517,6 @@ fn earlier_today(
     Ok(None)
 }
 
-/// Store one attempt as its own row, and return its ID.
 fn insert_attempt(
     tx: &Connection,
     (observation_id, response_event_id, session): (&str, &str, Option<&str>),
@@ -589,11 +577,6 @@ fn insert_attempt(
     Ok(attempt_id)
 }
 
-/// The tag of a plan's course graph that a label names, written the way the
-/// graph writes it. "Chain rule" names `chain-rule`: case, spaces, hyphens
-/// and underscores aside, the words are the same. A chat answer on a skill a
-/// plan's graph names is then recorded under that name, and moves the plan's
-/// level. A label that could name tags of two spellings is kept as it is.
 pub(crate) fn plan_tag_named(tx: &Connection, label: &str) -> Option<String> {
     let loose = |text: &str| -> String {
         text.chars()
@@ -621,8 +604,6 @@ pub(crate) fn plan_tag_named(tx: &Connection, label: &str) -> Option<String> {
     found.filter(|tag| tag != label)
 }
 
-/// A label that names one problem rather than a skill: it holds an equation,
-/// or a question number such as "Q3" or "question 2".
 fn names_a_problem(label: &str) -> bool {
     let words = label
         .to_lowercase()

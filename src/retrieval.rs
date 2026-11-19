@@ -1,6 +1,3 @@
-//! Workspace discovery returns untrusted source candidates only. A discovery result
-//! carries no authority to mutate learner state, invoke tools, or change policy.
-
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -314,14 +311,6 @@ fn reject_symlinked_control(root: &Path) -> Result<(), DiscoveryError> {
     }
 }
 
-/// Current discovery policy for one workspace-relative file: built-in and
-/// sensitive directory/file classification, nested-repository boundaries,
-/// the control directory's `magnesiumignore` rules, and the discovery symlink
-/// policy, checked for every ancestor component as well as the file itself.
-/// `Ok(true)` means the file is excluded (revoked). `Err` means the policy
-/// itself is unreadable or invalid, which is service unavailability, not
-/// exclusion. Discovery, the coordinator, and live source verification share
-/// this owner.
 pub(crate) fn source_relative_path_is_excluded(
     workspace_root: &Path,
     relative: &Path,
@@ -329,9 +318,6 @@ pub(crate) fn source_relative_path_is_excluded(
     source_exclusion(workspace_root, relative).map(|reason| reason.is_some())
 }
 
-/// The same policy as `source_relative_path_is_excluded`, naming the first
-/// rule that leaves the file out. A study window reads it through
-/// `magnesium searchable`, so it can say why a file is missing from search.
 pub(crate) fn source_exclusion(
     workspace_root: &Path,
     relative: &Path,
@@ -342,9 +328,6 @@ pub(crate) fn source_exclusion(
         source,
     })?;
     reject_symlinked_control(&workspace_root)?;
-    // Initializing a copied export must not turn its root into subject
-    // material. Unlike the control directory and .git, the export marker
-    // excludes the root too.
     if export_boundary_exists(&workspace_root).map_err(|source| DiscoveryError::Io {
         action: "inspect workspace export boundary",
         path: workspace_root.clone(),
@@ -357,13 +340,9 @@ pub(crate) fn source_exclusion(
     let mut prefix = PathBuf::new();
     for (index, component) in components.iter().enumerate() {
         let Component::Normal(name) = component else {
-            // Absolute, parent, or root components never name a workspace file.
             return Ok(Some(ExclusionReason::EscapesWorkspace));
         };
         prefix.push(name);
-        // Discovery never follows a symlink, so a symlinked component revokes
-        // the path even when its canonical target stays inside the workspace;
-        // this also closes the alias to a sensitive or built-in directory.
         let component_path = workspace_root.join(&prefix);
         match fs::symlink_metadata(&component_path) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -620,8 +599,6 @@ fn display_relative(relative: &Path) -> PathBuf {
 }
 
 fn excluded_source_boundary(path: &Path) -> io::Result<Option<ExclusionReason>> {
-    // Presence is sufficient, including a symlink or malformed marker. This
-    // is a fail-closed source exclusion, never workspace/store authority.
     if export_boundary_exists(path)? {
         return Ok(Some(ExclusionReason::PrivateExport));
     }
@@ -689,7 +666,6 @@ fn classify_sensitivity(path: &Path) -> Option<SensitivityClass> {
     }
 }
 
-/// The words in a file name that make search leave the file out.
 const CREDENTIAL_NAME_WORDS: &[&str] = &[
     "credential",
     "credentials",
@@ -701,20 +677,12 @@ const CREDENTIAL_NAME_WORDS: &[&str] = &[
     "tokens",
 ];
 
-/// Kinds of document that come out of an export or a publisher, never typed
-/// by hand in a text editor. A name such as "Token economies.pdf" is a
-/// title, so in these the words above, other than key and keys, never leave
-/// the file out. Their text is still checked for passwords and keys. "key"
-/// still does: such a document may be an answer key. A file a person edits
-/// as text, such as Markdown, plain text, HTML or a config file, keeps the
-/// name rule, since a pasted secret would land there.
 const DOCUMENT_EXTENSIONS: &[&str] = &[
     "pdf", "doc", "docx", "odt", "rtf", "pages", "ppt", "pptx", "odp", "xls", "xlsx", "ods",
     "numbers", "epub", "mobi", "djvu", "png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff",
     "bmp",
 ];
 
-/// The word in a file's name that makes it look like a credential, if any.
 pub(crate) fn credential_word_in_name(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     let stem = path
@@ -748,9 +716,6 @@ fn classify_sensitive_directory(name: &OsStr) -> Option<SensitivityClass> {
     }
 }
 
-/// Discovery classification for one workspace-relative path. Live source
-/// verification shares this owner so an anchor cannot authorize a path whose
-/// extension discovery would mark unsupported or of another source kind.
 pub(crate) fn source_kind(path: &Path) -> Option<SourceKind> {
     let extension = match path.extension().and_then(OsStr::to_str) {
         Some(extension) => extension,

@@ -1,7 +1,3 @@
-// A larger layer: text being pasted in as course material. It goes with Esc.
-// (A source the tutor cited, and the course's material, open beside the
-// lesson or the workspace's page now, in the panel: SidePanel.)
-
 import { useEffect, useRef, useState } from "react";
 
 export function PasteSheet(props: { initial: string; saving: boolean; onSave: (text: string) => void; onClose: () => void }) {

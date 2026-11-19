@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""Give a scratch course (scripts/scratch-course.sh) a record of several
-skills, answered over ten days, so a photograph can show where each stands.
-
-    python3 scripts/scratch-record.py <dir> [--new-sitting] [--repair]
-
-<dir> is the one given to scratch-course.sh. The answers go in as Claude
-Code's would, through the runtime's own hooks and MCP tool, one lesson a
-day; between days every recorded time is moved back with scratch-course.sh
---days-ago. Every skill and answer is made up. With today as day 0:
-
-  standard error of a mean       right on its own on days -9, -6 and -2: proven
-  pooled variance                wrong on day -2: a quick check due since day -1
-  reading a confidence interval  right on its own on day -1: can count today
-  margin of error                wrong on day -1, its check passed today: next in 3 days
-  degrees of freedom of a t statistic   wrong today: a check due tomorrow
-  a long name                    right on its own today: can count tomorrow
-
-Each wrong answer stores the check's next question with its key, as the
-tutor's does (attempt.next). With --new-sitting the runtime's note of the
-learner's last message is moved four hours back, so the next message begins
-a sitting, which opens with the check that is due.
-
-With --repair, before the first lesson the gap log gets a row for each of
-the made-up skills in REPAIR, as a marked paper leaves them: no repair done
-and no redo set. Each is answered right once in the first lesson, so it is a
-skill the learner has worked on, and the runtime says it waits for its
-repair.
-"""
 
 import asyncio
 import json
@@ -38,13 +10,11 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP.parent))
-from ci.native_mcp import NativeMcpClient, TransportLimits  # noqa: E402
+from ci.native_mcp import NativeMcpClient, TransportLimits
 
 HOST = ["--plugin-version", "0.2.0", "--adapter-protocol-version", "2", "--host-kind", "claude"]
 LONG = "when to use the t distribution rather than the normal, for a small sample whose standard deviation is not known"
 
-# (days before the next batch, [(skill, mark, cold)]), oldest first.
-# The next question each check stores when its skill is got wrong, and its key.
 NEXT = {
     "pooled variance": ("Two samples of 10 students have variances $s_1^2 = 4$ and $s_2^2 = 9$. What is their pooled variance?",
                         "$s_p^2 = (9 \\cdot 4 + 9 \\cdot 9) / 18 = 6.5$"),
@@ -60,8 +30,6 @@ DAYS = [
     (0, [("margin of error", "right", True), ("degrees of freedom of a t statistic", "wrong", False), (LONG, "right", True)]),
 ]
 
-# Skills a marked paper left waiting for their repair (--repair), named by codes as a gap log's tags often are: more
-# than the course page shows before "and N more".
 REPAIR = ["VAR-RATIO", "TCRIT", "CLT-N", "CI-WIDTH", "DF-WELCH", "P-VALUE", "Z-SCORE", "BOXPLOT", "SE-PROP", "CHISQ",
           "ANOVA-1", "F-RATIO", "LEVENE", "BONF", "TUKEY", "R-SQ", "SLOPE-CI", "RESID", "LOGIT", "ODDS", "MLE", "SIMPSON",
           "POWER", "TYPE-II", "EFFECT-D", "WILCOX"]
@@ -96,7 +64,6 @@ def main(root: Path, new_sitting: bool = False, repair: bool = False):
 
 
 def environment(course: Path, conversation: str) -> dict:
-    """Nothing from the shell: the scratch home, and the conversation as Claude Code names it."""
     home = course.parent / "home"
     return {
         "PATH": "/usr/bin:/bin",

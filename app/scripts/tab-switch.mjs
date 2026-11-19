@@ -1,25 +1,3 @@
-// Switch tabs in the real window and say, frame by frame, whether anything
-// moved after the first frame, and whether the menu bar was put in place again.
-// Builds nothing and starts no model.
-//
-//   node scripts/tab-switch.mjs <app-binary> <out-dir>
-//
-// Works in a scratch course (scripts/scratch-course.sh) with a scratch window
-// home. Each course's page is opened from Home's list and left for it again,
-// twice. Then the Home tab shows a course's page, Settings has a tab beside it, and
-// the window switches between them, to Home's list and back, and to a
-// session's tab and back; then a key is changed in Settings, which the menu
-// must follow; and the course's page, scrolled, must keep its place across a
-// switch. Writes switch.json (each switch: what the first frame drew and
-// every frame after it that differed; the menu as macOS holds it; how many
-// times the menu bar was put in place) and a photo of each page.
-//
-// Exits 1 when a page moved after a switch's first frame (a line drawn
-// somewhere else, or lines come or gone), when the menu bar was put in place
-// again, when the menu did not follow the key, or when the page lost its
-// place. Words that change in place, as a page read again says "2 minutes
-// ago", are reported but are not a move.
-
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, openSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -86,8 +64,6 @@ try {
   }
   await step("settle", { op: "wait_idle", timeout_ms: 60_000 });
   await step("light", { op: "scheme", scheme: "light" });
-  // Each course's page opened from Home's list, and Home's list again from it: the first time a page is opened in
-  // the window, and again.
   for (let n = 1; n <= 2; n++)
     for (const course of ["Intro Statistics", "Linear Algebra", "Organic Chemistry"]) {
       await change(`${n}: open ${course} from Home's list`, `workspace-${course}`);
@@ -105,7 +81,6 @@ try {
     await change(`${n}: to the course's page`, "home");
     await change(`${n}: to Settings`, "tab-2");
   }
-  // Home's own list, then Settings and back to it.
   await change("to the Home tab", "home");
   await step("back to Home's list", { op: "click", target: "home", by: "drive" });
   await sleep(1500);
@@ -113,7 +88,6 @@ try {
     await change(`${n}: to Settings, from Home's list`, "tab-2");
     await change(`${n}: to Home's list`, "home");
   }
-  // A session beside them: it goes before Settings, so it is tab-2 and Settings tab-3.
   await step("open a session", { op: "key", key: "n", meta: true });
   await step("let it start", { op: "wait_idle", timeout_ms: 60_000 });
   await sleep(1000);
@@ -126,11 +100,8 @@ try {
   const menuAfter = await step("menu after the switches", { op: "menu" });
   const windowMenu = (menuAfter.menu ?? []).find((menu) => menu.title === "Window");
   report.window_menu = (windowMenu?.items ?? []).map((item) => (item.separator ? "—" : `${item.title}${item.accelerator ? ` (${item.accelerator})` : ""}${item.enabled === false ? " [off]" : ""}`));
-  // Window as macOS holds it, with its own window list: the tabs added in place must come before it.
   report.window_menu_native = (menuAfter.native ?? []).find((menu) => menu.title === "Window")?.items ?? null;
   report.session_menu = (menuAfter.menu ?? []).find((menu) => menu.title === "Session")?.items?.map((item) => (item.separator ? "—" : `${item.title}${item.enabled === false ? " [off]" : ""}`));
-  // A learner's own keys, changed in Settings, reach the menu in place too: taken off (the item is made again
-  // without one), put back, and changed. Read from the bar as macOS holds it.
   const attachItem = async (label) => {
     const answer = await step(label, { op: "menu" });
     const file = (answer.native ?? []).find((menu) => menu.title === "File");
@@ -161,7 +132,6 @@ try {
   const menuEnd = await step("menu at the end", { op: "menu" });
   report.menu_replaced = { before: menuBefore.replaced, after: menuEnd.replaced };
 
-  // A page keeps its place: the course's page, scrolled down in a short window, is where it was after a switch.
   await change("to the Home tab, for its place", "home");
   await step("the course's page again", { op: "click", target: "workspace-Intro Statistics" });
   await sleep(1500);

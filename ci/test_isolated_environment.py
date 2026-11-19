@@ -1,5 +1,3 @@
-"""Sentinel regressions for disposable native-command environment isolation."""
-
 import json
 import os
 from pathlib import Path
@@ -48,9 +46,6 @@ class IsolatedEnvironmentTests(unittest.TestCase):
             self.assertEqual(environment["TZ"], "UTC")
 
     def test_symlinked_temporary_root_keeps_every_private_path_inside_its_canonical_root(self):
-        # macOS temporary paths may spell /private/var as /var. Exercise the
-        # same alias on any platform with symlink support, rather than relying
-        # on the machine's temporary-directory spelling.
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
             canonical_parent = base / "private-var"

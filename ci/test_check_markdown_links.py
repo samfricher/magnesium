@@ -1,4 +1,3 @@
-"""The link check reads tracked Markdown only and reports each missing target."""
 import contextlib
 import io
 from pathlib import Path

@@ -1,6 +1,3 @@
-"""Original deterministic PDF and independent small mathematical checks (#240).
-Run with bundled Python/reportlab. No model calls; no user/course material.
-"""
 from pathlib import Path
 from fractions import Fraction as F
 from reportlab.pdfgen import canvas
@@ -37,7 +34,6 @@ text(690,'For Y uniform on [-1,1] and 0<u<1:',
      'P(Y^2 <= u) = P(-sqrt(u) <= Y <= sqrt(u)).',
      'The lower bound below is drawn as strokes; it is absent from extracted text.')
 c.setFont('Helvetica',18);c.drawString(100,528,'integral');c.drawString(215,540,'sqrt(u)');c.drawString(330,528,'(1/2) dy')
-# Visible minus and radical lower bound deliberately contain no text operators.
 c.setStrokeColor(HexColor('#243642'));c.setLineWidth(1.5)
 c.line(216,512,227,512);c.lines([(231,510,235,505),(235,505,241,520),(241,520,263,520)])
 c.lines([(247,515,247,509),(247,509,252,507),(252,507,257,509),(257,509,257,515)])
@@ -69,7 +65,6 @@ text(445,'Zero pairwise covariances suffice for variance additivity.',
      'Var(X)=2/3; Var(Y)=2/9; Var(X+Y)=8/9.')
 c.showPage();c.save()
 
-# Exact oracles, independent of teacher prose and graph labels.
 def cdf(u):
     return F(0) if u<=0 else u*u/2 if u<=1 else 1-(2-u)**2/2 if u<2 else F(1)
 assert [cdf(F(x)) for x in (0,1,2)] == [0,F(1,2),1]

@@ -1,9 +1,3 @@
-//! A study folder as a workspace: the sessions the window kept turns of, and
-//! the library of workspaces with when each was last opened.
-//!
-//! Everything here reads the window's own store; nothing reads or writes the
-//! record. `lessons` is ported from the workspace editor concept (#68).
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -11,30 +5,19 @@ use serde::Serialize;
 
 use crate::store::{SessionNote, Store, Turn};
 
-/// One conversation the window kept, as a session the learner can open again.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LessonInfo {
     pub session: String,
-    /// When its first and last turns were kept, in ms since the epoch.
     pub first_ms: i64,
     pub last_ms: i64,
     pub turns: usize,
-    /// The first thing the learner said, cut to one line: what it was about.
     pub opening: String,
-    /// Whether it is the folder's conversation, the one Continue resumes.
     pub current: bool,
-    /// Its name, as the window kept it when it began: its goal.
     pub title: Option<String>,
-    /// When the learner last opened it, in ms since the epoch: its last turn,
-    /// or a later look at it.
     pub opened_ms: i64,
-    /// The goal of the record's lesson this conversation is bound to, when the
-    /// record says; not the folder's last goal, which a lesson in a terminal
-    /// may have set.
     pub goal: Option<String>,
 }
 
-/// The lessons in a folder's kept turns, newest first.
 pub fn lessons(turns: &[Turn], current: Option<&str>) -> Vec<LessonInfo> {
     let mut by_session: BTreeMap<&str, LessonInfo> = BTreeMap::new();
     for turn in turns {
@@ -67,9 +50,6 @@ pub fn lessons(turns: &[Turn], current: Option<&str>) -> Vec<LessonInfo> {
     out
 }
 
-/// The lessons, with what the window noted of each: its name and when it was
-/// last opened. A conversation the window noted but kept no turn of yet (one
-/// just begun) is listed too. Newest opened first.
 pub fn sessions(
     turns: &[Turn],
     current: Option<&str>,
@@ -116,20 +96,14 @@ fn one_line(text: &str) -> String {
     }
 }
 
-/// One workspace in the library, read from the window's own store alone: no
-/// runtime is asked, so the list is drawn at once.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Workspace {
     pub folder: String,
     pub name: String,
-    /// When the learner last opened it, or its newest session, in ms since
-    /// the epoch; none for a folder found but never opened.
     pub opened_ms: Option<i64>,
-    /// Its most recently opened session, if it has one.
     pub latest: Option<LessonInfo>,
 }
 
-/// Every folder in the library, most recently opened first.
 pub fn workspaces(store: &Store) -> Vec<Workspace> {
     let mut out: Vec<Workspace> = store
         .recent()
@@ -159,8 +133,6 @@ pub fn workspaces(store: &Store) -> Vec<Workspace> {
             }
         })
         .collect();
-    // The library's own order is most recently opened first; a folder whose
-    // newest session is more recent than another's opening goes before it.
     out.sort_by_key(|w| std::cmp::Reverse(w.opened_ms.unwrap_or(0)));
     out
 }
@@ -212,7 +184,6 @@ mod tests {
                 ..SessionNote::default()
             },
         );
-        // Begun, with no turn kept yet.
         notes.insert(
             "c".to_owned(),
             SessionNote {
@@ -246,7 +217,6 @@ mod tests {
         });
         let found = workspaces(&store);
         assert_eq!(found.len(), 2);
-        // The first folder's session was opened after the second folder.
         assert_eq!(
             found[0].folder,
             first.path().canonicalize().unwrap().to_string_lossy()

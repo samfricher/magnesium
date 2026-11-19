@@ -1,4 +1,3 @@
-//! The same v2 JSON API is served by CLI and MCP; no retired assessment aliases.
 use crate::support::mcp::McpClient;
 use crate::support::{TestEnvironment, v2::*};
 use serde_json::json;

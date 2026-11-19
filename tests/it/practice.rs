@@ -1,6 +1,3 @@
-//! The runtime works out what is due, and writes the gap log itself (#30).
-//! The tutor reports marks, repairs and next questions, never a date, pass
-//! or status.
 use crate::support::{TestEnvironment, clock, run_hook_with_host_flag, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -47,8 +44,6 @@ fn store(e: &TestEnvironment) -> Connection {
     Connection::open(e.workspace.join(".magnesium/state.sqlite")).unwrap()
 }
 
-/// Move every recorded time `days` local days back, as if that many days
-/// had passed.
 fn days_pass(e: &TestEnvironment, days: u64) {
     clock::days_pass(&e.workspace, days);
     let sittings = e.workspace.join(".magnesium/sittings.sqlite");
@@ -73,7 +68,6 @@ fn gap_log(e: &TestEnvironment) -> String {
     std::fs::read_to_string(e.workspace.join(GAP_LOG)).unwrap()
 }
 
-/// The Gaps section, from its heading to the next.
 fn gaps(text: &str) -> &str {
     let start = text.find("## Gaps").unwrap();
     let end = text[start + 3..]
@@ -82,7 +76,6 @@ fn gaps(text: &str) -> &str {
     &text[start..end]
 }
 
-/// The row line for `#n` in the Gaps table.
 fn row(text: &str, n: i64) -> String {
     gaps(text)
         .lines()
@@ -106,8 +99,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_written_by_the_tutor()
     plan(&e, TEMPLATE);
     v2::start(&e, "claude", THREAD);
 
-    // A marked paper: one part right, one that lost marks. The tutor gives the
-    // gap's type and what went wrong, never a date or a status.
     let event = prompt(&e, "p-1", "Diagnostic: 1. Km = 2 (S) 2. Vmax = 4 (U)");
     let marked = step(
         &e,
@@ -147,8 +138,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_written_by_the_tutor()
         "the rest of the file is kept:\n{text}"
     );
 
-    // The repair, and the next question with its key. The first redo falls
-    // due the next day, never the same day.
     let repaired = step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"repair",
@@ -160,7 +149,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_written_by_the_tutor()
         .unwrap()
         .to_owned();
     assert_eq!(repaired["practice"]["items"][0]["status"], "open");
-    // A right answer the same day counts neither way.
     let early = answer(
         &e,
         "early",
@@ -172,7 +160,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_written_by_the_tutor()
         "no_count"
     );
 
-    // Three cold passes on three allowed days: 1, then 3, then 7 days apart.
     let redo = |id: &str| {
         answer(
             &e,
@@ -190,7 +177,6 @@ fn a_row_passed_on_three_allowed_days_closes_with_no_date_written_by_the_tutor()
     assert_ne!(state["next_redo"].as_str().unwrap(), tomorrow);
     days_pass(&e, 3);
     assert_eq!(redo("redo-2")["practice"]["items"][0]["status"], "2 of 3");
-    // Too soon: two days into a seven-day gap.
     days_pass(&e, 2);
     let soon = redo("too-soon");
     assert_eq!(
@@ -220,7 +206,6 @@ fn breaking_the_markdown_table_by_hand_changes_nothing_about_what_is_due() {
         &e,
         "# Gap log: midterm-1\n\n## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | km | slope read as intercept | K | S | taught the slope | | 2026-10-25 | open |\n\n## Scores\n\n| Paper | Date | Score | Time used | Notes |\n|---|---|---|---|---|\n| Diagnostic | 2026-10-20 | 10/20 | 40/45 min | |\n",
     );
-    // Loading a paper stage brings the log in and writes its table.
     let load = v2::tool(
         &e,
         "claude",
@@ -232,7 +217,6 @@ fn breaking_the_markdown_table_by_hand_changes_nothing_about_what_is_due() {
     let before = digest(&e);
     assert_eq!(before["plans"][0]["redos_due"], 1, "{before}");
 
-    // Break the table by hand: drop a cell, rewrite the date, close the row.
     let path = e.workspace.join(GAP_LOG);
     let text = gap_log(&e);
     let broken = text.replace(&row(&text, 1), "| 1 | soon | closed |");
@@ -242,7 +226,6 @@ fn breaking_the_markdown_table_by_hand_changes_nothing_about_what_is_due() {
     assert_eq!(after["plans"][0]["unfixed_gaps"], 1);
     assert_eq!(after["plans"][0]["unreadable"], json!([]), "{after}");
 
-    // The next write notices the edit, saves it, and writes the table again.
     let reload = v2::tool(
         &e,
         "claude",
@@ -280,7 +263,6 @@ fn a_due_redo_answered_today_without_a_pass_is_not_due_again_until_tomorrow() {
     );
     assert_eq!(digest(&e)["plans"][0]["redos_due"], 1);
     v2::start(&e, "claude", THREAD);
-    // Right, alone, but not cold: no pass, and the row keeps its date.
     answer(
         &e,
         "redo-1",
@@ -288,14 +270,12 @@ fn a_due_redo_answered_today_without_a_pass_is_not_due_again_until_tomorrow() {
         json!({"label":"km","question":"Find Km from the plot.","first_try":"right","help":"none","cold":false,
             "counts_for":["midterm-1#1"]}),
     );
-    // No answer on it later today can be cold, so nothing counts it due today.
     let digest = digest(&e);
     assert_eq!(digest["plans"][0]["redos_due"], 0, "{digest}");
     assert_eq!(digest["plans"][0]["unfixed_gaps"], 1, "{digest}");
     let output = e.command().args(["progress", "--json"]).output().unwrap();
     let progress: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(progress["due"]["redos"], 0, "{progress}");
-    // The row was not failed: it keeps its passes and can pass from tomorrow.
     let km = progress["plans"][0]["skills"]
         .as_array()
         .unwrap()
@@ -351,7 +331,6 @@ fn a_gap_log_from_an_earlier_template_is_brought_in_with_its_rows_and_dates() {
         .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(backups, vec![old.to_owned()]);
-    // Row 1 is due; a passing redo on it continues from its second pass.
     let digest = digest(&e);
     assert_eq!(digest["plans"][0]["redos_due"], 1, "{digest}");
     assert_eq!(digest["plans"][0]["unfixed_gaps"], 2);
@@ -366,7 +345,6 @@ fn a_gap_log_from_an_earlier_template_is_brought_in_with_its_rows_and_dates() {
         passed["practice"]["items"][0]["status"], "2 of 3",
         "{passed}"
     );
-    // A second load brings nothing in again.
     let again = v2::tool(
         &e,
         "claude",
@@ -460,7 +438,6 @@ fn a_corrected_attempt_changes_what_is_due() {
             "practice":[{"item":"midterm-1#1","repaired":"taught it"}]}),
     );
     days_pass(&e, 1);
-    // A redo marked wrong fails the row, which waits for a new repair.
     let failed = answer(
         &e,
         "redo",
@@ -469,8 +446,6 @@ fn a_corrected_attempt_changes_what_is_due() {
     );
     assert_eq!(failed["practice"]["items"][0]["next_redo"], Value::Null);
     assert!(row(&gap_log(&e), 1).contains(" fail |"));
-    // The learner shows the redo was right: the tutor corrects the attempt,
-    // and the row passes instead, with no date from the tutor.
     let attempt = failed["practice"]["attempts"][0]["attempt_id"]
         .as_str()
         .unwrap();
@@ -492,7 +467,6 @@ fn a_corrected_attempt_changes_what_is_due() {
         )
         .unwrap();
     assert_eq!(kept, "wrong");
-    // A row logged in error comes out of the table.
     step(
         &e,
         json!({"schema":"learner-model/v2","action":"update","request_id":"drop",
@@ -509,8 +483,6 @@ fn a_gap_log_made_after_other_practice_is_still_brought_in_and_one_it_cannot_rea
     plan(&e, "");
     std::fs::remove_file(e.workspace.join(GAP_LOG)).unwrap();
     v2::start(&e, "claude", THREAD);
-    // A chat miss writes gap logs, but a plan with no log and no rows is not
-    // taken over.
     answer(
         &e,
         "miss",
@@ -518,7 +490,6 @@ fn a_gap_log_made_after_other_practice_is_still_brought_in_and_one_it_cannot_rea
         json!({"label":"sign of b","question":"b in x² − 7x?","first_try":"wrong","help":"none","cold":false}),
     );
     assert!(!e.workspace.join(GAP_LOG).exists());
-    // A log written later, with a row, is brought in when a paper stage loads.
     std::fs::write(
         e.workspace.join(GAP_LOG),
         "## Gaps\n\n| # | Date | Paper | Q | Tag | What went wrong | Type | Conf | Repair done | Passes | Next redo | Status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| 1 | 2026-10-20 | Diagnostic | 3 | km | slope | K |  | taught | 2026-10-21 pass |  | 1 of 3 |\n",
@@ -532,9 +503,7 @@ fn a_gap_log_made_after_other_practice_is_still_brought_in_and_one_it_cannot_rea
         json!({"action":"instructions","host":"claude","stage":"papers_loop"}),
     );
     assert_eq!(load["gap_logs"]["imported"], json!([GAP_LOG]), "{load}");
-    // Part-way through its redos with no date, it is due now, not never.
     assert_eq!(digest(&e)["plans"][0]["redos_due"], 1);
-    // A file that is no longer text is left alone, whatever changes.
     let bytes = [b'#', b' ', 0xff, 0xfe, b'\n'];
     std::fs::write(e.workspace.join(GAP_LOG), bytes).unwrap();
     step(

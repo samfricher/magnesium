@@ -1,5 +1,3 @@
-//! Real SQLite writer boundaries for A16/A17. A commit-hook veto proves rollback
-//! and fresh-connection absence of a receipt, not ambiguous-I/O durable success.
 use super::*;
 use rusqlite::{Connection, params, types::ValueRef};
 use serde_json::{Value, json};
@@ -80,7 +78,6 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        // Close the live connection before removing this test's private directory.
         let conn = std::mem::replace(&mut self.store.conn, Connection::open_in_memory().unwrap());
         drop(conn);
         let _ = std::fs::remove_dir_all(&self.root);
@@ -110,8 +107,6 @@ fn sorted(ids: &[&str]) -> Vec<String> {
     ids.sort();
     ids
 }
-/// Compare all canonical semantic rows, generations, receipts and derived index
-/// rows. Raw capture is deliberately independent and is checked separately.
 fn semantic_state(conn: &Connection) -> Value {
     table_states(
         conn,
@@ -135,8 +130,6 @@ fn semantic_state(conn: &Connection) -> Value {
 fn table_states(conn: &Connection, tables: &[&str]) -> Value {
     let mut result = serde_json::Map::new();
     for &table in tables {
-        // FTS5's index/config shadows are WITHOUT ROWID. Their primary keys
-        // occupy the first columns, giving the same deterministic export.
         let order = if table.ends_with("_fts_idx") || table.ends_with("_fts_config") {
             "1,2"
         } else {
@@ -229,11 +222,7 @@ fn semantic_commit_veto_preserves_independent_capture_and_retries_from_fresh_con
     let count = commits.clone();
     f.store
         .conn
-        .commit_hook(Some(move || {
-            // The first write transaction is raw capture, the second is the
-            // complete semantic batch, including its in-transaction receipt.
-            count.fetch_add(1, Ordering::SeqCst) == 1
-        }))
+        .commit_hook(Some(move || count.fetch_add(1, Ordering::SeqCst) == 1))
         .unwrap();
     let rollbacks = Arc::new(AtomicUsize::new(0));
     let count = rollbacks.clone();
@@ -265,9 +254,6 @@ fn semantic_commit_veto_preserves_independent_capture_and_retries_from_fresh_con
             |row| row.get(0),
         )
         .unwrap();
-    // The independent raw transaction did commit exactly one new event batch.
-    // Model that precise metadata advance; all semantic fields, other versions,
-    // receipts and index rows must still match their pre-semantic values.
     before["workspace_meta"][0][event_generation_column as usize] = json!(generation_after_capture);
     assert_eq!(semantic_state(&fresh.conn), before);
     assert!(fresh.replay(&f.host, &request).unwrap().is_none());
@@ -325,7 +311,6 @@ fn sqlite_full_rolls_back_semantics_without_turning_storage_failure_into_index_w
         .pragma_update(None, "max_page_count", pages)
         .unwrap();
     let mut request = learning("database-full", &event);
-    // Within the real field limit, but necessarily larger than a SQLite page.
     request["memory_edits"][0]["record"]["state_text"] = json!("x".repeat(limits::STATE_BYTES));
     let error = f.store.update(&f.host, request.clone()).unwrap_err();
     assert_eq!(error.code, "storage_error");
@@ -361,9 +346,6 @@ fn sqlite_corrupt_fts_rolls_back_semantics_and_preserves_independent_raw_capture
             |r| r.get(0),
         )
         .unwrap();
-    // FTS5 shadow row 1 holds aggregate document/token sizes. This truncated
-    // real record makes ordinary FTS maintenance return SQLITE_CORRUPT_VTAB;
-    // no mocked result, authorizer denial, custom VFS or runtime fault hook.
     assert_eq!(
         f.store
             .conn
@@ -371,9 +353,6 @@ fn sqlite_corrupt_fts_rolls_back_semantics_and_preserves_independent_raw_capture
             .unwrap(),
         1
     );
-    // Reopen to avoid the original connection's FTS aggregate-size cache.
-    // Prove the SQLite error class at the exact maintenance boundary, then
-    // roll back the probe so it cannot supply any of the semantic assertions.
     let probe = f.reopen();
     let tx = probe.conn.unchecked_transaction().unwrap();
     let error = tx
@@ -405,8 +384,6 @@ fn sqlite_corrupt_fts_rolls_back_semantics_and_preserves_independent_raw_capture
             |r| r.get(0),
         )
         .unwrap();
-    // The only expected protected-state difference is the independently
-    // committed raw capture generation, never an index-dirty semantic commit.
     before["workspace_meta"][0][generation_column as usize] = json!(generation + 1);
     let shadow_tables = [
         "memory_fts_data",
@@ -426,9 +403,6 @@ fn sqlite_corrupt_fts_rolls_back_semantics_and_preserves_independent_raw_capture
     request["session"] = json!({"operation":"use","session_id":f.session,"expected_revision":1});
     request["checkpoint"] = json!({"current_problem":"Identify b","working_diagnosis":"New work needs interpretation","next_action":"Contrast b and x","memory_refs":[{"memory_id":memory,"revision":"after_edit"}]});
     request["review_updates"] = json!([{"operation":"create","client_ref":"review","memory_id":memory,"purpose":"Revisit labels","reason":"Different conditions"}]);
-    // One existing projection is the first and only memory maintenance target.
-    // A preceding new-memory insert could repair FTS aggregate sizes before
-    // the corrupt delete, depending on randomly allocated ID sorting.
     request["memory_edits"] = json!([{"operation":"flag","memory_id":memory,"expected_revision":1,"review_note":"Retain uncertainty","reason":"New response","change_basis":[{"new_observation":"work"}]}]);
     let error = writer.update(&f.host, request.clone()).unwrap_err();
     assert_eq!(error.code, "storage_error");
@@ -462,10 +436,6 @@ fn sqlite_corrupt_fts_rolls_back_semantics_and_preserves_independent_raw_capture
             .unwrap(),
         vec![0]
     );
-    // A repeated rejected payload deduplicates independent raw input and still
-    // fails fatally; neither a success receipt nor extra generation can appear.
-    // Each corruption oracle opens a fresh FTS instance rather than relying
-    // on connection-local aggregate caches after a failed maintenance attempt.
     let retry = f.reopen();
     let repeated = retry.update(&f.host, request).unwrap_err();
     assert_eq!(repeated.code, "storage_error");
@@ -556,8 +526,6 @@ fn writer_merge_then_split_preserves_authored_support_and_direct_retirement_noti
         );
         assert_eq!(support(&f.store.conn, id), all_support);
     }
-    // No recursive rewrite of retired ancestors when their direct replacement
-    // is later retired. The writer only applies the requested local changes.
     assert_eq!(
         update::memory_snapshot(&f.store.conn, a).unwrap(),
         original_a
@@ -679,7 +647,6 @@ fn merge_cas_conflict_rolls_back_prior_edits_and_reconciles_once_with_new_key() 
     let a = &first.references["memory"];
     let b = &second.references["memory"];
     let basis = json!([{"observation_id":first.references["work"]},{"observation_id":second.references["work"]}]);
-    // A separate writer advances one of the two memories after it was read.
     let other = f.reopen();
     other.update(&f.host, json!({"schema":SCHEMA,"action":"update","request_id":"concurrent-flag","memory_edits":[{"operation":"flag","memory_id":b,"expected_revision":1,"review_note":"Check this interpretation","reason":"Reconsider original support","change_basis":basis}]})).unwrap();
     let before = semantic_state(&f.store.conn);
@@ -758,8 +725,6 @@ fn fresh_commit_recovery_requires_a_durable_matching_receipt() {
             .unwrap()
             .is_none()
     );
-    // A real uncommitted change is visible on the original connection only.
-    // Recovery must obtain the writer-issued durable receipt from a fresh one.
     let tx = f.store.conn.unchecked_transaction().unwrap();
     tx.execute(
         "DELETE FROM operation_receipts WHERE request_id='recover-receipt'",
@@ -800,9 +765,6 @@ fn fresh_commit_recovery_rejects_same_payload_receipt_from_another_host() {
         };
         let other = f.reopen();
         other.update(&other_host, json!({"schema":SCHEMA,"action":"update","request_id":"other-start","session":{"operation":"start","client_ref":"session","goal":"Separate host"}})).unwrap();
-        // This represents B committing after A's failed transaction releases
-        // its lock and before A's recovery read. No hardware-I/O ambiguity is
-        // simulated, and the receipt itself is produced by the real writer.
         let committed = other.update(&other_host, request.clone()).unwrap();
         let before = semantic_state(&other.conn);
         assert_eq!(committed.host_kind, other_host.host_kind);

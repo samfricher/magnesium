@@ -1,20 +1,3 @@
-//! The closing lines: what a sitting leaves the learner with when it ends.
-//!
-//! At most two lines, worked out here from the record and nowhere else: the
-//! passes earned today, and the first day a skill answered today can count
-//! again, with the skills that can count then.
-//! Nothing at all when no answer was marked today. A declined question is not
-//! an answer (as in `magnesium progress`), so a day of declines ends with
-//! nothing. A wrong or partly right answer is an answer: it earns no pass, so
-//! it is never named as earned, but its skill's next day is named.
-//!
-//! A sitting ends when the learner says they are stopping and the tutor tells
-//! the runtime with `learning_step` `{"action":"end_sitting"}`, or asks for a
-//! pause or a stop. The runtime keeps when it ended in the sittings store.
-//! Claude Code in a terminal shows the lines once, from the Stop hook, under
-//! the reply that ended it; the study window reads `magnesium closing --json`
-//! after each turn and draws the same lines under the same reply. Neither
-//! place words them itself, and the tutor is never given them to repeat.
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
 
@@ -25,23 +8,18 @@ use crate::learner::label_key;
 use crate::sittings::{SittingNow, Sittings, local_day, now_ms};
 use crate::workspace::Workspace;
 
-/// The learning_step action the tutor sends when the learner stops.
 pub(crate) const END_ACTION: &str = "end_sitting";
 
-/// What a lesson's session-start notice says of the end of a sitting.
 pub(crate) const END_GUIDANCE: &str = " When the learner says they are stopping for now, send learning_step {\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"} before your reply, and set no task.";
 
-/// The longest a line may be. At the window's usual measure and text size the
-/// reading column shows about 78 characters of this text on one line, and
-/// about 66 with the plan beside the lesson in a window 1100 points wide (the
-/// photographs of 2026-11-16); a few fewer leave room for wide letters.
 const LINE_CHARS: usize = 64;
-/// How many skills a line names before it counts the rest.
 const NAMES_IN_LINE: usize = 3;
 
-/// `learning_step` `{"schema":"learner-model/v2","action":"end_sitting"}`.
 #[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[schemars(
+    description = "`learning_step` `{\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"}`."
+)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EndSittingRequest {
     pub schema: crate::learner::SchemaVersion,
@@ -54,34 +32,21 @@ pub(crate) enum EndSittingTag {
     EndSitting,
 }
 
-/// What the record says of today, for the closing lines.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Closing {
     pub(crate) today: NaiveDate,
-    /// Skills with a pass earned today that are not proven yet.
     pub(crate) earned: Vec<String>,
-    /// Skills whose pass today proved them.
     pub(crate) proved: Vec<String>,
-    /// Skills answered today and not proven, by the first day their next pass
-    /// can count, earliest first. A skill waiting for a repair has no day and
-    /// is left out.
     pub(crate) next: Vec<(NaiveDate, Vec<String>)>,
 }
 
 impl Closing {
-    /// The lines, in the order they are shown.
-    /// The lines, in the order they are shown. Each fits in
-    /// [`LINE_CHARS`], whatever the names, so that it is one line in the
-    /// window at its usual measure and text size, and the terminal says the
-    /// same words.
     pub(crate) fn lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         let first = match (self.earned.is_empty(), self.proved.is_empty()) {
             (true, true) => None,
             (false, true) => Some(fit("Earned today: a pass on ", &self.earned, ".")),
             (true, false) => Some(fit("Proven today: ", &self.proved, ".")),
-            // A skill proved today leads, as the larger step; the other
-            // passes are counted, so the line keeps to its length.
             (false, false) => Some(fit(
                 "Proven today: ",
                 &self.proved,
@@ -89,8 +54,6 @@ impl Closing {
             )),
         };
         lines.extend(first);
-        // The first day any skill answered today can count again, and the
-        // skills that can count then. Later days are on the workspace's page.
         if let Some((day, skills)) = self.next.first() {
             lines.push(fit(
                 &format!("Can count from {}: ", self.day_words(*day)),
@@ -123,7 +86,6 @@ impl Closing {
     }
 }
 
-/// "a", "a and b", "a, b and c"; with names left out, "a, b and 2 more".
 fn names(shown: &[String], rest: usize) -> String {
     match (shown, rest) {
         ([], _) => String::new(),
@@ -137,9 +99,6 @@ fn names(shown: &[String], rest: usize) -> String {
     }
 }
 
-/// `prefix`, then as many of `skills` as fit in [`LINE_CHARS`] with the
-/// rest counted, then `suffix`. When even the first name does not fit, it is
-/// cut at a word and ends in "…": the record's own words, shortened.
 fn fit(prefix: &str, skills: &[String], suffix: &str) -> String {
     let length = |text: &str| text.chars().count();
     let most = skills.len().min(NAMES_IN_LINE);
@@ -159,7 +118,6 @@ fn fit(prefix: &str, skills: &[String], suffix: &str) -> String {
         0 => String::new(),
         more => format!(" and {more} more"),
     };
-    // A cut name ends the sentence with its "…", not "….".
     let suffix = if rest.is_empty() && suffix == "." {
         ""
     } else {
@@ -169,8 +127,6 @@ fn fit(prefix: &str, skills: &[String], suffix: &str) -> String {
     format!("{prefix}{}…{rest}{suffix}", clip_at_word(first, room))
 }
 
-/// The longest start of `name` of at most `room` characters that ends at
-/// the end of a word, or its first `room` characters when one word is longer.
 fn clip_at_word(name: &str, room: usize) -> String {
     let mut kept = String::new();
     for word in name.split_whitespace() {
@@ -190,7 +146,6 @@ fn clip_at_word(name: &str, room: usize) -> String {
     kept.trim_end_matches([',', ';', ':']).to_owned()
 }
 
-/// One marked answer, as the closing lines need it.
 #[derive(Clone, Debug)]
 pub(crate) struct Answered {
     pub(crate) key: String,
@@ -198,16 +153,11 @@ pub(crate) struct Answered {
     pub(crate) declined: bool,
 }
 
-/// The closing lines' facts from what `magnesium progress --json` prints and
-/// the record's answers, oldest first. None when no answer was marked today, or when there
-/// is nothing to say: no pass today and no day for any skill answered today.
 pub(crate) fn from_record(
     progress: &Value,
     answers: &[Answered],
     today: NaiveDate,
 ) -> Option<Closing> {
-    // Each skill answered today, by when it was first answered today: the
-    // lines name skills in the order the learner met them.
     let mut answered_today: BTreeMap<&str, usize> = BTreeMap::new();
     for answer in answers.iter().filter(|a| a.day == today && !a.declined) {
         let at = answered_today.len();
@@ -243,11 +193,6 @@ pub(crate) fn from_record(
         if !seen.insert(key.clone()) {
             continue;
         }
-        // A pass earned today and still held: more passes now than when
-        // today began. A pass made today and lost to a miss later today is
-        // not held, so not named. The runtime counts the skill's passes from
-        // its weakest practice item, so the start of today is counted the
-        // same way (`passes_before_today`).
         let passes = skill["passes"].as_i64().unwrap_or(0);
         let before = skill["passes_before_today"].as_i64().unwrap_or(passes);
         let earned_today = passes > before;
@@ -264,7 +209,6 @@ pub(crate) fn from_record(
             && let Some(day) = skill["next_on"]
                 .as_str()
                 .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
-            // The lines never point at more to do today.
             && day > today
         {
             next.entry(day).or_default().push(name.to_owned());
@@ -303,9 +247,6 @@ fn load_answered(workspace: &Workspace) -> Result<Vec<Answered>, String> {
         .map_err(|e| e.to_string())
 }
 
-/// The closing lines for a study folder now. The one function that works
-/// them out: the terminal, the window and a sitting of checks alone all show
-/// what it returns. Ok(None) when there is nothing to show.
 pub(crate) fn closing(workspace: &Workspace, now: i64) -> Result<Option<Closing>, String> {
     let progress = crate::progress::record(workspace, now)?;
     if progress["upgrade_needed"] == true {
@@ -315,9 +256,6 @@ pub(crate) fn closing(workspace: &Workspace, now: i64) -> Result<Option<Closing>
     Ok(from_record(&progress, &answers, local_day(now)))
 }
 
-/// End the current sitting for the conversation `by`, and say whether the
-/// closing lines will show. Both the sitting end and the read change nothing
-/// in the learner record.
 pub(crate) fn end_sitting(
     workspace: &Workspace,
     by: Option<&str>,
@@ -329,13 +267,10 @@ pub(crate) fn end_sitting(
     Ok((ended, closing))
 }
 
-/// Whether a learning_step request asks to end the sitting.
 pub(crate) fn is_end_request(request: &Value) -> bool {
     request.get("action").and_then(Value::as_str) == Some(END_ACTION)
 }
 
-/// The tool's answer to `end_sitting`. The tutor is told that the learner
-/// sees the lines, never what they say, so it has nothing to repeat.
 pub(crate) fn end_from_tool(
     cwd: &std::path::Path,
     caller: Option<&crate::learner::HostContext>,
@@ -351,8 +286,6 @@ pub(crate) fn end_from_tool(
     if let Err(error) = crate::adapter::check_workspace_binding(&workspace) {
         return Ok(json!({"error": {"code": "workspace_binding", "message": error}}));
     }
-    // As every other write: a conversation cleared or switched after the
-    // tool connection started is refused, so its end is never recorded.
     if let Some(host) = caller {
         crate::adapter::refuse_changed_conversation(&workspace, host)?;
     }
@@ -380,7 +313,6 @@ pub(crate) fn end_from_tool(
     })
 }
 
-/// A pause or a stop the learner asked for ends the sitting too.
 pub(crate) fn ends_on_control(request: &Value, result: &Value) -> bool {
     request.get("action").and_then(Value::as_str) == Some("control")
         && matches!(
@@ -390,10 +322,6 @@ pub(crate) fn ends_on_control(request: &Value, result: &Value) -> bool {
         && result.get("durable") == Some(&Value::Bool(true))
 }
 
-/// The lines for Claude Code's Stop hook, once for each end, and only in the
-/// conversation that ended the sitting. The study window draws them itself
-/// from `magnesium closing --json`, so a hook in a session it started says
-/// nothing and leaves the end unclaimed.
 pub(crate) fn stop_hook_lines(workspace: &Workspace, by: &str) -> Option<String> {
     if crate::mcp::catalog::window_surface() {
         return None;
@@ -403,10 +331,6 @@ pub(crate) fn stop_hook_lines(workspace: &Workspace, by: &str) -> Option<String>
     })
 }
 
-/// The lines are worked out before the end is claimed: a read that fails, or
-/// a hook stopped for its time, leaves the end unclaimed, and the learner's
-/// next message sets it aside ([`Sittings::reopen`]), so the lines never
-/// show later under another reply.
 fn stop_hook_lines_with(
     workspace: &Workspace,
     by: &str,
@@ -458,9 +382,6 @@ fn closing_value(workspace: &Workspace, now: i64) -> Result<Value, String> {
     }))
 }
 
-/// `magnesium closing`: the closing lines for today, as they would show if
-/// the sitting ended now, and when the current sitting ended. Changes
-/// nothing in the folder.
 pub(crate) fn print_closing(as_json: bool) -> ExitCode {
     let result = (|| {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;

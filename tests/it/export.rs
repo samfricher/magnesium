@@ -1,4 +1,3 @@
-//! Export the actual v2 writer's records through the installed CLI boundary.
 use crate::support::mcp::McpClient;
 use crate::support::{TestEnvironment, v2};
 use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
@@ -67,9 +66,6 @@ fn read_json(path: &Path) -> Value {
 }
 
 fn workspace_relative_source(workspace: &Path, source: &Path) -> String {
-    // macOS temp paths may name the same directory through /var and
-    // /private/var. Export returns its canonical destination, so compare both
-    // existing paths in that same representation before making a tool path.
     let workspace = fs::canonicalize(workspace).unwrap();
     fs::canonicalize(source)
         .unwrap()
@@ -88,8 +84,6 @@ fn search_after_preparation(
     if let Some((path, bytes)) = required {
         crate::support::sources::prepare_text_fixture_separately(env, path, bytes);
     }
-    // This semantic/privacy oracle is one original request. In particular,
-    // exclusion and empty negative results are never retried.
     let response = v2::tool(
         env,
         "claude",
@@ -174,7 +168,6 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             .contains("formula application strength")
     );
     assert!(!destination.join("sources").exists());
-    // learner.json holds exactly the workspace learner tables, nothing scoped wider.
     assert_eq!(
         data.as_object()
             .unwrap()
@@ -205,8 +198,6 @@ fn cli_export_preserves_original_work_memory_history_and_exact_context_packets()
             "workspace_meta",
         ])
     );
-    // The sittings beside the learner record come too. Quick checks are
-    // practice items in the learner store.
     let sittings = read_json(&destination.join("sittings.json"));
     assert_eq!(
         sittings
@@ -356,8 +347,6 @@ fn cli_directory_exports_remain_private_after_rename_copy_and_overwrite() {
     let renamed = env.workspace.join("renamed");
     fs::rename(&destination, &renamed).unwrap();
     fs::write(renamed.join("personal.md"), "coefficient personal addition").unwrap();
-    // A valid export whose boundary marker was deleted must become safe
-    // again when preserved as the previous-export backup.
     fs::remove_file(renamed.join(".magnesium-export")).unwrap();
     let output = successful(export(&env, &renamed, &["--overwrite"]));
     let backup = Path::new(output["previous_export_backup"].as_str().unwrap());
@@ -732,8 +721,6 @@ fn export_exact_pdf_copy(
 #[test]
 fn cli_exact_pdf_filename_matrix_copies_current_bytes_without_filename_search() {
     let _one_source_test = crate::support::sources::source_test_guard();
-    // Each filename gets study folders of its own, so the filenames run side
-    // by side.
     std::thread::scope(|scope| {
         let checks = exact_pdf_filenames()
             .into_iter()

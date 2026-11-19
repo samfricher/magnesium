@@ -1,4 +1,3 @@
-"""Deterministic readable-source continuation policy, without any sidecar."""
 from contextlib import closing
 import hashlib
 import sqlite3
@@ -57,8 +56,6 @@ class ManifestConnectionLifecycleTests(unittest.TestCase):
                         result=preparation.read_state(workspace,"lesson.md")
                         self.assertEqual(result,manifest() if outcome=="row" else None)
                     connect.assert_called_once_with(uri,uri=True)
-                # This checks the actual SQLite resource, not just context exit
-                # or a mock close counter. A transaction context leaves it open.
                 with self.assertRaisesRegex(sqlite3.ProgrammingError,"closed database"):
                     connection.execute("SELECT 1")
             finally:

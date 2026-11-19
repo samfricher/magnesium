@@ -1,4 +1,3 @@
-//! Independent adversarial review of native byte provenance, not learner authority.
 use super::native_capture;
 use crate::{
     learner::{HostContext, LearnerStore, SCHEMA},
@@ -116,8 +115,6 @@ fn a_ticket_outlasts_a_slow_first_reply_and_then_expires() {
     let f = Fixture::new();
     let text = "Teach me coefficient roles";
     let ticket = native_capture::issue(&f.workspace, &f.host, "turn", text, 1000).unwrap();
-    // A tutor that loads instructions and reads sources first may take
-    // several minutes before its first learning_step.
     let twenty_minutes = 20 * 60 * 1000;
     assert!(
         native_capture::verify(&f.workspace, &f.host, &ticket, text, 1000 + twenty_minutes).is_ok()

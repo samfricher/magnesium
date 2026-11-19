@@ -1,4 +1,3 @@
-//! Real adapter regressions for closing captured work and explicit pending ownership.
 use crate::support::{TestEnvironment, v2};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -824,7 +823,6 @@ fn completion_preserves_typed_existing_task_while_updating_stopping_point() {
     let (e, session, event, task) = paused_with_task();
     let mut request = partial_completion(&session, &event);
     request["checkpoint"]["pending_task"] = task.clone();
-    // Omitted defaults are semantically equal despite different JSON fields.
     request["checkpoint"]["pending_task"]
         .as_object_mut()
         .unwrap()

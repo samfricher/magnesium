@@ -11,9 +11,6 @@ pub(crate) fn task_reminder() -> String {
 pub(crate) const CONFUSION_REMINDER: &str =
     " If the learner is confused, ask one question to find out why before explaining.";
 
-/// Judges the latest recorded reply only when it answers the latest recorded
-/// prompt before this one, so a turn the hooks missed does not pass off an
-/// older reply as the previous one.
 pub(crate) fn feedback(
     conn: &Connection,
     host: &HostContext,

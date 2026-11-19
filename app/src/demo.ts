@@ -1,19 +1,3 @@
-// A stand-in core for a plain browser, with made-up data, so the window can
-// be worked on and photographed without a shell or an agent. Nothing here is
-// a real course, a real grade or a real learner's words.
-//
-// The address picks a state. The five scenarios of the evidence contract:
-//   #s1-cold (Home)  #s1-cold-first  #s2-start  #s2-answer  #s3-before
-//   #s3-after  #s4-offplan  #s4-return  #s5-week  #s5-week-next  #narrow-lesson
-// and the new screens of the combined window:
-//   #workspace  #material  #new-session  #new-session-start  #settings  #settings-colour  #settings-keys  #panel  #panel-changed  #attach
-//   #tabs  #commands  #switch  #session-earlier  #source  #working
-//   #permission  #permission-command  #permission-unknown  #model-unavailable
-//   #paper  #paper-last  #paper-over  #paper-hours  #paper-days  #paper-long  #upgrade  #not-set-up  #help-row  #symbols
-//   #line-stuck  #line-stuck-typing  #line-more  #line-more-typing  (the lesson's line: Stuck · More, each open)
-//   #model-lesson-word  #model-lesson  #model-lesson-effort  #model-lesson-refused  (the model, mid-lesson)
-//   #setup-signed-out  #setup-no-claude  #setup-replace  #setup-replace-newer  #setup-too-old
-
 import type { Actions } from "./App";
 import { demoAfterTurn, demoBaseReply, demoChangePlan, demoMarked, demoMayMark, demoPlan } from "./demoBase";
 import { tinyPdf } from "./demoPdf";
@@ -30,15 +14,12 @@ const GOAL = "Reading $V_{max}$ and $K_m$ from a Lineweaver–Burk plot";
 const paperB: Paper = { target: "midterm-1", name: "Paper B", path: "Study/midterm-1/papers/Paper B.pdf", minutes: 50, sat: false };
 const paperA: Paper = { target: "midterm-1", name: "Paper A", path: "Study/midterm-1/papers/Paper A.pdf", minutes: 50, sat: true };
 
-// What the addresses change.
 const week = has("s5-week", "s5-week-next");
 const firstOpen = has("s1-cold-first");
 let signedIn = !has("setup-signed-out");
 let payment: Payment = "plan";
 let permissions: Permissions = "auto";
 let engineChosen: Engine = "direct";
-// The list Claude Code sends, as stand-in data in its own words. A new window has none kept and asks for it:
-// "model-first-run" gets it a moment later, "model-asking" is still waiting, and "model-failed" is sent none ("model-list-failed" with its list open).
 const ALL_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODEL_LIST: ModelOption[] = [
   { value: "default", resolved: "claude-opus-5-5", name: "Default (recommended)", description: "Use the default model (currently Opus 5.5)", efforts: ALL_EFFORTS, current: true },
@@ -50,7 +31,6 @@ const MODEL_LIST: ModelOption[] = [
   { value: "claude-opus-4-6", resolved: "claude-opus-4-6", name: "Opus 4.6", description: "Newer version available · select opus for Opus 5.5", efforts: ["low", "medium", "high", "max"], current: false },
   { value: "claude-haiku-4-5", resolved: "claude-haiku-4-5", name: "Haiku 4.5", description: "Newer version available · select haiku for Haiku 5.5", current: false },
 ];
-// Asked without a lesson, the demo's agent sends its list, except in "model-failed", where it sends none.
 let modelsNone = has("model-first-run", "model-list-first-run", "model-failed", "model-list-failed", "model-asking");
 const modelsFailed = has("model-failed", "model-list-failed");
 let pick: Pick | null = has("model-first-run", "model-list-first-run", "model-asking")
@@ -62,8 +42,6 @@ let pick: Pick | null = has("model-first-run", "model-list-first-run", "model-as
       : has("record-unopened-usual")
         ? { model: "claude-haiku-5-5", name: "Haiku 5.5" }
         : { model: "claude-fable-5-2", name: "Fable 5.2" };
-// What each session is on, by its tab's session id or "live" before the agent named it. A session the demo starts
-// is on the pick at the time; "model-lesson-refused" is one whose agent turns a change down.
 const sessionsOn: Record<string, { model: string; effort?: string }> = {};
 const onKey = (at: ModelAt) => at.session ?? (at.live ? "live" : null);
 const sessionChoice = (at: ModelAt): ModelChoice => {
@@ -77,8 +55,6 @@ const modelChoice = (): ModelChoice => {
   const offered = models.length === 0 || pick === null || models.some((m) => (m.resolved ?? m.value) === pick!.model || m.value === pick!.model);
   return { models, failed: modelsFailed, pick, not_offered: !offered };
 };
-// #paper-over has run past its end, as a paper does when the window was closed and opened again later, and
-// #paper-hours and #paper-days further; #paper-last is in its last minute; #paper-long has a long name.
 const sittingAgo: Record<string, number> = { paper: 12, "paper-long": 12, "paper-last": 49.5, "paper-over": 64, "paper-hours": 50 + 190, "paper-days": 50 + 2 * 1440 + 30 };
 let sitting: PaperSitting | null =
   state in sittingAgo
@@ -95,7 +71,6 @@ let notSetUp = has("not-set-up");
 let folders = firstOpen ? [] : [FOLDER, "/Users/you/Study/Linear-Algebra", "/Users/you/Study/Statistics"];
 let open: string | null = FOLDER;
 const DAY_MS = 86_400_000;
-// When each folder was last opened, and its sessions: the current one, and an earlier one.
 const openedMs: Record<string, number> = {
   [FOLDER]: Date.now() - (week ? 7 : 2) * DAY_MS,
   "/Users/you/Study/Linear-Algebra": Date.now() - (week ? 9 : 3) * DAY_MS,
@@ -128,7 +103,6 @@ const holdStream = has("s3-before");
 
 if (week) demoChangePlan();
 
-// The record's marks, oldest first. An answer sent in the demo adds one a moment later.
 const marks: Mark[] = [
   { id: "m0", at: "2026-11-04 18:02", label: "what $V_{max}$ means", mark: "right", help: "none", cold: true, paper: null, pass: 3 },
   { id: "m1", at: "2026-11-06 18:20", label: "units of a rate", mark: "right", help: "none", cold: true, paper: null, pass: 1 },
@@ -139,11 +113,8 @@ const marks: Mark[] = [
 let markCount = marks.length;
 let helpAsked = false;
 
-// The open task in the demo lesson: the y-intercept, then the slope.
 let task: "vmax" | "km" = week ? "km" : "vmax";
 
-// Tasks are written in prose, as the tutor on Magnesium writes them; the
-// engine names each one in its record, and says so with open_task.
 const VMAX_TASK = "A Lineweaver-Burk line meets the y-axis at $0.25$ s/µM. What is $V_{max}$, with its units?";
 const KM_TASK = "A Lineweaver-Burk line meets the y-axis at $0.25$ s/µM, so $V_{max} = 4$ µM/s, and its slope is $0.5$ s. What is $K_m$?";
 const CHECK_TASK = "A line meets the y-axis at $0.2$ s/µM. What is $V_{max}$?";
@@ -273,10 +244,8 @@ function account(): Account {
 
 const setup = (): Setup => ({ runtime: runtime(), account: account(), payment, permissions });
 
-/** The conversation left, as the window keeps it: what `turns` reads at rest. */
 function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
   if (folder !== FOLDER || firstOpen) return [];
-  // Each kept turn says how it was sent and, as Magnesium's engine notes it, the task it left open.
   const noted = (task: string | null, posed = false) => ({ noted: true, task, posed });
   if (session === "demo-0") {
     const at = Date.now() - 5 * DAY_MS;
@@ -304,7 +273,6 @@ function savedTurns(folder: string | null = open, session = "demo"): Turn[] {
   return turns;
 }
 
-/** The record's rows for the kept answers of the demo's sessions, at the minute each was given. */
 function keptMarks(): Mark[] {
   const minute = (ms: number) => {
     const d = new Date(ms);
@@ -319,13 +287,11 @@ function keptMarks(): Mark[] {
 }
 
 let emit: (event: AgentEvent) => void = () => {};
-// The task open in the demo lesson, as the direct engine would say it after each turn.
 let openTask: string | null = null;
 let replying = false;
 let unopenedSaid = false;
 let holdRelease: (() => void) | null = null;
 
-/** Write a reply as the tutor would: in pieces, then whole. */
 async function reply(text: string, after?: () => void, hold = false) {
   replying = true;
   emit({ type: "turn_started" });
@@ -354,11 +320,9 @@ async function reply(text: string, after?: () => void, hold = false) {
         : { type: "notice", kind: "record_unopened", text: `${unopened} It ran on Haiku 5.5 at Claude Code’s usual effort.` },
     );
   }
-  // The engine says which task is open, in the tutor's words.
   const posed = TASKS.find((each) => text.trim().endsWith(each)) ?? null;
   if (posed) openTask = posed;
   emit({ type: "open_task", task: openTask, posed: posed !== null });
-  // The record is read once a mark has had its moment.
   window.setTimeout(() => emit({ type: "settled" }), 500);
   after?.();
 }
@@ -382,7 +346,6 @@ async function respond(text: string, intent: Intent | undefined) {
   const base = demoBaseReply(text);
   if (lower.includes("into my plan")) {
     emit({ type: "turn_started" });
-    // As the core words what Claude Code 2.1.322 sends for each (asks.rs): the plan, a command, a tool it does not know.
     if (has("permission-command"))
       emit({
         type: "permission",
@@ -434,7 +397,6 @@ async function respond(text: string, intent: Intent | undefined) {
   return reply(`You said: ${text}\n\nThat is talk, so nothing is marked. Say when you want to go on.`);
 }
 
-/** The stand-in runtime's receipt: the y-intercept was not right on Thu 5 Nov (m4), and nothing on it since. */
 function demoReceipt(): { receipt?: string } {
   if (task !== "km") return {};
   const days = Math.max(1, Math.round((Date.now() - new Date(2026, 10, 5, 12).getTime()) / 86_400_000));
@@ -452,7 +414,6 @@ function addMark(mark: Mark["mark"]) {
       help: helpAsked ? "hint" : "none",
       cold: !helpAsked,
       paper: null,
-      // The stand-in record: a right answer alone is the skill's first day, and the next one the same day earns none.
       ...(mark === "right" && !helpAsked && !marks.some((kept) => kept.pass && kept.label === (task === "km" ? "reading $V_{max}$ from the y-intercept" : "reading $K_m$ from the slope")) ? { pass: 1, next_day: dayFromNow(1), ...demoReceipt() } : {}),
     };
     helpAsked = false;
@@ -463,10 +424,8 @@ function addMark(mark: Mark["mark"]) {
 
 export function demoCore(): Core {
   const plan = (folder?: string) => {
-    // Another course has a plan of its own; this demo keeps only Biochemistry's.
     if ((folder ?? open) !== FOLDER) return { target: null, title: null, exam_date: null, goal: null, steps: [], items: [], text: null, path: null, changed_ms: null };
     const kept = demoPlan();
-    // The route follows the lesson: the slope is in hand once the intercept is done.
     const steps = task === "km" ? kept.steps.map((step, at) => ({ ...step, status: at < 3 ? "done" : at === 3 ? "doing" : "todo" })) : kept.steps;
     return { ...kept, goal: GOAL, steps };
   };
@@ -527,7 +486,6 @@ export function demoCore(): Core {
       await wait(has("model-asking") ? 600_000 : 400);
       if (!modelsFailed) {
         modelsNone = false;
-        // A window with no pick yet takes the agent's default from its first list.
         pick ??= { model: "claude-opus-5-5", name: "Opus 5.5" };
       }
       return modelChoice();
@@ -596,8 +554,6 @@ export function demoCore(): Core {
       targets: [],
       exam: null,
       confirmed: [{ dots: [2, 2, 2], name: "what $V_{max}$ means", what: "", note: "confirmed", due: false, next_day: null, last_answer: "m0" }],
-      // The demo record's skills, each with the newest answer on it and the first day its next pass can count, as
-      // the runtime gives them.
       in_progress: [
         { dots: [0, 0, 0], name: "reading $V_{max}$ from the y-intercept", what: "", note: week ? "due today" : "–", due: week, next_day: week ? dayFromNow(0) : dayFromNow(1), last_answer: "m4" },
         { dots: [2, 0, 0], name: "units of a rate", what: "", note: "–", due: false, next_day: dayFromNow(0), last_answer: "m1" },
@@ -655,13 +611,11 @@ export function demoCore(): Core {
     },
     selftest: async () => false,
     selftestReport: async () => {},
-    // A browser has nothing behind its page to frost: the demo's window stays solid.
     glassState: async () => ({ can: false, liquid: false, reduce: false }),
     setGlass: async () => {},
   };
 }
 
-/** Wait until the tutor has finished, and a moment for the record. */
 async function settle(ms = 500) {
   await wait(120);
   while (replying) await wait(40);
@@ -674,7 +628,6 @@ const session = (actions: Actions) => {
   return handle;
 };
 
-/** Home's first row: carry on the most recent session. */
 async function lesson(actions: Actions) {
   actions.continueRecent();
   await wait(200);
@@ -700,14 +653,12 @@ async function offPlan(actions: Actions) {
   await settle();
 }
 
-/** A day from today, as the runtime writes one: "2026-11-17". */
 function dayFromNow(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-/** Drive the window to the state the address names, as a learner would. */
 export async function startFromAddress(actions: Actions): Promise<void> {
   await wait(60);
   switch (state) {
@@ -856,11 +807,9 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       actions.run("settings");
       return actions.run("tab", actions.tabs()[1].key);
     case "source":
-      // The opening reply cites the slides: a new session, so the citation is on the page to open.
       actions.newSession(FOLDER, { kind: "start" });
       await wait(200);
       await settle();
-      // A citation opens once the task near it is answered.
       await session(actions).say("V_max = 4 µM/s", "answer");
       await settle(700);
       document.querySelector<HTMLElement>(".tutor a.source[href*='Week']")?.click();
@@ -877,7 +826,6 @@ export async function startFromAddress(actions: Actions): Promise<void> {
       return settle();
     case "working":
       await lesson(actions);
-      // The tutor's reply never comes, so the page stays on "working".
       void session(actions).say("Why is the intercept the reciprocal?", "talk");
       return wait(900);
     case "permission":
@@ -904,7 +852,6 @@ export async function startFromAddress(actions: Actions): Promise<void> {
   }
 }
 
-/** For the self-check's "hold the stream" case: let a held reply finish. */
 export function releaseStream(): void {
   holdRelease?.();
 }

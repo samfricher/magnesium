@@ -1,9 +1,3 @@
-// A workspace: one study folder's page, in the Home tab, set on the lesson's own column with each part's name in the
-// margin. Next: the plan's next item as the page's one main action. Then the sessions, where each skill stands in the
-// record by the day it can next count, the papers, the material, and the folder itself (take it off the list, upgrade
-// it, set it up). File names are shown; paths are not. While a timed paper runs there is no tutor and nothing to add,
-// so the page is that paper alone until it is handed in or ended; the rest comes back as it was.
-
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { agendaOf, againOf, earned } from "../agenda";
@@ -21,65 +15,39 @@ import { Cue, More, Part, RepairRun, Row as PageRow, isCode, useMargin } from ".
 type Props = {
   api: Core;
   folder: string;
-  /** The page is in front, with nothing over it. */
   focus: boolean;
-  /** The Home tab that holds the page is in front. Behind another tab the page stays as it was, read again by `refresh`. */
   front: boolean;
-  /** A session in this folder is running, so the folder cannot be taken off the list now. */
   running: boolean;
   onBack: () => void;
   onNewSession: (folder: string) => void;
-  /** Start a session on the plan's next item, as Home's first row starts one. */
   onStartSession: (folder: string) => void;
   onOpenSession: (folder: string, session: string, title: string) => void;
-  /** Just the quick checks due here, in a session of their own. */
   onChecks: (folder: string) => void;
-  /** How many quick checks are due here, as the page read it. */
   onChecksDue?: (folder: string, due: number) => void;
-  /** The key for Just the quick checks, as the learner set it. */
   checksKey?: string;
   onHandedIn: (folder: string, words: { shown: string; sent: string }, title: string) => void;
   onForget: (folder: string) => void;
   onPaste: (folder: string) => void;
-  /** The panel's width, in pixels, shared with the sessions'. */
   panelWidth: number;
   onPanelWidth: (width: number) => void;
-  /** A document opened: a panel at the plan's width opens wider. */
   onShowPanel: () => void;
-  /** One of the folder's sessions was named anew: a tab it is open in takes the name. */
   onSessionRenamed: (folder: string, session: string, title: string) => void;
-  /** The documents changed: the menu follows. */
   onDocsChange: () => void;
-  /** The page takes the panel's commands (expand, flip, close, zoom) while it is in front. */
   registerPanel: (run: ((command: string) => boolean) | null) => void;
-  /** Whether a timed paper runs in this folder, as the page shows it: a file dropped then is not added as material. */
   onPaper?: (folder: string, running: boolean) => void;
   onNote: (text: string) => void;
-  /** Bumped when what the page shows may have changed from outside it: a drop, a lesson's marks, Home's tab back in front. */
   refresh: number;
-  /** The page's first reading, made before the window opened it, or still being made when the window stopped waiting for it. */
   first?: Reading | Promise<Reading>;
 };
 
-/**
- * All the page shows of its folder, read at once. The page is drawn from one reading, so its parts never come in
- * one after another, each pushing the ones under it down.
- */
 export type Reading = {
   home: Home | null;
   sessions: LessonInfo[];
-  /** "none" when the material folder could not be read. */
   materials: Materials | "none";
-  /** null when it could not be read, which the page treats as no plan. */
   plan: Plan | null;
-  /** null when it could not be read. */
   record: { progress: Progress; marks: Mark[] } | null;
 };
 
-/**
- * Reads a folder's page. With `visit`, it also notes the folder as opened, which puts it first in the library: for
- * the reading made as the page is opened, not for the readings made while it stays in Home's tab.
- */
 export async function readWorkspace(api: Core, folder: string, visit = false): Promise<Reading> {
   const [home, sessions, materials, plan, record] = await Promise.all([
     (visit ? api.visitFolder(folder) : api.home(folder)).catch(() => null),
@@ -94,14 +62,8 @@ export async function readWorkspace(api: Core, folder: string, visit = false): P
   return { home, sessions, materials, plan, record };
 }
 
-/**
- * How long the window keeps the page in front as it is while a folder's page it was asked to open is read. Past it,
- * the folder's page opens with its head alone and the rest comes in at once when read. On a made-up course the
- * reading took 50 to 100 ms.
- */
 export const OPEN_WAIT_MS = 400;
 
-/** "Midterm 2, Saturday 28 November, in 10 days.", or null for a plan with no date ahead. */
 function examWords(exam: Exam | null): string | null {
   if (!exam || exam.days_left === null || exam.days_left < 0) return null;
   const day = exam.date ? longDay(exam.date) : exam.day;
@@ -112,10 +74,8 @@ function examWords(exam: Exam | null): string | null {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** The sessions Sessions shows before "Show all". */
 const SESSIONS_SHOWN = 6;
 
-/** A skill's three days, filled for each the record counts now. A pass made before a later miss no longer counts, and is drawn empty. */
 function Days({ row }: { row: Row }) {
   const said = `${earned(row)} of the 3 days it needs: right, on your own, from memory`;
   return (
@@ -127,10 +87,6 @@ function Days({ row }: { row: Row }) {
   );
 }
 
-/**
- * The time left as a disc beside its words: a wash of the ink over the share left, read from the desk without
- * subtracting. It is drawn again only when the words change, once a minute, and never moves in between.
- */
 function TimeDisc({ share }: { share: number }) {
   const fill = discFill(share);
   return (
@@ -149,7 +105,6 @@ const isoDay = (ms: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-/** How long ago a paper's time was up, said coarsely: minutes, then hours, then days. */
 function agoWords(ms: number): string {
   const minutes = Math.floor(ms / MINUTE);
   if (minutes < 1) return "just now";
@@ -158,11 +113,9 @@ function agoWords(ms: number): string {
   return plural(Math.floor(minutes / (24 * 60)), "day", "days") + " ago";
 }
 
-/** The time now, read again only when the paper's count of whole minutes left would change, so nothing moves in between. */
 function useMinuteOf(end: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    // The count changes as end - now crosses a whole minute; the timer is set just past that moment.
     const left = end - now;
     const wait = (((left % MINUTE) + MINUTE) % MINUTE || MINUTE) + 50;
     const timer = window.setTimeout(() => setNow(Date.now()), wait);
@@ -180,7 +133,6 @@ type Running = {
   onEnd: () => Promise<void>;
 };
 
-/** A timed paper while it runs: the page's lead, with its end, its actions and the paper's two marks. */
 function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running) {
   const end = sitting.started_ms + sitting.minutes * MINUTE;
   const now = useMinuteOf(end);
@@ -190,7 +142,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
   const keepButton = useRef<HTMLButtonElement>(null);
   const over = now >= end;
   const left = Math.ceil((end - now) / MINUTE);
-  // A paper started on an earlier day says the day, so a window opened the next morning does not read as today.
   const today = dayOf(now);
   const when = (ms: number) => (dayOf(ms) === today ? clock(ms) : `${shortDay(isoDay(ms))}, ${clock(ms)}`);
 
@@ -199,7 +150,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
   }, [confirming]);
   const keepGoing = () => {
     setConfirming(false);
-    // Back on the action that asked, so a second Tab or Return is where it was.
     window.requestAnimationFrame(() => endButton.current?.focus());
   };
 
@@ -208,7 +158,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       aria-label="The paper running"
       className="running-paper"
       onKeyDown={(event) => {
-        // Esc puts the paper back as it was before it leaves the page.
         if (confirming && event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
@@ -217,8 +166,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
       }}
     >
       <p className="list-head">A paper is running</p>
-      {/* The time leads, at a size read from the desk where the paper is sat. Its words change only with the
-          minute, and nothing else in the block moves. */}
       <div className="paper-head">
         <TimeDisc share={over ? 0 : shareLeft(left, sitting.minutes)} />
         <p className="paper-time" data-drive="sitting-left">
@@ -227,8 +174,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
         <h2 className="paper-name" title={sitting.name}>
           {sitting.name}
         </h2>
-        {/* Past its time the paper's length says nothing new, and leaving it out keeps Hand in on a short window
-            at the largest text. */}
         <p className="paper-facts">
           <span>{over ? `Up at ${when(end)}, ${agoWords(now - end)}` : `Until ${when(end)}`}</span>
           <span>started {when(sitting.started_ms)}</span>
@@ -251,7 +196,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
         </div>
       ) : (
         <>
-          {/* Past its time, handing in is what is left to do, so it stands as a step of its own. */}
           {over && (
             <button className="paper-hand-in" data-drive="sitting-hand-in" autoFocus={focus} disabled={busy} onClick={onHandIn}>
               Hand in your work…
@@ -287,7 +231,6 @@ function RunningPaper({ sitting, busy, focus, onHandIn, onOpen, onEnd }: Running
 
 export function WorkspacePage(props: Props) {
   const { api, folder } = props;
-  // null until the first reading is in. Until then the page draws its head alone.
   const [reading, setReading] = useState<Reading | null>(() => (props.first && !(props.first instanceof Promise) ? props.first : null));
   const home = reading?.home ?? null;
   const sessions = reading?.sessions ?? null;
@@ -297,7 +240,6 @@ export function WorkspacePage(props: Props) {
   const [materialOpen, setMaterialOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Material opens beside the page, as a document opens beside a lesson, and stays open with the page.
   const docsKey = workspaceDocsKey(folder);
   const [docs, setDocsState] = useState<Docs>(() => docsOf(docsKey));
   const [goTo, setGoTo] = useState(0);
@@ -314,7 +256,6 @@ export function WorkspacePage(props: Props) {
       keepDocs(docsKey, next);
       props.onDocsChange();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [docsKey],
   );
   const openMaterial = (path: string) => {
@@ -330,7 +271,6 @@ export function WorkspacePage(props: Props) {
   panelRun.current = (command) => {
     const docs = docsNow.current;
     if (command === "open-document") {
-      // The panel first: in front of the page if it fills it.
       props.onShowPanel();
       if (docs.expanded && docs.lessonFront) setDocs({ ...docs, lessonFront: false });
       setPicking(true);
@@ -339,7 +279,6 @@ export function WorkspacePage(props: Props) {
     if (docs.open.length === 0) return false;
     switch (command) {
       case "escape": {
-        // Out of the document, back to the page; from a document that fills the tab, back to the page.
         const inPanel = (document.activeElement as HTMLElement | null)?.closest(".panel.side");
         if (!inPanel && !(docs.expanded && !docs.lessonFront)) return false;
         if (docs.expanded && !docs.lessonFront) setDocs({ ...docs, lessonFront: true });
@@ -359,7 +298,6 @@ export function WorkspacePage(props: Props) {
         const hadKeys = (document.activeElement as HTMLElement | null)?.closest(".panel.side") !== null;
         const left = withClosed(docs, docs.shown);
         setDocs(left);
-        // The keyboard goes to the next document, or back to the page when none is left.
         if (hadKeys) window.setTimeout(() => (left.shown ? docView.current?.focus() : column.current?.querySelector<HTMLElement>("button")?.focus()), 120);
         return true;
       }
@@ -369,35 +307,27 @@ export function WorkspacePage(props: Props) {
         docView.current?.zoom(command === "zoom-in-document" ? 1 : command === "zoom-out-document" ? -1 : 0);
         return true;
       case "share-document":
-        // The panel's own control: the sheet points from it.
         pageRef.current?.querySelector<HTMLElement>('[data-drive="share-document"]')?.click();
         return true;
     }
     return false;
   };
-  // Several tabs may each hold a workspace's page: the one in front takes the commands.
   const { registerPanel, front } = props;
   useEffect(() => {
     if (!front) return;
     registerPanel((command) => panelRun.current(command));
     return () => registerPanel(null);
   }, [registerPanel, front]);
-  // Back in front with the keyboard outside the page, it goes to what leads the page, as when the page was first
-  // drawn. The tab's page then gives it back to whatever in the page had it last, if anything did.
   const wasFront = useRef(front);
   useEffect(() => {
     const back = front && !wasFront.current;
     wasFront.current = front;
-    // The read Home's tab makes as it comes back (src/App.tsx) notes the visit.
     if (back) visitDue.current = true;
     if (back && props.focus && !pageRef.current?.contains(document.activeElement))
       column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus({ preventScroll: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [front]);
-  // The panel shows while material is open beside the page, or while its list is open to pick from.
   const withDocs = docs.open.length > 0 || picking;
 
-  // Each reading is numbered: one that comes back after a later one was drawn is not drawn over it.
   const begun = useRef(0);
   const drawn = useRef(0);
   const take = useCallback(async (pending: Promise<Reading>) => {
@@ -407,10 +337,6 @@ export function WorkspacePage(props: Props) {
     drawn.current = at;
     setReading(fresh);
   }, []);
-  // Noting a visit moves the folder to the top of the library (and Go). It is noted when the learner comes to the page:
-  // when the page is made in front, and each time Home's tab, holding it, comes back. A read for any other reason (a
-  // lesson's marks, an action on the page) only reads. A page handed its first reading was opened by the window,
-  // whose reading noted the visit.
   const visitDue = useRef(props.front && props.first === undefined);
   const read = useCallback(() => {
     const visit = visitDue.current;
@@ -418,7 +344,6 @@ export function WorkspacePage(props: Props) {
     return take(readWorkspace(api, folder, visit));
   }, [take, api, folder]);
 
-  // The window hands the page its first reading: read again only when something changes after it.
   const handed = useRef(props.first);
   useEffect(() => {
     const first = handed.current;
@@ -431,9 +356,6 @@ export function WorkspacePage(props: Props) {
     if (home) onChecksDue?.(folder, checksAlone(home));
   }, [home, folder, onChecksDue]);
 
-  // A session still named by the words it was started with ("Continue") takes its own lesson's goal, as a new
-  // one does: the goal the record binds to that conversation, never the folder's last goal, which a lesson in a
-  // terminal may have set.
   const { onSessionRenamed } = props;
   useEffect(() => {
     const renames = (sessions ?? [])
@@ -491,7 +413,6 @@ export function WorkspacePage(props: Props) {
       setBusy(false);
       await read();
     }
-    // The block the keyboard was in is gone: the keyboard goes to what leads the page now.
     window.requestAnimationFrame(() => column.current?.querySelector<HTMLElement>(".next-row, section button:not(:disabled)")?.focus());
   };
   const withHome = (fresh: Home) => setReading((old) => old && { ...old, home: fresh });
@@ -503,7 +424,6 @@ export function WorkspacePage(props: Props) {
   const setUp = () => act(async () => withHome(await api.setUp(folder)));
 
   const name = home ? displayName(home.name) : displayName(folder.split("/").pop() ?? "");
-  // A kind beside each file only says something when the files are not all of one kind.
   const mixed = materials !== null && materials !== "none" && new Set(materials.names.map(materialKind)).size > 1;
   const sitting = home?.sitting ?? null;
   const ready = home !== null && ["ready", "empty", "not_set_up"].includes(home.state);
@@ -518,18 +438,13 @@ export function WorkspacePage(props: Props) {
   const hung = useMargin(column, ".page-scroll", [withDocs, reading !== null]);
   const [allSessions, setAllSessions] = useState(false);
 
-  // The plan's item in hand, by the rule Home's step uses too (src/next.ts).
   const items = plan?.items ?? [];
   const named = namedSessions(sessions ?? [], home?.last?.goal ?? null);
   const next = nextOf(items, named);
   const current = next?.item ?? null;
   const carried = next?.carried ?? null;
-  // The next thing shows once the folder can be studied in and the plan has been read; a running paper takes its place.
   const showNext = home !== null && (home.state === "ready" || home.state === "empty") && plan !== undefined && sitting === null;
-  // What the session Next opens starts with, from the record's reading; when the next message would not begin a
-  // sitting (one carries on, or the opener is off), what is due, with no promise of when it comes.
   const said = startsWithWords(home) ?? dueWords(home);
-  // The quick checks due can be taken alone, in a session of their own.
   const alone = checksAlone(home);
   const checksDue = alone > 0;
   const startNext = () => (carried ? props.onOpenSession(folder, carried.info.session, carried.title) : props.onStartSession(folder));
@@ -538,8 +453,6 @@ export function WorkspacePage(props: Props) {
 
   const listed = materials !== null && materials !== "none" && materials.files > 0 ? materials : null;
 
-  // Each skill the learner has answered on, with the runtime's count of its days, in the order it can count again:
-  // today, then by its day, then those with no day, then the proven; the newest answer first within each.
   const marksById = new Map(record ? record.marks.map((mark) => [mark.id, mark]) : []);
   const rows = record ? [...record.progress.in_progress, ...record.progress.confirmed, ...record.progress.untested] : [];
   const work = rows
@@ -547,8 +460,6 @@ export function WorkspacePage(props: Props) {
     .filter(({ row, last }) => last !== null || earned(row) > 0)
     .sort((a, b) => a.next.rank - b.next.rank || a.next.day.localeCompare(b.next.day) || (b.last?.at ?? "").localeCompare(a.last?.at ?? ""));
   const last = record ? latestSkill(rows, record.marks) : null;
-  // The days each skill can next count, in agendaOf's order: the skills waiting for a repair among them, the exam on
-  // its date, the proven last.
   const days = work.length > 0 ? agendaOf(work, home?.exam ?? null) : [];
   const repairs = days.some((day) => day.label === "To repair");
   const skillName = (name: string) => (isCode(name) ? <span className="mg-code">{name}</span> : <Line text={name} />);
@@ -578,7 +489,6 @@ export function WorkspacePage(props: Props) {
           <h1 className="page-title mg-title">{name}</h1>
           {exam && <p className="mg-cue mg-exam">{exam}</p>}
           {home?.message && home.state !== "ready" && <p className="mg-where">{withoutPaths(home.message)}</p>}
-          {/* What the folder needs before study, under the words that ask for it, drawn as Home draws a step's choices. */}
           {home && ["not_set_up", "needs_upgrade", "no_runtime", "unreadable"].includes(home.state) && (
             <p className="mg-controls" role="group">
               {home.state === "not_set_up" && (
@@ -610,7 +520,6 @@ export function WorkspacePage(props: Props) {
             onOpen={
               sitting.path
                 ? () =>
-                    // The paper opens beside the page, as the material does; a kind the window does not show goes to the Mac.
                     sourceRef(sitting.path!) ? openMaterial(sitting.path!) : void api.openFile(sitting.path!, folder).catch((problem) => props.onNote(String(problem)))
                 : null
             }
@@ -681,7 +590,6 @@ export function WorkspacePage(props: Props) {
                 <p className="mg-cue">The record could not be read.</p>
               ) : work.length === 0 ? (
                 <p className="mg-cue">
-                  {/* The core's own words for an empty record speak of papers and checks only; a lesson's answers count too. Its other words (a gap log edited by hand, an upgrade) are said as they are. */}
                   {record.progress.message && !record.progress.message.startsWith("Nothing is proved yet")
                     ? withoutPaths(record.progress.message)
                     : "Nothing marked yet."}
@@ -719,7 +627,6 @@ export function WorkspacePage(props: Props) {
               {home.papers.map((paper) => (
                 <div key={paper.path} role="listitem" className="mg-row mg-paper">
                   <span className="mg-row-name">
-                    {/* Its name opens it to read, beside the page; sitting it is its own action. */}
                     <button
                       type="button"
                       className="mg-name-act"
@@ -783,8 +690,6 @@ export function WorkspacePage(props: Props) {
           </Part>
         )}
 
-        {/* Off the list, a running paper's clock would go on with nothing to show it or hand it in: the action waits
-            for the paper, and is not drawn while it runs. */}
         {reading && !sitting && (
           <section aria-label="This space" className="mg-forget">
             <p className="mg-controls">
@@ -792,7 +697,6 @@ export function WorkspacePage(props: Props) {
                 Take this space off the list
               </button>
             </p>
-            {/* Said only when the action cannot be taken now; otherwise what it leaves alone is its title. */}
             {held && <p className="mg-cue">{held}.</p>}
           </section>
         )}

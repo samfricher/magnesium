@@ -1,10 +1,3 @@
-// winid <pid|name>: print "id x y width height" for each on-screen window of
-// that process, at the normal level or a floating one (a window the evidence
-// harness keeps above others sits on the floating level), but not the menu
-// bar's. Points, from the top left of the main display.
-//
-// winid crop <png> <x> <y> <width> <height>: cut a photograph down to that
-// rectangle, in its own pixels, in place.
 import CoreGraphics
 import Foundation
 import ImageIO

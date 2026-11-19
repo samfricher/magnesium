@@ -1,4 +1,3 @@
-"""Adversarial real stdio children exercise bounded native test transport."""
 import asyncio
 import ctypes
 import errno
@@ -85,14 +84,10 @@ class NativeMcpTests(unittest.IsolatedAsyncioTestCase):
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper regression")
     async def test_clean_leader_exit_terminates_and_reaps_owned_descendant(self):
-        # The outer test owns orphan reaping. Production cleanup must terminate
-        # the private group, even after its leader has exited with closed pipes.
-        # The child publishes the descendant pid by rename, so the poll below
-        # never reads a partially written pid file.
         libc = ctypes.CDLL(None, use_errno=True)
         old = ctypes.c_int()
-        self.assertEqual(libc.prctl(37, ctypes.byref(old), 0, 0, 0), 0)  # GET_CHILD_SUBREAPER
-        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)  # SET_CHILD_SUBREAPER
+        self.assertEqual(libc.prctl(37, ctypes.byref(old), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
         reaped = []
         client = None
         try:
@@ -110,7 +105,7 @@ class NativeMcpTests(unittest.IsolatedAsyncioTestCase):
                             try:
                                 waited, status = os.waitpid(pid, os.WNOHANG)
                             except ChildProcessError:
-                                waited = 0  # Leader has not exited/reparented yet.
+                                waited = 0
                             if waited:
                                 reaped.append((waited, status))
                                 return
@@ -131,8 +126,6 @@ class NativeMcpTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(os.WIFSIGNALED(reaped[0][1]))
                     self.assertEqual(os.WTERMSIG(reaped[0][1]), signal.SIGKILL)
                 finally:
-                    # Reproduction cleanup is confined to this invocation's
-                    # private process group and runs even against the old bug.
                     try:
                         os.killpg(client.proc.pid, signal.SIGKILL)
                     except ProcessLookupError:

@@ -1,13 +1,8 @@
-//! `magnesium searchable` tells a study window which of the files a learner
-//! added the tutor's source search will read, and why not for the others. It
-//! runs the same rules and the same PDF reader that search does.
 use crate::support::{TestEnvironment, v2};
 use pdf_extract::{Document, Object, Stream, content::Content, content::Operation, dictionary};
 use serde_json::Value;
 use std::fs;
 
-/// A one-page PDF. With text it has a text layer; with `None` the page is
-/// blank, which is what a scan looks like to a text reader.
 fn pdf(text: Option<&str>) -> Vec<u8> {
     let mut document = Document::with_version("1.5");
     let pages_id = document.new_object_id();
@@ -124,7 +119,6 @@ fn a_pdf_with_text_is_read_a_scan_is_not_and_a_word_in_a_name_is_named() {
 
 #[test]
 fn a_word_in_the_name_leaves_a_text_file_out() {
-    // The command reports the rules search runs on, not rules of its own.
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     add(
@@ -189,7 +183,6 @@ fn text_form_says_what_search_cannot_read() {
 
 #[test]
 fn a_folder_not_set_up_yet_is_judged_by_the_rules_it_will_have() {
-    // A new folder's first step is adding material, before any lesson sets it up.
     let e = TestEnvironment::from_fixture("basic").unwrap();
     let bare = e.root.join("bare");
     fs::create_dir_all(bare.join("Study/materials")).unwrap();

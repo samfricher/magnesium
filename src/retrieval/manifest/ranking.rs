@@ -1,12 +1,3 @@
-//! Derived, rebuildable ranking-only view over the lexical source index.
-//!
-//! Repeated running headers and footers ("navigation lines") inflate lexical
-//! scores for every page of a document even though they carry no topic-specific
-//! evidence. The stored candidate bodies, anchors, and hashes stay untouched;
-//! only `source_search_ranked` omits lines that repeat on most indexed chunks
-//! of one document. Matching still happens against the original `source_search`
-//! rows, so navigation-only hits remain findable but rank and qualify honestly.
-
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -14,14 +5,9 @@ use rusqlite::{Transaction, params};
 
 use super::{ManifestError, sqlite};
 
-/// A line must appear on at least this many indexed chunks of one document.
 const MIN_REPEATED_CHUNKS: usize = 4;
-/// ... and on at least this percentage of the document's indexed chunks.
 const REPEATED_CHUNK_PERCENT: usize = 60;
 
-/// Normalize one body line for cross-chunk identity comparison. Lines are
-/// compared after whitespace collapsing and case folding; punctuation is kept
-/// so a heading marker or separator does not merge distinct lines.
 fn normalized_line(line: &str) -> Option<String> {
     let normalized = line
         .split_whitespace()
@@ -31,9 +17,6 @@ fn normalized_line(line: &str) -> Option<String> {
     (!normalized.is_empty()).then_some(normalized)
 }
 
-/// Lines that repeat on enough indexed chunks of one document to be treated as
-/// possible navigation. Each chunk counts a normalized line at most once, so a
-/// line repeated inside a single page never qualifies on its own.
 pub(crate) fn navigation_lines(bodies: &[&str]) -> HashSet<String> {
     if bodies.len() < MIN_REPEATED_CHUNKS {
         return HashSet::new();
@@ -58,8 +41,6 @@ pub(crate) fn navigation_lines(bodies: &[&str]) -> HashSet<String> {
         .collect()
 }
 
-/// Body text used only for ranking: flagged navigation lines are omitted.
-/// Original stored bodies are never rewritten.
 pub(crate) fn ranking_body(body: &str, navigation: &HashSet<String>) -> String {
     body.lines()
         .filter(|line| {

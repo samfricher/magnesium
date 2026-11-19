@@ -25,7 +25,6 @@ fn the_opener_asks_for_question_cold_and_next_and_long_text_never_cuts_that_off(
             })
             .collect(),
     }];
-    // Untrimmed, this is over the limit, so the stored text must give way.
     assert!(opener_text_with(&checks, &redos, &[]).len() > MAX_OPENER_BYTES);
     let text = opener_text(&checks, &redos);
     assert!(text.len() <= MAX_OPENER_BYTES, "{}", text.len());
@@ -37,7 +36,6 @@ fn the_opener_asks_for_question_cold_and_next_and_long_text_never_cuts_that_off(
     assert!(text.contains("show none of its key before they answer"));
     assert!(text.ends_with("which picks and records them."), "{text}");
     assert!(text.contains("midterm-1#1, tag \"km\": stored question: "));
-    // A short opener is untouched.
     let short = vec![Check {
         number: 1,
         label: "sign of b".into(),
@@ -109,7 +107,6 @@ fn fixture() -> (PathBuf, Workspace) {
     (root, workspace)
 }
 
-/// Quick checks due today, as the learner store holds them.
 fn due_checks(workspace: &Workspace, labels: &[&str]) {
     let store = crate::practice::open_store(workspace).unwrap();
     for (n, label) in labels.iter().enumerate() {
@@ -153,7 +150,6 @@ fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
         )
         .unwrap();
     assert_eq!(not_taken, 2, "five due, three taken");
-    // "Quick check 1" is not "Quick check 12"; a decline settles a check.
     s.note_reply("Quick check 12 is not here.").unwrap();
     assert_eq!(s.open_counts().unwrap(), Some(Counts { due: 3, posed: 0 }));
     s.note_reply("QUICK CHECK 2: try this.").unwrap();
@@ -169,7 +165,6 @@ fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
         "{}",
         opener.text
     );
-    // The same checks as data, in the order the opener numbers them.
     let checks = opener.checks.as_array().unwrap();
     assert_eq!(checks.len(), 3);
     assert_eq!(checks[0]["number"], 1);
@@ -192,7 +187,6 @@ fn a_sitting_begins_after_three_hours_and_takes_at_most_three_checks() {
 fn the_opener_lists_the_due_paper_redos_as_data_the_longest_due_first() {
     let (root, workspace) = fixture();
     let store = crate::practice::open_store(&workspace).unwrap();
-    // Two rows of one plan, a row in no plan, and a row not due yet.
     for (id, plan, row, next_on, question) in [
         (
             "g-1",

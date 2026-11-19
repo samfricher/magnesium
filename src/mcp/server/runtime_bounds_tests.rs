@@ -95,7 +95,6 @@ fn request_cancellation_bridge_signals_running_work() {
         .build()
         .expect("test runtime");
     runtime.block_on(async {
-        // A cancellation signal sets the flag.
         let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
         let (flag, watcher) = bridge_cancellation(async move {
             let _ = receiver.await;
@@ -119,9 +118,6 @@ fn request_cancellation_bridge_signals_running_work() {
             watcher,
         });
 
-        // A completed request releases a still-parked watcher instead of
-        // leaving it alive until process exit. `CancelOnDrop` performs the
-        // abort; normal MCP completion never cancels the request token.
         let baseline = tokio::runtime::Handle::current()
             .metrics()
             .num_alive_tasks();

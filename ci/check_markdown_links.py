@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Fail when a repository-local Markdown link names a missing path."""
 
 from pathlib import Path
 import re

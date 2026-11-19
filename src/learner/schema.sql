@@ -1,8 +1,3 @@
--- Runtime schema for Magnesium learner-model/v2, fresh-store revision 5.
--- Initialize a NEW database only. Do not run against an old learner store.
--- The tables schemas 3, 4 and 5 added are in schema_v3.sql, schema_v4.sql and
--- schema_v5.sql, which a fresh store runs after this file and the upgrade runs
--- on their own.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE workspace_meta (
@@ -137,8 +132,6 @@ CREATE TABLE context_receipts (
   created_at_ms INTEGER NOT NULL
 );
 
--- Contentful derived indexes. The central writer keeps one row per canonical
--- memory/observation using memory_no/observation_no as the corresponding rowid.
 CREATE VIRTUAL TABLE memory_fts USING fts5(
   memory_id UNINDEXED,title,scope,topics,summary,state_text,review_note,retrieval_cues,
   tokenize='unicode61'

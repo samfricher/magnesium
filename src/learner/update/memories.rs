@@ -34,11 +34,6 @@ fn observation_basis(
     }
     Ok(id.to_owned())
 }
-/// A tutor often cites, as a new observation, one it made by that name in
-/// its previous request: in the live runs of 2026-11-11 this refusal and its
-/// retry cost about nine seconds of a learner's wait. The name is read from
-/// the latest committed request, in the last two hours, whose references
-/// gave it to an observation. A name no recent request gave is still refused.
 fn earlier_observation(conn: &Connection, name: &str) -> Result<Option<String>> {
     let since = crate::learner::store::now_ms() - 2 * 60 * 60 * 1000;
     Ok(conn
@@ -69,8 +64,6 @@ fn current_basis(
         })
         .collect()
 }
-/// Stored reference order belongs to the authored change record, while the event
-/// set supplies both per-edit completion admission and transaction dispositions.
 pub(super) struct ResolvedChangeBasis {
     references: Vec<String>,
     pub(super) participating_event_ids: BTreeSet<String>,
@@ -105,8 +98,6 @@ pub(super) fn resolve_change_basis(
                     reference,
                     matches!(item, ChangeBasisRef::NewObservation(_)),
                 )?;
-                // New observations have already been inserted. Resolve both
-                // forms through the same canonical relation, never request text.
                 for event in statement.query_map([&id], |row| row.get::<_, String>(0))? {
                     resolved.participating_event_ids.insert(event?);
                 }
@@ -470,8 +461,6 @@ pub(super) fn apply_memory(
     revisions.insert(id, revision);
     Ok(())
 }
-/// Save an over-long record shortened rather than refuse it; `notes` says
-/// what was cut so the tutor can revise the memory if the cut mattered.
 fn shorten_record(
     record: &MemoryRecord,
     edit_index: usize,
@@ -539,7 +528,6 @@ fn normalize_labels(labels: &[String], count: usize, max: usize) -> Result<Vec<S
     }
     Ok(values.into_iter().collect())
 }
-/// JSON view for regression assertions over the canonical typed snapshot.
 #[cfg(test)]
 pub(crate) fn memory_snapshot(conn: &Connection, id: &str) -> Result<Value> {
     serde_json::to_value(crate::learner::records::memory_snapshot(conn, id)?).map_err(Into::into)

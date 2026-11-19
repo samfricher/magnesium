@@ -1,21 +1,10 @@
-//! Packs the tutor's instruction files into the program.
-//!
-//! `src/workspace/learning/manifest.json` lists the files and what each is
-//! for. The build adds each file's SHA-256 to that list, so an edit to an
-//! instruction file needs no other change. It writes two files to `OUT_DIR`:
-//! the list and the files as one pack, and the list's metadata as Rust.
-//! `src/workspace/instruction_bundle.rs` reads both and checks the pack
-//! again when the program runs.
-
 use std::{collections::BTreeSet, env, fmt::Write as _, fs, path::Path};
 
 use sha2::{Digest, Sha256};
 
 const BUNDLE_DIR: &str = "src/workspace/learning";
-/// The line of a manifest entry that its hash is written after.
 const HASH_GOES_AFTER: &str = "\"required_for_activation\": true";
 
-/// Read a file of the bundle. No part of its path may be a symlink.
 fn read_bundle_file(relative: &str) -> Vec<u8> {
     let path = Path::new(BUNDLE_DIR).join(relative);
     for ancestor in path.ancestors().take(relative.split('/').count()) {
@@ -31,7 +20,6 @@ fn read_bundle_file(relative: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
-/// The role, stage and host that a file's place in the bundle gives it.
 fn metadata_for(path: &str) -> (&'static str, Option<&str>, Option<&str>) {
     let name_in = |folder: &str| {
         path.strip_prefix(folder)
@@ -59,10 +47,6 @@ fn main() {
     let authored = String::from_utf8(read_bundle_file("manifest.json")).expect("UTF-8 manifest");
     let mut manifest: serde_json::Value =
         serde_json::from_str(&authored).expect("learning manifest JSON");
-    // The packed manifest is the authored text with one line added to each
-    // entry. The bundle's identity is a hash that covers these bytes, so the
-    // text is kept as written: a study folder then sees a new bundle only
-    // when a file or the list changes, not when this script does.
     let mut packed_manifest = String::new();
     let mut rest = authored.as_str();
     let mut seen = BTreeSet::new();

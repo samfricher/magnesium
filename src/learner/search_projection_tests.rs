@@ -1,4 +1,3 @@
-//! The writer and a clean rebuild must expose the same active search corpus.
 use super::{HostContext, LearnerStore, SCHEMA, UpdateResult, read, search, store};
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
@@ -581,8 +580,6 @@ fn canonical_write_failure_remains_an_error_and_rolls_back_the_whole_batch() {
 fn retirement_preserves_active_corpus_and_ranking_across_rebuild() {
     let f = Fixture::new();
     let conn = &f.store.conn;
-    // A short content match and a longer title match exchange rank if retired
-    // filler documents remain in the corpus and inflate its average length.
     for (id, title, summary, state) in [
         (
             "A".to_owned(),

@@ -1,5 +1,3 @@
-// What the session screen holds, and how each event from the tutor changes it.
-
 import type { Answer, AgentEvent, Intent, Mark, NoticeKind, Question, StepBegun, Turn } from "./types";
 import type { PlanDiff } from "./words";
 
@@ -9,44 +7,27 @@ export type Card =
 
 export type Status = "idle" | "waiting" | "writing" | "working";
 
-/**
- * How the learner's words were sent: as the answer to the open task, as talk,
- * as one of the window's own help phrases, or as the window's opening words.
- * A turn read back from an earlier sitting does not know.
- */
 export type Said = Intent | "help" | "opening";
 
-/**
- * A turn of the lesson. `pick` is set when what the learner said was a choice
- * made on a card of the tutor's. `marks` are the record's rows for it, from
- * the `marked` event; `change` is what the turn changed in the plan, read from
- * the plan after `plan_changed`.
- */
 export type LessonTurn = Omit<Turn, "posed"> & {
   pick?: boolean;
   said?: Said;
   marks?: Mark[];
   change?: PlanDiff;
-  /** The task this turn's reply posed, as the engine read it from the tutor's record. */
   posed?: string;
-  /** For an answer: the task it answered, as it stood when it was sent. */
   question?: string;
-  /** The runtime's closing lines, when this turn ended the sitting. */
   closing?: string[];
 };
 
-/** The exchange on screen: what the learner said and the tutor's reply to it. */
 export type Live = {
   learner: string;
   done: string[];
   streaming: string;
   status: Status;
-  /** The work in hand, in plain words, while the tutor works: "writing paper 2". */
   doing: string | null;
   since: number;
   error: string | null;
   interrupted: boolean;
-  /** What the learner said was an option picked on the tutor's card (or words typed on it), not a message they wrote. */
   pick?: boolean;
   said?: Said;
   marks?: Mark[];
@@ -60,19 +41,12 @@ export type Live = {
 export type Notice = { kind: NoticeKind; text: string };
 
 export type SessionState = {
-  /** Whether an agent process is running for this folder. */
   open: boolean;
   earlier: LessonTurn[];
   live: Live | null;
   cards: Card[];
   notices: Notice[];
-  /** When this sitting's clock started, or null before the first message. */
   startedMs: number | null;
-  /**
-   * The open task as the engine last said it, or undefined when the engine
-   * has said nothing (Claude Code's does not): the page then finds a task by
-   * its bold opening word.
-   */
   task?: { text: string | null; fallback?: boolean };
 };
 
@@ -87,10 +61,8 @@ export const emptySession: SessionState = {
 
 export type Action =
   | { type: "opened"; turns: Turn[] }
-  /** A session's saved turns, rebuilt with what each was, shown without its tutor running. */
   | { type: "shown"; turns: LessonTurn[]; task?: { text: string | null } }
   | { type: "reopened" }
-  /** The tutor's program is another session's now. */
   | { type: "released" }
   | { type: "sent"; shown: string; now: number; said?: Said; question?: string }
   | { type: "planned"; change: PlanDiff }
@@ -99,12 +71,10 @@ export type Action =
   | { type: "note"; notice: Notice }
   | { type: "dismiss"; text: string }
   | { type: "failed"; error: string }
-  /** The message on screen reached no tutor, and is back on the line. */
   | { type: "unsent" }
   | { type: "stopped" }
   | { type: "reset" };
 
-/** A kept turn as the lesson draws it, before anything is known of what it was. */
 export function plainTurn(turn: Turn): LessonTurn {
   return { session: turn.session, ms: turn.ms, learner: turn.learner, tutor: turn.tutor, interrupted: turn.interrupted };
 }
@@ -113,7 +83,6 @@ export function tutorText(live: Live): string {
   return [...live.done, live.streaming].filter((part) => part.trim() !== "").join("\n");
 }
 
-/** Whether a turn ended badly before the tutor wrote a word: the learner's message reached nobody. */
 export function unanswered(live: Live | null, ended: { ok: boolean; interrupted: boolean }): live is Live {
   return live !== null && !ended.ok && !ended.interrupted && tutorText(live) === "" && live.learner.trim() !== "";
 }
@@ -142,26 +111,17 @@ function asTurn(live: Live): LessonTurn | null {
   };
 }
 
-/** Claude Code's line while it waits out a limit and will try again by itself. */
 const waitingOut = (text: string) => /waiting to try again/i.test(text);
 
-/**
- * One usage limit, said once. Claude Code reports a limit up to three ways:
- * waiting to try again, when it resets, and at the turn's end what to do.
- * The one that says when it resets is kept, with what to do added if it
- * lacks it; the waiting line gives way to either.
- */
 function limitNotice(old: Notice, next: Notice): Notice {
   if (waitingOut(old.text)) return next;
   if (waitingOut(next.text)) return old;
   const resets = (text: string) => /\bresets?\b/i.test(text);
-  // The one that says when it resets; else the later, which is the turn's end saying what to do.
   const base = resets(old.text) ? old : next;
   if (/send your message again/i.test(base.text)) return base;
   return { ...base, text: `${base.text.trim()} ${resets(base.text) ? "Send your message again once it resets." : "Send your message again later."}` };
 }
 
-/** What the learner writes next lets go of what was said about the turn before; the rest still stands. */
 const aboutTheTurn = (notice: Notice) => notice.kind === "turn" || notice.kind === "retry" || notice.kind === "usage_limit" || notice.kind === "model_unavailable";
 
 function addNotice(notices: Notice[], notice: Notice): Notice[] {
@@ -169,7 +129,6 @@ function addNotice(notices: Notice[], notice: Notice): Notice[] {
     const at = notices.findIndex((n) => n.kind === "usage_limit");
     if (at !== -1) return notices.map((n, i) => (i === at ? limitNotice(n, notice) : n));
   }
-  // A retry line replaces the retry line before it, so they do not pile up.
   const kept = notices.filter((n) => n.text !== notice.text && !(n.kind === "retry" && notice.kind === "retry"));
   return [...kept, notice].slice(-3);
 }
@@ -187,12 +146,9 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     case "text_delta":
       return { ...state, live: { ...live, streaming: live.streaming + event.text, status: "writing", doing: null } };
     case "text_done":
-      // A block already on screen is not shown twice.
       if (live.done.includes(event.text)) return { ...state, live: { ...live, streaming: "", status: "writing", doing: null } };
       return { ...state, live: { ...live, done: [...live.done, event.text], streaming: "", status: "writing", doing: null } };
     case "working":
-      // The line names the latest work the window can name, and keeps it
-      // while the next step starts.
       return { ...state, live: { ...live, status: "working", doing: event.doing ?? live.doing } };
     case "permission":
       return {
@@ -218,14 +174,11 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
     case "withdrawn":
       return { ...state, cards: state.cards.filter((card) => card.id !== event.id) };
     case "turn_ended": {
-      // Words written before an interrupt stay on screen as they were.
       const done = live.streaming.trim() !== "" ? [...live.done, live.streaming] : live.done;
       return {
         ...state,
         cards: [],
         live: { ...live, done, streaming: "", status: "idle", error: event.error, interrupted: event.interrupted },
-        // Nothing waits to try again once the turn has ended. What ended it badly is said under the turns: Claude
-        // Code's own line for it is no longer drawn as the tutor's reply.
         notices: event.error ? addNotice(state.notices.filter((n) => !waitingOut(n.text)), { kind: "turn", text: event.error }) : state.notices.filter((n) => !waitingOut(n.text)),
       };
     }
@@ -237,16 +190,13 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
       const text = `The tutor’s program stopped. ${event.detail ?? ""} Send your message again to restart it.`.replace(/\s+/g, " ");
       return { ...ended, notices: addNotice(state.notices, { kind: "turn", text }) };
     }
-    // A mark belongs to the last message the learner sent. The plan is read by the page, which then says what changed.
     case "marked": {
       if (!state.live) return state;
       const marks = [...(state.live.marks ?? []).filter((mark) => mark.id !== event.mark.id), event.mark];
       return { ...state, live: { ...state.live, marks } };
     }
-    // Closing lines belong to the reply that ended the sitting.
     case "closing":
       return state.live ? { ...state, live: { ...state.live, closing: event.lines } } : state;
-    // A step of the route belongs to the reply that moved the lesson on to it.
     case "step_begun":
       return state.live ? { ...state, live: { ...state.live, step: { n: event.n, of: event.of, name: event.name } } } : state;
     case "plan_changed":
@@ -263,7 +213,6 @@ function onEvent(state: SessionState, event: AgentEvent): SessionState {
 export function reduce(state: SessionState, action: Action): SessionState {
   switch (action.type) {
     case "opened": {
-      // A resumed lesson opens on its last exchange, with the rest folded.
       const turns = action.turns.map(plainTurn);
       const last = turns.length > 0 ? turns[turns.length - 1] : null;
       return {
@@ -302,10 +251,8 @@ export function reduce(state: SessionState, action: Action): SessionState {
       };
     }
     case "reopened":
-      // The agent was restarted under a lesson that is still on screen.
       return { ...state, open: true };
     case "released":
-      // Another tab's session took the tutor's program: this one shows what it said, and starts again when written to.
       return { ...state, open: false, cards: [], live: state.live && state.live.status !== "idle" ? { ...state.live, status: "idle" } : state.live };
     case "sent": {
       const previous = state.live ? asTurn(state.live) : null;
@@ -318,7 +265,6 @@ export function reduce(state: SessionState, action: Action): SessionState {
           ...(action.question ? { question: action.question } : {}),
         },
         cards: [],
-        // Notices about the turn before go when the learner writes again; one that still stands stays.
         notices: state.notices.filter((n) => !aboutTheTurn(n)),
         startedMs: state.startedMs ?? action.now,
       };
@@ -334,9 +280,6 @@ export function reduce(state: SessionState, action: Action): SessionState {
       return { ...state, live: { ...state.live, change: merged } };
     }
     case "picked": {
-      // An option chosen on a card is what the learner said: it stands in the
-      // transcript as their note, and the tutor's reply to it is the exchange
-      // that follows. The card itself is taken away by the tutor's own event.
       const previous = state.live ? asTurn(state.live) : null;
       return {
         ...state,
@@ -370,13 +313,6 @@ export function busy(state: SessionState): boolean {
   return state.live !== null && state.live.status !== "idle";
 }
 
-/**
- * The words the window sends for the learner when a lesson opens. They are
- * plain words, as a learner would type them in a terminal. The runtime opens
- * the sitting with what is due, so the window does not ask for it. Only the
- * learner's own saved line is quoted back: the tutor's note of what comes
- * next is already in its record.
- */
 export function openingWords(last: { stoppedAt: string | null; studiedBefore: boolean; title: string }, skipChecks: boolean): string {
   if (skipChecks) return "No checks right now. Let's continue where I stopped.";
   if (last.stoppedAt) return `I'm back. Let's continue. I stopped at: ${last.stoppedAt}`;
@@ -384,46 +320,25 @@ export function openingWords(last: { stoppedAt: string | null; studiedBefore: bo
   return `Let's work on ${last.title}.`;
 }
 
-/**
- * The words the window sends for "just the quick checks": a session of the due quick checks alone, which the runtime
- * ends after the last of them. The runtime and the direct engine know the same words (src/just_checks.rs,
- * crates/core/src/direct.rs).
- */
 export const CHECKS_WORDS = "Just the quick checks.";
 
 const OPENING = /^(?:I'm back\. Let's continue\.(?: I stopped at: ([\s\S]+))?|No checks right now\. Let's continue where I stopped\.|Just the quick checks\.|Let's work on ([\s\S]+)\.)$/;
 
-/**
- * Whether a line is one of those opening lines, the stop line it quotes, and
- * the topic a "Let's work on" names. The learner did not type it, so the
- * lesson shows it as one quiet line and not as something they said.
- */
 export function opening(text: string): { stoppedAt: string | null; topic: string | null } | null {
   const found = OPENING.exec(text.trim());
   return found ? { stoppedAt: found[1]?.trim() || null, topic: found[2]?.trim() || null } : null;
 }
 
-/** The line the core writes when a paper is handed in: "Mark my Paper 2. I used 41 of 50 minutes. My work: …". */
 const HANDED_IN = /^Mark my /;
 
-/** Whether the window wrote these words for the learner (an opening line, a paper handed in), and not the learner. */
 export function saidByTheWindow(text: string): boolean {
   return opening(text) !== null || HANDED_IN.test(text.trim());
 }
 
-/**
- * The plain words the help commands send. The tutor gives the smallest help
- * that lets the learner take the next step, and the runtime asks a skill got
- * right with a hint again, cold, the next day. On screen, Stuck offers "Help
- * me", which sends `lost` until the tutor is taught words of Stuck's own, and
- * "I don't know"; the menu bar keeps all three.
- */
 export const HELP = { hint: "Can I have a hint?", unknown: "I don't know", lost: "I'm lost" } as const;
 
-/** The longest passage a message quotes: enough to find the place, not a copy of the page. */
 const QUOTE_MAX = 600;
 
-/** A selection as a message quotes it: one line, its spaces collapsed, cut at a word near the limit. */
 export function quotable(selected: string): string {
   const flat = selected.replace(/\s+/g, " ").trim();
   if (flat.length <= QUOTE_MAX) return flat;
@@ -431,22 +346,15 @@ export function quotable(selected: string): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), QUOTE_MAX - 40))}…`;
 }
 
-/** The message a quote and the words about it make: the passage as a Markdown quote, then the words. */
 export function withQuote(quote: string, words: string): string {
   return `> ${quote}\n\n${words}`;
 }
 
-/** A message apart from the passage it quoted, as `withQuote` wrote them. */
 export function splitQuote(text: string): { quote: string | null; text: string } {
   const found = /^> ([^\n]+)\n\n/.exec(text);
   return found ? { quote: found[1], text: text.slice(found[0].length) } : { quote: null, text };
 }
 
-/**
- * What the learner said, apart from how sure they said they were. The window
- * sends the answer, then "Confidence: sure" (or unsure, or guess) as a line of
- * its own; the lesson shows that as a tag, not as words the learner wrote.
- */
 export function splitConfidence(text: string): { text: string; confidence: "Sure" | "Unsure" | "Guess" | null } {
   const found = /(?:^|\n\n)Confidence: (sure|unsure|guess)(?=\n\n|$)/i.exec(text);
   if (!found) return { text, confidence: null };
@@ -455,20 +363,14 @@ export function splitConfidence(text: string): { text: string; confidence: "Sure
   return { text: rest, confidence: word === "sure" ? "Sure" : word === "unsure" ? "Unsure" : "Guess" };
 }
 
-/** Whether a line the learner sent is a request for a hint. */
 export function isHint(text: string): boolean {
   return text.trim() === HELP.hint;
 }
 
-/** Whether a line the learner sent is a request for help (a hint, "I don't know", "I'm lost"): not an answer, and never marked. */
 export function isHelp(text: string): boolean {
   return (Object.values(HELP) as string[]).includes(splitConfidence(text).text.trim());
 }
 
-/**
- * What an answer given on a card says, as the transcript shows it: the options
- * chosen and the words typed, one line for each question.
- */
 export function pickedWords(answers: Answer[]): string {
   return answers
     .map((answer) => answer.chosen.join(", "))
@@ -476,12 +378,6 @@ export function pickedWords(answers: Answer[]): string {
     .join("\n");
 }
 
-/**
- * The words that name files sent with a message. A file sent with an answer,
- * or while a task is open, is the learner's work, handed in with it. Any other
- * is a file for the tutor to read, and the tutor is told plainly that it may
- * be working or course material, so it can ask when it cannot tell.
- */
 export function attachedWords(paths: string[], working: boolean): string {
   const list = paths.join(", ");
   const photos = paths.every((path) => !/\.pdf$/i.test(path));
@@ -493,7 +389,6 @@ export function attachedWords(paths: string[], working: boolean): string {
 
 const ATTACHED = /(?:^|\n\n)(?:(?:Photos?|Files?) of my working: (.+)|(?:A file|Files) for you to read: (.+?)\. (?:It|They) may be my working or (?:course material|material I’m learning from)\.)\s*$/;
 
-/** What the learner said, apart from the files that went with it, which the lesson names by their file names alone. */
 export function splitAttached(text: string): { text: string; files: string[]; working: boolean } {
   const found = ATTACHED.exec(text);
   if (!found) return { text, files: [], working: false };

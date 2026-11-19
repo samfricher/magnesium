@@ -1,11 +1,3 @@
-//! The pipe, with no window: one agent process driven through the manager.
-//!
-//! These tests run against `stand_in_agent.py`, which speaks the lines the
-//! window expects from Claude Code and starts no model. They show the window
-//! is consistent with the documented protocol. Only a run against the real
-//! program shows that Magnesium's hooks fire as they do in a terminal; the
-//! README gives that run as one command.
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -95,7 +87,6 @@ struct Events {
 }
 
 impl Events {
-    /// Wait for the first event that matches, keeping everything seen.
     fn until(&mut self, what: &str, matches: impl Fn(&AgentEvent) -> bool) -> AgentEvent {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -115,7 +106,6 @@ impl Events {
         self.until("end of turn", |e| matches!(e, AgentEvent::TurnEnded { .. }))
     }
 
-    /// The tutor's finished text since the last call.
     fn take_text(&mut self) -> String {
         let text = self
             .seen
@@ -188,16 +178,12 @@ fn one_process_holds_a_lesson_across_several_turns() {
         "bare mode would skip Magnesium's hooks"
     );
     assert!(args.contains(&"--include-partial-messages"));
-    // A lesson loads nine of Claude Code's tools, the folder's settings only,
-    // and no account connector, and Magnesium's server knows it is the
-    // window's, so it offers its reply tool.
     let after = |flag: &str| args.iter().position(|a| *a == flag).map(|at| args[at + 1]);
     assert_eq!(after("--setting-sources"), Some("project,local"));
     assert_eq!(
         after("--tools"),
         Some("Read,Write,Edit,Glob,Grep,AskUserQuestion,WebSearch,WebFetch,Bash")
     );
-    // A new window starts on Claude Code's own model until its list comes.
     assert_eq!(after("--model"), None);
     assert_eq!(after("--effort"), None);
     assert_eq!(starts[0]["surface"], "window");
@@ -246,7 +232,6 @@ fn a_permission_request_is_allowed_once_always_and_refused() {
         assert_eq!(title, "The tutor asks to run a command");
         assert_eq!(detail, "Build the paper as a PDF");
         assert_eq!(exact.as_deref(), Some("tectonic paper.tex"));
-        // The rule the agent suggests saving, as the choice says it.
         assert_eq!(always.as_deref(), Some("Always allow tectonic commands"));
         manager.decide(&id, decision).unwrap();
         assert!(ended_well(&events.turn_end()));
@@ -334,8 +319,6 @@ fn a_closed_lesson_is_resumed_with_its_earlier_turns() {
         manager.send("second").unwrap();
         events.turn_end();
         manager.stop(Some("step 3: what result collects")).unwrap();
-        // A stopped conversation says nothing more, so the end is read from
-        // the agent's own log.
         let deadline = Instant::now() + Duration::from_secs(20);
         while bench.logged("end").is_empty() {
             assert!(Instant::now() < deadline, "the process never ended");
@@ -344,7 +327,6 @@ fn a_closed_lesson_is_resumed_with_its_earlier_turns() {
         session_id
     };
 
-    // A new manager is the window opened again the next day.
     let (manager, mut events) = bench.manager();
     let home = manager.home().unwrap();
     assert!(home.can_resume);
@@ -371,7 +353,6 @@ fn a_closed_lesson_is_resumed_with_its_earlier_turns() {
         Some("step 3: what result collects")
     );
 
-    // "New lesson" forgets the old conversation and starts without --resume.
     let opened = manager.open_session(false).unwrap();
     assert!(!opened.resumed && opened.turns.is_empty());
     manager.send_new_lesson("teach me enzyme kinetics").unwrap();
@@ -396,7 +377,6 @@ fn a_replaced_conversation_says_nothing_more() {
     manager.send("SLOW").unwrap();
     events.until("first words", |e| matches!(e, AgentEvent::TextDelta { .. }));
 
-    // A new lesson while the old reply is still being written.
     manager.open_session(false).unwrap();
     events.seen.clear();
     manager.send("hello new lesson").unwrap();
@@ -406,10 +386,8 @@ fn a_replaced_conversation_says_nothing_more() {
     };
     assert!(ended_well(&events.turn_end()));
     assert_eq!(events.take_text(), "You said: hello new lesson");
-    // The new conversation's record is read for what its message changed.
     events.until("the record read", |e| matches!(e, AgentEvent::Settled));
 
-    // Wait for the old process to end, then for anything it left behind.
     let deadline = Instant::now() + Duration::from_secs(20);
     while bench.logged("end").is_empty() {
         assert!(Instant::now() < deadline, "the old process never ended");
@@ -476,7 +454,6 @@ fn a_missing_plugin_is_reported_with_the_first_reply() {
     assert!(plugin_missing);
     assert_eq!(problems.len(), 1);
     assert!(problems[0].contains("plugin did not load"));
-    // Nothing judged the agent before it reported what it loaded.
     assert!(!events
         .seen
         .iter()
@@ -489,7 +466,6 @@ fn a_reply_is_interrupted_before_its_first_word() {
     let (manager, mut events) = bench.manager();
     manager.open_session(true).unwrap();
     manager.send("WAIT a long time").unwrap();
-    // No word has arrived, and none will for five seconds.
     manager.interrupt().unwrap();
     let end = events.turn_end();
     assert!(
@@ -598,8 +574,6 @@ fn a_sign_in_that_ran_out_is_a_notice_and_never_the_tutors_reply() {
         "{:#?}",
         events.seen
     );
-    // Claude Code's line is not the tutor's words, on screen or kept, and
-    // the message that reached no tutor is not kept as a turn.
     let shown = format!("{:?}", events.seen);
     assert!(!shown.contains("Failed to authenticate"), "{shown}");
     assert_eq!(events.take_text(), "");
@@ -645,7 +619,6 @@ fn a_conversation_the_agent_no_longer_has_is_forgotten_not_asked_for_twice() {
     assert!(detail.unwrap().contains("No conversation found"));
     assert_eq!(manager.store().folder(&bench.folder).session_id, None);
 
-    // The next try starts a new conversation and works.
     let opened = manager.open_session(true).unwrap();
     assert!(!opened.resumed);
     manager.send("hello again").unwrap();
@@ -658,7 +631,6 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     let (manager, mut events) = bench.manager();
     let folder = bench.folder.canonicalize().unwrap();
 
-    // The first session, named by the page as it began.
     manager
         .open_session_at(Some(&folder), false, None, Some("Sampling distributions"))
         .unwrap();
@@ -672,7 +644,6 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     };
     assert!(ended_well(&events.turn_end()));
 
-    // A second, new one.
     manager
         .open_session_at(Some(&folder), false, None, Some("Confidence intervals"))
         .unwrap();
@@ -698,7 +669,6 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0].learner, "first");
 
-    // Reading another folder leaves the conversation running.
     let other = bench.folder.parent().unwrap().join("other");
     fs::create_dir_all(&other).unwrap();
     manager.visit_folder(&other).unwrap();
@@ -708,7 +678,6 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     manager.send("still here").unwrap();
     assert!(ended_well(&events.turn_end()));
 
-    // The first session, chosen again, resumes its own conversation.
     let opened = manager
         .open_session_at(Some(&folder), true, Some(&first), None)
         .unwrap();
@@ -719,7 +688,6 @@ fn an_earlier_session_is_listed_by_its_name_and_continues_when_chosen() {
     assert!(ended_well(&events.turn_end()));
     assert_eq!(events.take_text(), format!("This is turn 2 of {first}."));
     assert_eq!(manager.store().folder(&folder).session_id, Some(first));
-    // The library lists the folder that was opened last first.
     let workspaces = manager.workspaces();
     assert_eq!(workspaces[0].folder, folder.to_string_lossy());
 }
@@ -749,8 +717,6 @@ fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_r
             .any(|e| matches!(e, AgentEvent::Models { .. })),
         "the list is the window's own, not drawn in the lesson"
     );
-    // The list came with the conversation, and the default was taken by
-    // its full id.
     let choice = manager.models();
     assert_eq!(choice.models.len(), 7);
     assert_eq!(
@@ -765,14 +731,11 @@ fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_r
     let note = manager.store().folder(&bench.folder).sessions[&session_id].clone();
     assert_eq!(note.model.as_deref(), Some("claude-opus-5-5"));
 
-    // A pick the list does not offer, or an effort the model does not take,
-    // is refused.
     assert!(manager.set_pick("claude-fable-4", None).is_err());
     assert!(manager.set_pick("haiku", Some("max")).is_err());
     let choice = manager.set_pick("sonnet", Some("high")).unwrap();
     assert_eq!(choice.pick.as_ref().unwrap().model, "claude-sonnet-5-5");
 
-    // A new session starts on the pick.
     manager.open_session(false).unwrap();
     manager.send("second").unwrap();
     events.turn_end();
@@ -797,8 +760,6 @@ fn a_new_window_takes_the_agents_default_then_starts_on_the_pick_and_a_session_r
     );
     assert_eq!(after(&second, "--effort").as_deref(), Some("high"));
 
-    // The first session resumes on the model it began on, whatever is
-    // picked now.
     manager
         .open_session_at(None, true, Some(&session_id), None)
         .unwrap();
@@ -830,15 +791,12 @@ fn a_running_session_changes_its_model_and_effort_at_once_and_keeps_them() {
     events.turn_end();
     events.seen.clear();
 
-    // The tab's session is asked what it runs on, and says.
     let choice = manager.models_at(Some(&folder), Some(&session_id), true);
     let on = choice.on.unwrap();
     assert_eq!(on.model, "claude-opus-5-5");
     assert!(on.live);
     assert_eq!(on.effort, None);
 
-    // Changed while it runs: the next reply is on the new model and effort,
-    // with no new process.
     let choice = manager
         .set_model_at(Some(&folder), Some(&session_id), true, "haiku", Some("low"))
         .unwrap();
@@ -863,7 +821,6 @@ fn a_running_session_changes_its_model_and_effort_at_once_and_keeps_them() {
         assert!(asked.iter().any(|a| a == subtype), "{subtype} in {asked:?}");
     }
 
-    // Back to the agent's own effort: the level set before is taken away.
     let choice = manager
         .set_model_at(Some(&folder), Some(&session_id), true, "sonnet", None)
         .unwrap();
@@ -872,12 +829,10 @@ fn a_running_session_changes_its_model_and_effort_at_once_and_keeps_them() {
     events.turn_end();
     assert_eq!(events.take_text(), "On claude-sonnet-5-5 at medium.");
 
-    // An effort the model does not take is refused before it is sent.
     assert!(manager
         .set_model_at(Some(&folder), Some(&session_id), true, "haiku", Some("max"))
         .is_err());
 
-    // The session is kept with what it was changed to, and resumes on it.
     let note = manager.store().folder(&folder).sessions[&session_id].clone();
     assert_eq!(note.model.as_deref(), Some("claude-sonnet-5-5"));
     assert_eq!(note.effort, None);
@@ -885,7 +840,6 @@ fn a_running_session_changes_its_model_and_effort_at_once_and_keeps_them() {
     manager.send("second").unwrap();
     events.turn_end();
 
-    // Changed while it does not run: kept, and it resumes on it.
     let choice = manager
         .set_model_at(
             Some(&folder),
@@ -953,8 +907,6 @@ fn a_list_that_does_not_come_leaves_the_pick_alone_and_the_session_keeps_the_mod
     let choice = manager.models();
     assert!(choice.failed && choice.models.is_empty());
     assert_eq!(choice.pick, None);
-    // The session is kept with the model the agent's first message named,
-    // with no list to read the default from, and resumes on it.
     let note = manager.store().folder(&bench.folder).sessions[&session_id].clone();
     assert_eq!(note.model.as_deref(), Some("claude-opus-5-5"));
     manager.open_session(false).unwrap();
@@ -984,9 +936,7 @@ fn the_list_is_asked_for_without_a_lesson_and_no_message_is_sent() {
     let choice = manager.ask_models();
     assert_eq!(choice.models.len(), 7);
     assert!(!choice.failed);
-    // A new window takes the agent's default from the list, as it does from a lesson's.
     assert_eq!(choice.pick.unwrap().model, "claude-opus-5-5");
-    // The agent was started in no study folder, was sent the one request, and no words.
     let starts = bench.logged("start");
     assert_eq!(starts.len(), 1);
     assert_ne!(
@@ -998,10 +948,8 @@ fn the_list_is_asked_for_without_a_lesson_and_no_message_is_sent() {
     let received = bench.logged("received");
     assert_eq!(received.len(), 1);
     assert_eq!(received[0]["request"]["subtype"], "initialize");
-    // Asked again at once, the list just kept is given back and no agent is started.
     assert_eq!(manager.ask_models().models.len(), 7);
     assert_eq!(bench.logged("start").len(), 1);
-    // The window keeps it: a window opened later has it before it asks.
     let later = Store::at(bench.home.clone());
     assert_eq!(later.models().models.len(), 7);
 }
@@ -1036,13 +984,11 @@ fn a_new_lesson_that_never_opens_the_record_says_so_at_any_effort() {
             })
             .collect()
     };
-    // A lesson whose first reply opens the record says nothing.
     manager.open_session(false).unwrap();
     manager.send("first").unwrap();
     events.turn_end();
     assert!(unopened(&events).is_empty());
 
-    // At Claude Code's own effort, the notice names the model.
     manager.open_session(false).unwrap();
     events.seen.clear();
     manager.send("UNOPENED").unwrap();
@@ -1065,7 +1011,6 @@ fn a_new_lesson_that_never_opens_the_record_says_so_at_any_effort() {
         )]
     );
 
-    // At a picked effort, it names the effort.
     manager.set_pick("haiku", Some("low")).unwrap();
     manager.open_session(false).unwrap();
     events.seen.clear();

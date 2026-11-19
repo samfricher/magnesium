@@ -25,8 +25,6 @@ fn control(environment: &TestEnvironment, thread: &str, action: &str) -> Value {
     serde_json::from_slice(&control_output(environment, thread, action).stdout).unwrap()
 }
 
-/// A started lesson whose admission lock another process holds, as when a
-/// second control request is in progress.
 fn busy_lesson(thread: &str) -> (TestEnvironment, fs::File) {
     let environment = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&environment);
@@ -51,8 +49,6 @@ fn busy_lesson(thread: &str) -> (TestEnvironment, fs::File) {
     (environment, lock)
 }
 
-// Each refused control waits for the lock before it gives up, so each control
-// has a test of its own and the waits overlap.
 fn busy_admission_refuses(action: &str) {
     let thread = "busy-headless-control";
     let (environment, lock) = busy_lesson(thread);
