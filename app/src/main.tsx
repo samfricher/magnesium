@@ -29,12 +29,6 @@ document.documentElement.dataset.input = "pointer";
 window.addEventListener("keydown", () => (document.documentElement.dataset.input = "key"), true);
 window.addEventListener("pointerdown", () => (document.documentElement.dataset.input = "pointer"), true);
 
-document.addEventListener("selectionchange", () => {
-  const selection = document.getSelection();
-  const whole = selection !== null && !selection.isCollapsed;
-  if (whole !== "whole" in document.documentElement.dataset) document.documentElement.toggleAttribute("data-whole", whole);
-});
-
 const REACHABLE = 'button, a[href], [role="button"], summary';
 function reachable(element: Element) {
   if (element.hasAttribute("tabindex")) return;
