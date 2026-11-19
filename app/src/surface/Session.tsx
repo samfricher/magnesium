@@ -391,7 +391,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
   const placeHead = (ms: number) => {
     const reply = replyOf(ms);
     const view = surface.current;
-    const place = { folded: now.current.page === "folded", shown: now.current.props.active && view !== null && view.clientHeight > 0, replyTop: reply ? reply.getBoundingClientRect().top : null, viewTop: view ? view.getBoundingClientRect().top : 0 };
+    const folded = now.current.page === "folded";
+    const shown = !folded && now.current.props.active && view !== null && view.clientHeight > 0;
+    const place = { folded, shown, replyTop: shown && reply ? reply.getBoundingClientRect().top : null, viewTop: shown && view ? view.getBoundingClientRect().top : 0 };
     if (!drawHeadNow(place)) setHeldStep(ms);
   };
   const replyOf = (ms: number) => surface.current?.querySelector<HTMLElement>(`article.turn[data-ms="${ms}"] .tutor`) ?? null;
@@ -871,19 +873,23 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return () => watch.disconnect();
   }, [fact, session]);
 
-  const onScroll = () => {
+  const placeSeen = () => {
     const el = surface.current;
     if (!el || now.current.phase !== "lesson") return;
     const fromFoot = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     const head = nowRef.current?.querySelector<HTMLElement>(".head");
     if (head && nowRef.current) setHeadGone(el.scrollTop > nowRef.current.offsetTop + head.offsetTop + head.offsetHeight - 66);
     setScrolled(el.scrollTop > 4);
+    keepPlace(now.current.place, { fromFoot: Math.round(fromFoot) });
+  };
+  const onScroll = () => {
+    if (!inFront.current || now.current.phase !== "lesson") return;
+    placeSeen();
     if (spot.scrolled()) setCopy(wantedCopy.current());
     const end = measureEnd();
     if (end === false && !now.current.raised && !lineRef.current?.holds() && document.activeElement?.closest(".session.in-front .line.lesson")) {
       (document.activeElement as HTMLElement).blur();
     }
-    keepPlace(now.current.place, { fromFoot: Math.round(fromFoot) });
   };
 
   const measureEnd = (): boolean | null => {
@@ -905,6 +911,17 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     const frame = requestAnimationFrame(() => measureEnd());
     return () => cancelAnimationFrame(frame);
   }, [props.active, phase]);
+  const wasAway = useRef(false);
+  useEffect(() => {
+    if (!props.active) {
+      wasAway.current = true;
+      return;
+    }
+    if (!wasAway.current) return;
+    wasAway.current = false;
+    const frame = requestAnimationFrame(placeSeen);
+    return () => cancelAnimationFrame(frame);
+  }, [props.active]);
 
   const turns: LessonTurn[] = useMemo(() => {
     const live = liveTurn(session);
@@ -961,7 +978,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     return (inView.current = was ? box.top >= view.top + 40 && box.bottom <= lineTop + 4 : box.top >= view.top + 56 && box.bottom <= lineTop - 24);
   };
   useEffect(() => {
-    const resized = () => setCopy(wantedCopy.current());
+    const resized = () => inFront.current && setCopy(wantedCopy.current());
     window.addEventListener("resize", resized);
     return () => window.removeEventListener("resize", resized);
   }, []);
@@ -986,7 +1003,9 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     setCopy(wantedCopy.current());
   });
   const copySpent = copy !== null && (task === null || (copy !== task.text && Math.min(coverage(copy, task.text), coverage(task.text, copy)) < 0.8));
-  const turnsDrawn = !folded && turns.length > 0;
+  const turnsDrawn = turns.length > 0;
+  const foldedNow = useRef(folded);
+  foldedNow.current = folded;
   const wake = useRef<() => void>(() => {});
   useEffect(() => {
     const section = nowRef.current;
@@ -1007,7 +1026,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       for (const turn of sizing) delete turn.dataset.sizing;
       sizing = [];
       frame = 0;
-      if (!inFront.current) {
+      if (!inFront.current || foldedNow.current) {
         waiting = [];
         owed = owed ?? "away";
         return;
@@ -1036,6 +1055,12 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     };
     const measure = () => {
       if (owed === null) return;
+      if (foldedNow.current && turnsDrawn) {
+        halt();
+        section.dataset.measured = "";
+        owed = "away";
+        return;
+      }
       const whole = owed === "all" || !("measured" in section.dataset);
       if (!inFront.current && !whole) return;
       owed = null;
@@ -1062,6 +1087,11 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       measure();
     };
     wake.current = () => {
+      if (foldedNow.current) {
+        if (frame !== 0) owed = owed ?? "away";
+        return measure();
+      }
+      if (!inFront.current) return;
       if (unchecked) {
         unchecked = false;
         check();
@@ -1082,8 +1112,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     };
   }, [turnsDrawn]);
   useEffect(() => {
-    if (props.active) wake.current();
-  }, [props.active]);
+    if (props.active || folded) wake.current();
+  }, [props.active, folded]);
   useEffect(() => {
     props.onAnswerPage(tab.key, page);
   }, [page]);
@@ -1266,7 +1296,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     });
   }, [props.tab.session]);
 
-  const paperPaths = useMemo(() => new Set((home?.papers ?? []).map((paper) => paper.path)), [home?.papers]);
+  const paperList = (home?.papers ?? []).map((paper) => paper.path).join("\0");
+  const paperPaths = useMemo(() => new Set(paperList === "" ? [] : paperList.split("\0")), [paperList]);
   const isPaper = useCallback((path: string) => paperPaths.has(path) || /(^|\/)papers?\//i.test(path), [paperPaths]);
   const closesDoc = (open: Docs) => open.shown !== null && !isPaper(open.shown);
   const docClosed = folded && props.panel && closesDoc(docs);
@@ -1436,7 +1467,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                 {[
                   ...sittingTurns,
                   ...(homeAnswer && !homeAnswerSent ? [{ session: "", ms: homeAnswer.ms, learner: homeAnswer.words, tutor: "", interrupted: false, said: "answer" } satisfies LessonTurn] : []),
-                ].map((turn, at) => {
+                ].map((turn, at, drawn) => {
                   const index = shownFrom + at;
                   const live = index === turns.length - 1 && session.live !== null;
                   const before = index > 0 ? turns[index - 1] : null;
@@ -1444,6 +1475,8 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                     <Turn
                       key={`${turn.ms}-${index}`}
                       turn={holdingStep && turn.step && turn.ms === heldStep ? { ...turn, step: undefined } : turn}
+                      first={at === 0}
+                      last={at === drawn.length - 1}
                       open={index === openAt}
                       linksOpen={index !== openAt}
                       opensNow={isPaper}
@@ -1452,7 +1485,7 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
                       task={index === openAt ? task?.text : undefined}
                       showQuestion={!before || !(before.posed === turn.question || hasTask(before.tutor) || (turn.question !== undefined && poses(before.tutor, turn.question)))}
                       settled
-                      planKey={props.panel ? null : keyName(props.prefs.keys.plan) || null}
+                      planKey={turn.change && !props.panel ? keyName(props.prefs.keys.plan) || null : null}
                       onSource={onSource}
                       onNote={note}
                       waiting={homeAnswer !== null && !homeAnswerSent && turn.ms === homeAnswer.ms}

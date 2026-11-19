@@ -239,11 +239,11 @@ function withCaret(html: string): string {
 
 export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, opensNow, onSource, stopped = false, task, caret = false }: Props) {
   const held = useMemo(() => (final && !stopped ? { text, wait: false } : holdBack(text)), [text, final, stopped]);
+  const whole = useMemo(() => renderMarkdown(held.text), [held.text]);
   const html = useMemo(() => {
-    const whole = renderMarkdown(held.text);
     const linked = onSource ? setSourcesApart(whole, linksOpen, opensNow) : whole;
     return caret ? withCaret(linked) : linked;
-  }, [held.text, linksOpen, onSource, opensNow, caret]);
+  }, [whole, linksOpen, onSource, opensNow, caret]);
   const ref = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {

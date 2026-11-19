@@ -95,6 +95,7 @@ export function drawTaskRule(root: HTMLElement, task: string): () => void {
     root.style.removeProperty("--task-height");
   };
   const draw = () => {
+    if (root.checkVisibility?.() === false) return;
     const range = taskRange(root, task) ?? blockRange(root, task);
     const rects = range ? Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0) : [];
     const action = ruleAction(rects.length, rects.length === 0 && getComputedStyle(root).contentVisibility === "auto");

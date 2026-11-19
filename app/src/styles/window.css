@@ -107,6 +107,9 @@
 }
 .session:not(.in-front) { content-visibility: hidden; z-index: -1; }
 .session:not(.in-front):has(> .surface > .column > .now:not([data-measured])) { content-visibility: visible; visibility: hidden; }
+@supports not (content-visibility: hidden) {
+  .session:not(.in-front) { visibility: hidden; }
+}
 .session.with-panel > .surface,
 .session.with-panel > .top-edge,
 .session.with-panel > .surface > .column,

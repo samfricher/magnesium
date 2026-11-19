@@ -74,6 +74,7 @@ type Field = HTMLInputElement | HTMLTextAreaElement;
 function visible(element: Element): boolean {
   if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) return false;
   if (element.closest("[hidden], [aria-hidden='true'], [inert]")) return false;
+  if (element.checkVisibility?.() === false) return false;
   const rects = element.getClientRects();
   if (rects.length === 0) return false;
   const style = getComputedStyle(element);
@@ -487,7 +488,8 @@ async function run(op: Op): Promise<Result> {
       }
       await nextPaint();
       const started = performance.now();
-      click(element);
+      if (op.bare) element.click();
+      else click(element);
       const painted = await nextPaint();
       const gaps: { at: number; ms: number }[] = [];
       await new Promise<void>((done) => {

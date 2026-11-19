@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { core } from "../bridge";
 import { stepZoom, type OpenDoc, type Zoom } from "../docs";
@@ -358,6 +358,7 @@ const PdfDoc = forwardRef<DocHandle, Props & { pdf: Pdf }>(function PdfDoc({ pdf
 function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace: (change: Partial<OpenDoc>) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const markdown = /\.(md|markdown)$/i.test(doc.path);
+  const page = useMemo(() => (markdown ? renderMarkdown(shown.text ?? "") : ""), [markdown, shown.text]);
   useLayoutEffect(() => {
     const el = box.current;
     if (el) el.scrollTop = doc.scroll * Math.max(0, el.scrollHeight - el.clientHeight);
@@ -387,7 +388,7 @@ function FlowDoc({ shown, doc, onPlace }: { shown: Source; doc: OpenDoc; onPlace
       {shown.kind === "image" && shown.image ? (
         <img className="doc-image" src={shown.image} alt="" />
       ) : markdown ? (
-        <div className="prose doc-prose" onClick={onLink} dangerouslySetInnerHTML={{ __html: renderMarkdown(shown.text ?? "") }} />
+        <div className="prose doc-prose" onClick={onLink} dangerouslySetInnerHTML={{ __html: page }} />
       ) : (
         <pre className="doc-text">{shown.text}</pre>
       )}

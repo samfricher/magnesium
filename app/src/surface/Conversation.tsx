@@ -168,6 +168,8 @@ function Learner({ turn, showQuestion }: { turn: LessonTurn; showQuestion: boole
 
 type TurnProps = {
   turn: LessonTurn;
+  first: boolean;
+  last: boolean;
   open: boolean;
   linksOpen: boolean;
   opensNow?: (path: string) => boolean;
@@ -182,10 +184,10 @@ type TurnProps = {
   waiting?: boolean;
 };
 
-export const Turn = memo(function Turn({ turn, open, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, waiting }: TurnProps) {
+export const Turn = memo(function Turn({ turn, first, last, open, linksOpen, opensNow, writing, divider, task, showQuestion, settled, planKey, onSource, onNote, waiting }: TurnProps) {
   const reply = turn.tutor;
   return (
-    <article className={`turn${open ? " open" : ""}`} data-ms={turn.ms}>
+    <article className={`turn${open ? " open" : ""}${first ? " first" : ""}${last ? " last" : ""}`} data-ms={turn.ms}>
       {divider && <hr className="sitting-rule" />}
       <Learner turn={turn} showQuestion={showQuestion} />
       {waiting && (
