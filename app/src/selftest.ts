@@ -7,6 +7,7 @@ import { comboOf, keyName, parseCombo, keepPlace, placeKey, type Place } from ".
 import { sourceRef } from "./sources";
 import { readingSpot } from "./reading";
 import { inTask } from "./selection";
+import { whenShown } from "./shown";
 import { rebuild } from "./surface/Session";
 import type { Core, Mark, Turn as SavedTurn } from "./types";
 import { withoutPaths } from "./words";
@@ -1061,6 +1062,110 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     }
     actions.run("close-session");
     await until("the session's tab to close again", () => actions.session() === null, 10_000);
+
+    {
+      const frame = () => within("drawing the window's next frame (a covered window draws none)", new Promise<void>((done) => requestAnimationFrame(() => done())), 10_000);
+      const skipped = document.createElement("div");
+      skipped.style.cssText = "position: absolute; left: -9999px; top: 0; width: 200px; content-visibility: hidden";
+      skipped.innerHTML = '<div style="height: 20px">Read when shown.</div>';
+      document.body.appendChild(skipped);
+      let reads = 0;
+      whenShown(skipped.firstElementChild as HTMLElement, () => (reads += 1));
+      await frame();
+      await frame();
+      const early = reads;
+      skipped.style.contentVisibility = "visible";
+      await until("a read that waited for its box to be shown", () => reads > 0, 3000).catch(() => {});
+      skipped.remove();
+      steps.readWhenShown = { early, late: reads };
+      if (early !== 0 || reads !== 1) throw new Error(`a read of a box that is not drawn did not wait until it was shown, or ran more than once: ${JSON.stringify(steps.readWhenShown)}`);
+
+      const LONG = "selftest-long-lesson";
+      const REPLIES = 150;
+      const SHARE = 3;
+      const part = (n: number, k: number) =>
+        `**Step ${n}.${k}.** The standard error of a mean of $n$ values is $s / \\sqrt{n}$, so with $s = ${n}$ and $n = ${16 * k}$ it is $${n} / ${4 * k}$.\n\n- The sample mean $\\bar{x}$ estimates $\\mu$.\n- Its spread shrinks as $1 / \\sqrt{n}$.\n\n$$\\bar{x} \\pm t_{n-1} \\cdot \\frac{s}{\\sqrt{n}}$$`;
+      const passage = (n: number) => `${[1, 2, 3, 4].map((k) => part(n, k)).join("\n\n")}\n\nPassage ${n} ends here.`;
+      const long: SavedTurn[] = Array.from({ length: REPLIES }, (_, n) => ({
+        session: LONG,
+        ms: 1_700_000_000_000 + n * 60_000,
+        learner: `Question ${n + 1}`,
+        tutor: n === REPLIES - 1 ? `${passage(n + 1)}\n\n\`\`\`mermaid\ngraph LR\n  S[sample] --> M[mean]\n\`\`\`\n\n**Task.** What is 6 + 6?` : passage(n + 1),
+        interrupted: false,
+      }));
+      const kept = api.lessonTurns;
+      api.lessonTurns = (inFolder, session) => (session === LONG ? Promise.resolve(long) : kept.call(api, inFolder, session));
+      const channel = new MessageChannel();
+      const turn = () =>
+        new Promise<void>((done) => {
+          channel.port1.onmessage = () => done();
+          channel.port2.postMessage(null);
+        });
+      const longestBlock = async (act: () => void): Promise<number> => {
+        await turn();
+        const started = performance.now();
+        let last = started;
+        let longest = 0;
+        act();
+        while (last - started < 300) {
+          void document.body.offsetHeight;
+          const now = performance.now();
+          longest = Math.max(longest, now - last);
+          last = now;
+          await turn();
+        }
+        return Math.round(longest);
+      };
+      const drawn = () => document.querySelectorAll(".session.in-front .now > article.turn").length;
+      const page = () => actions.session()?.probe().page ?? null;
+      const diagrams = () => document.querySelectorAll(".session.in-front .now > article.turn.last .diagram svg").length;
+      try {
+        actions.openSession(folder, LONG, "A long lesson");
+        await until("the long lesson reopened on its task", () => drawn() === REPLIES && page() === "folded", 20_000);
+        const lesson = actions.active();
+        const planWas = document.querySelector(".session.in-front.with-panel") !== null;
+        await wait(300);
+        const firstShow = await longestBlock(() => actions.run("look-back"));
+        await until("the long lesson shown", () => page() === "open", 3000);
+        await until("the diagram in a lesson reopened on its task", () => diagrams() === 1, 10_000);
+        await wait(300);
+        await until("the long lesson's replies off screen to be measured", () => document.querySelector(".session.in-front [data-sizing]") === null, 20_000);
+        const select = () => {
+          const range = document.createRange();
+          range.selectNodeContents(document.querySelector(".session.in-front .now > article.turn.last .prose > p")!);
+          window.getSelection()!.removeAllRanges();
+          window.getSelection()!.addRange(range);
+        };
+        const acts: [string, () => void][] = [
+          ["select", select],
+          ["clearSelection", () => window.getSelection()!.removeAllRanges()],
+          ["planOpen", () => actions.run("plan")],
+          ["planClose", () => actions.run("plan")],
+          ["toSettings", () => actions.run("settings")],
+          ["backToLesson", () => actions.run("tab", lesson)],
+          ["hide", () => actions.run("look-back")],
+          ["show", () => actions.run("look-back")],
+        ];
+        const root = document.documentElement;
+        const whole = await longestBlock(() => root.toggleAttribute("data-whole", true));
+        root.toggleAttribute("data-whole", false);
+        await wait(300);
+        const limit = Math.round(whole / SHARE);
+        const best: Record<string, number> = {};
+        for (let round = 0; round < 3; round++) {
+          for (const [name, act] of acts) best[name] = Math.min(best[name] ?? Infinity, await longestBlock(act));
+        }
+        const left = { page: page(), replies: drawn(), front: actions.active() === lesson, plan: document.querySelector(".session.in-front.with-panel") !== null === planWas };
+        steps.longLesson = { replies: REPLIES, whole_ms: whole, limit_ms: limit, firstShow, ...best, left };
+        if (left.page !== "open" || left.replies !== REPLIES || !left.front || !left.plan) throw new Error(`the long lesson was not left as it was found: ${JSON.stringify(left)}`);
+        const slow = Object.entries(best).filter(([, ms]) => ms > limit);
+        if (firstShow > 2 * limit || slow.length > 0) throw new Error(`in a lesson of ${REPLIES} replies, something a learner does held the window for more than one part in ${SHARE} of what laying out every reply costs (${whole} ms here, so ${limit} ms, and twice that for the first showing): ${JSON.stringify(steps.longLesson)}`);
+      } finally {
+        api.lessonTurns = kept;
+      }
+      actions.run("close-session");
+      await until("the long lesson's tab to close", () => actions.session() === null, 10_000);
+    }
 
     actions.newSession(folder);
     const word = await openModelRow("a new session's model, under More", () => true, 10_000);
