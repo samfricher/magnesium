@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify";
-import katex from "katex";
 import { marked } from "marked";
+import temml from "temml";
 
 import { sourceRef } from "./sources";
 
@@ -177,7 +177,7 @@ export function holdBack(src: string): { text: string; wait: boolean } {
 
 const rendered = new Map<string, string>();
 
-const escape = (text: string) => text.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch);
+const escape = (text: string) => text.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] ?? ch);
 
 const WORDS = "max|min|eq|tot|avg|obs|exp|crit|cat|sys|rel|net|in|out|ref";
 const BRACED = new RegExp(`(^|[^\\\\])_\\{\\s*(${WORDS})\\s*\\}`, "g");
@@ -189,22 +189,27 @@ export function uprightWords(tex: string): string {
   return once(once(tex));
 }
 
+function inPieces(drawn: string): string {
+  const holder = document.createElement("template");
+  holder.innerHTML = drawn;
+  const math = holder.content.firstElementChild;
+  if (!math || math.children.length < 2) return drawn;
+  return Array.from(math.children, (piece) => `<math>${piece.outerHTML}</math>`).join("");
+}
+
 function renderMath({ tex: source, display }: Math): string {
   const tex = uprightWords(source);
   const key = (display ? "D" : "I") + tex;
   let html = rendered.get(key);
   if (html === undefined) {
+    let formula: string;
     try {
-      html = katex.renderToString(tex, {
-        displayMode: display,
-        throwOnError: false,
-        strict: "ignore",
-        trust: false,
-        errorColor: "currentColor",
-      });
+      const drawn = temml.renderToString(tex, { displayMode: display, wrap: display ? "none" : "tex", throwOnError: true, trust: false });
+      formula = `<span class="formula" data-tex="${escape(tex)}">${display ? drawn : inPieces(drawn)}</span>`;
     } catch {
-      html = `<code>${escape(tex)}</code>`;
+      formula = `<span class="formula">${escape(source)}</span>`;
     }
+    html = display ? `<span class="formula-display">${formula}</span>` : formula;
     if (rendered.size > 2000) rendered.clear();
     rendered.set(key, html);
   }
@@ -257,7 +262,7 @@ export function renderMarkdown(src: string): string {
   let html = clean(marked.parse(text, { async: false }) as string, math);
   html = putMathBack(html, math, true);
   if (math.length > 0) {
-    html = html.replace(/<p>(<span class="katex-display">[\s\S]*?<\/span>)<\/p>/g, "$1");
+    html = html.replace(/<p>(<span class="formula-display">[\s\S]*?<\/span>)<\/p>/g, "$1");
   }
   html = html.replace(/<table>/g, '<div class="table"><table>').replace(/<\/table>/g, "</table></div>");
   html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');

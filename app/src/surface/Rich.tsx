@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import "katex/dist/katex.min.css";
+import "temml/dist/Temml-Local.css";
 
 import { core } from "../bridge";
 import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
@@ -254,8 +254,8 @@ function withCaret(html: string): string {
   const holder = document.createElement("template");
   holder.innerHTML = html;
   let last: Element | null = holder.content.lastElementChild;
-  while (last && last.lastElementChild && /^(DIV|UL|OL|BLOCKQUOTE)$/.test(last.tagName) && !last.classList.contains("katex-display")) last = last.lastElementChild;
-  if (!last || /^(PRE|TABLE|HR|DIV)$/.test(last.tagName) || last.classList.contains("katex-display")) return `${html}<p>${caret}</p>`;
+  while (last && last.lastElementChild && /^(DIV|UL|OL|BLOCKQUOTE)$/.test(last.tagName) && !last.classList.contains("formula-display")) last = last.lastElementChild;
+  if (!last || /^(PRE|TABLE|HR|DIV)$/.test(last.tagName) || last.classList.contains("formula-display")) return `${html}<p>${caret}</p>`;
   last.insertAdjacentHTML("beforeend", caret);
   return holder.innerHTML;
 }

@@ -53,7 +53,6 @@
   white-space: nowrap;
 }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-name .katex { font-size: 1em; }
 .tab.here { background: var(--tint); }
 .tab.here .tab-button,
 .tab-button:hover { color: var(--text); }
@@ -251,8 +250,6 @@ section > .page-acts:last-child { padding-bottom: 0.38rem; }
 .mg-name-act[aria-current="true"] { color: var(--ink); }
 .mg-name-act { padding: 0; font: inherit; color: inherit; text-align: left; }
 .mg-inline { margin-left: 12px; font: 400 0.882rem/1.4 var(--read); color: var(--quiet); white-space: nowrap; }
-.mg-step .katex,
-.mg-row-name .katex { font-size: 1em; }
 .mg-hit .mg-row-name,
 .mg-step,
 .mg-name-act { text-decoration: underline transparent; text-decoration-thickness: 1px; text-underline-offset: 3px; transition: text-decoration-color 60ms linear; }
