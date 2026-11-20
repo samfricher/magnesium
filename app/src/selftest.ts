@@ -153,19 +153,19 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     );
     const alt = page.querySelector("img")?.getAttribute("alt");
     const title = page.querySelector("a")?.getAttribute("title");
-    steps.attributeMath = { alt, title, katex: page.querySelectorAll(".katex").length, areas: page.querySelectorAll("map, area").length };
+    steps.attributeMath = { alt, title, formula: page.querySelectorAll(".formula").length, areas: page.querySelectorAll("map, area").length };
     if (alt !== "graph of y=x^2" || title !== "title z") throw new Error(`mathematics in an attribute was not plain text: ${alt} / ${title}`);
-    if (page.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in the text did not draw");
+    if (page.querySelectorAll(".formula").length !== 1) throw new Error("mathematics in the text did not draw");
     if (page.querySelectorAll("map, area").length !== 0) throw new Error("an image map was not removed");
 
     const line = document.createElement("div");
     line.innerHTML = renderInline("the cdf of $U = \\sqrt{Y}$ <b onclick=x>now</b>");
     const said = document.createElement("div");
     said.innerHTML = renderPlain("2*x*3 < 7 and $x^2$\nnext line <i>");
-    steps.lineMath = { line: line.querySelectorAll(".katex").length, handlers: line.querySelectorAll("[onclick]").length, said: said.textContent };
-    if (line.querySelectorAll(".katex").length !== 1) throw new Error("mathematics in a line of text did not draw");
+    steps.lineMath = { line: line.querySelectorAll(".formula").length, handlers: line.querySelectorAll("[onclick]").length, said: said.textContent };
+    if (line.querySelectorAll(".formula").length !== 1) throw new Error("mathematics in a line of text did not draw");
     if (line.querySelectorAll("[onclick]").length !== 0) throw new Error("a line of text kept a handler");
-    if (said.querySelectorAll(".katex").length !== 1 || said.querySelectorAll("i").length !== 0 || !said.textContent?.includes("2*x*3 < 7")) {
+    if (said.querySelectorAll(".formula").length !== 1 || said.querySelectorAll("i").length !== 0 || !said.textContent?.includes("2*x*3 < 7")) {
       throw new Error(`the learner's words were not kept as typed: ${said.innerHTML}`);
     }
 
@@ -185,7 +185,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
     task.innerHTML = renderMarkdown("An explanation.\n\n**Task.** Find the eigenvalues of\n\n$$A$$\n\nOne line.");
     const box = task.querySelector("div.task");
     steps.task = { boxes: task.querySelectorAll("div.task").length, blocks: box?.children.length ?? 0, before: task.firstElementChild?.tagName };
-    if (!box || box.children.length !== 3 || task.firstElementChild?.tagName !== "P" || box.querySelectorAll(".katex-display").length !== 1) {
+    if (!box || box.children.length !== 3 || task.firstElementChild?.tagName !== "P" || box.querySelectorAll(".formula-display").length !== 1) {
       throw new Error(`the task was not set apart as one block: ${task.innerHTML.slice(0, 200)}`);
     }
 
@@ -333,7 +333,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
     await until("the page to draw the reply", () => document.querySelector(".session.in-front .tutor .prose") !== null, 5000);
     await wait(1500);
-    steps.math = document.querySelectorAll(".session.in-front .tutor .katex").length;
+    steps.math = document.querySelectorAll(".session.in-front .tutor .formula").length;
     steps.diagram = document.querySelectorAll(".session.in-front .tutor .diagram svg").length;
     if (steps.math === 0) throw new Error("the formula did not draw");
     if (steps.diagram === 0) throw new Error("the diagram did not draw");
@@ -466,7 +466,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
 
     await actions.session()!.say(`my answer is $x^2$\n\n${toRead}`, "talk");
     await until("the reply to the answer", () => idle() && session().live?.learner.includes("my answer") === true);
-    steps.saidMath = document.querySelectorAll(".session.in-front .you .katex").length;
+    steps.saidMath = document.querySelectorAll(".session.in-front .you .formula").length;
     if (steps.saidMath === 0) throw new Error("the mathematics in the learner's own line did not draw");
     if (!document.querySelector(".session.in-front .sent-files")?.textContent?.includes(kept.split("/").pop() ?? kept)) throw new Error("the file sent was not named under the message");
 

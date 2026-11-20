@@ -64,12 +64,11 @@
 .prose .diagram { overflow-x: auto; margin: 0.4em 0 1em; }
 .prose .diagram svg { max-width: 100%; height: auto; }
 
-.prose .katex { font-size: 1.06em; }
-.prose p .katex .base { margin-bottom: -0.3em; }
-.prose div.task p .katex .base { margin-bottom: 0; }
-.prose .katex-display { margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
-.line .katex,
-.you .katex { font-size: 1em; }
+math { font-family: "STIX Two Math", math; }
+.prose .formula { font-size: 1.06em; }
+.prose .formula-display { display: block; margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
+.line .formula,
+.you .formula { font-size: 1em; }
 
 .math-wait { height: 2.4rem; }
 

@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify";
-import katex from "katex";
 import { marked } from "marked";
+import temml from "temml";
 
 import { sourceRef } from "./sources";
 
@@ -194,17 +194,13 @@ function renderMath({ tex: source, display }: Math): string {
   const key = (display ? "D" : "I") + tex;
   let html = rendered.get(key);
   if (html === undefined) {
+    let drawn: string;
     try {
-      html = katex.renderToString(tex, {
-        displayMode: display,
-        throwOnError: false,
-        strict: "ignore",
-        trust: false,
-        errorColor: "currentColor",
-      });
+      drawn = temml.renderToString(tex, { displayMode: display, annotate: true, throwOnError: true, trust: false });
     } catch {
-      html = `<code>${escape(tex)}</code>`;
+      drawn = escape(source);
     }
+    html = display ? `<span class="formula-display"><span class="formula">${drawn}</span></span>` : `<span class="formula">${drawn}</span>`;
     if (rendered.size > 2000) rendered.clear();
     rendered.set(key, html);
   }
@@ -257,7 +253,7 @@ export function renderMarkdown(src: string): string {
   let html = clean(marked.parse(text, { async: false }) as string, math);
   html = putMathBack(html, math, true);
   if (math.length > 0) {
-    html = html.replace(/<p>(<span class="katex-display">[\s\S]*?<\/span>)<\/p>/g, "$1");
+    html = html.replace(/<p>(<span class="formula-display">[\s\S]*?<\/span>)<\/p>/g, "$1");
   }
   html = html.replace(/<table>/g, '<div class="table"><table>').replace(/<\/table>/g, "</table></div>");
   html = html.replace(/<pre><code class="language-mermaid">/g, '<pre class="diagram-wait"><code class="language-mermaid">');

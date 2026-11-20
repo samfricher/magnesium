@@ -20,9 +20,9 @@ export function selectedWords(range: Range, skip?: string): string {
       return;
     }
     if (!(node instanceof Element) || (skip && node.matches(skip))) return;
-    const tex = node.classList.contains("katex") ? node.querySelector('annotation[encoding="application/x-tex"]')?.textContent : null;
+    const tex = node.classList.contains("formula") ? node.querySelector('annotation[encoding="application/x-tex"]')?.textContent : null;
     if (tex) {
-      out.push(node.closest(".katex-display") ? ` $$${tex}$$ ` : `$${tex}$`);
+      out.push(node.closest(".formula-display") ? ` $$${tex}$$ ` : `$${tex}$`);
       return;
     }
     if (BLOCK.test(node.tagName)) out.push(" ");
@@ -30,7 +30,7 @@ export function selectedWords(range: Range, skip?: string): string {
   };
   const common = range.commonAncestorContainer;
   const holder = common instanceof Element ? common : common.parentElement;
-  walk(holder?.closest(".katex") ?? common);
+  walk(holder?.closest(".formula") ?? common);
   return out.join("").replace(/\s+/g, " ").trim();
 }
 

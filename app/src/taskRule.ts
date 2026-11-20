@@ -14,13 +14,13 @@ function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } 
     }
     if (!(node instanceof HTMLElement)) return;
     if (node.classList.contains("earlier")) return;
-    if (node.classList.contains("katex")) {
+    if (node.classList.contains("formula")) {
       const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? node.textContent ?? "";
       out.push({ text: tex, atomic: true });
       nodes.push(node);
       return;
     }
-    if (node.tagName === "BR" || BLOCK.test(node.tagName) || node.classList.contains("katex-display")) {
+    if (node.tagName === "BR" || BLOCK.test(node.tagName) || node.classList.contains("formula-display")) {
       out.push({ text: " ", atomic: false });
       nodes.push(null);
     }
