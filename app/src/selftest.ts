@@ -991,7 +991,7 @@ export async function run(api: Core, actions: Actions): Promise<void> {
       const field = document.querySelector<HTMLElement>(".session.in-front .foot .field-row")!.getBoundingClientRect();
       const overPassage = {
         page: actions.session()?.probe().page ?? null,
-        tex: quote?.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? null,
+        tex: quote?.querySelector(".formula")?.getAttribute("data-tex") ?? null,
         doubled: /t\s*∗\s*t\s*∗/.test(quote?.textContent ?? ""),
         lineInView: field.bottom <= view.getBoundingClientRect().bottom + 1,
       };

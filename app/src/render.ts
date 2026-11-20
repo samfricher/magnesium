@@ -177,7 +177,7 @@ export function holdBack(src: string): { text: string; wait: boolean } {
 
 const rendered = new Map<string, string>();
 
-const escape = (text: string) => text.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch);
+const escape = (text: string) => text.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] ?? ch);
 
 const WORDS = "max|min|eq|tot|avg|obs|exp|crit|cat|sys|rel|net|in|out|ref";
 const BRACED = new RegExp(`(^|[^\\\\])_\\{\\s*(${WORDS})\\s*\\}`, "g");
@@ -189,18 +189,27 @@ export function uprightWords(tex: string): string {
   return once(once(tex));
 }
 
+function inPieces(drawn: string): string {
+  const holder = document.createElement("template");
+  holder.innerHTML = drawn;
+  const math = holder.content.firstElementChild;
+  if (!math || math.children.length < 2) return drawn;
+  return Array.from(math.children, (piece) => `<math>${piece.outerHTML}</math>`).join("");
+}
+
 function renderMath({ tex: source, display }: Math): string {
   const tex = uprightWords(source);
   const key = (display ? "D" : "I") + tex;
   let html = rendered.get(key);
   if (html === undefined) {
-    let drawn: string;
+    let formula: string;
     try {
-      drawn = temml.renderToString(tex, { displayMode: display, annotate: true, throwOnError: true, trust: false });
+      const drawn = temml.renderToString(tex, { displayMode: display, wrap: display ? "none" : "tex", throwOnError: true, trust: false });
+      formula = `<span class="formula" data-tex="${escape(tex)}">${display ? drawn : inPieces(drawn)}</span>`;
     } catch {
-      drawn = escape(source);
+      formula = `<span class="formula">${escape(source)}</span>`;
     }
-    html = display ? `<span class="formula-display"><span class="formula">${drawn}</span></span>` : `<span class="formula">${drawn}</span>`;
+    html = display ? `<span class="formula-display">${formula}</span>` : formula;
     if (rendered.size > 2000) rendered.clear();
     rendered.set(key, html);
   }

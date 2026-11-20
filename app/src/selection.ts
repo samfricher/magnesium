@@ -20,7 +20,7 @@ export function selectedWords(range: Range, skip?: string): string {
       return;
     }
     if (!(node instanceof Element) || (skip && node.matches(skip))) return;
-    const tex = node.classList.contains("formula") ? node.querySelector('annotation[encoding="application/x-tex"]')?.textContent : null;
+    const tex = node.classList.contains("formula") ? node.getAttribute("data-tex") : null;
     if (tex) {
       out.push(node.closest(".formula-display") ? ` $$${tex}$$ ` : `$${tex}$`);
       return;

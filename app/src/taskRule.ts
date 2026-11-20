@@ -15,7 +15,7 @@ function pieces(root: HTMLElement): { pieces: Piece[]; nodes: (Node | null)[] } 
     if (!(node instanceof HTMLElement)) return;
     if (node.classList.contains("earlier")) return;
     if (node.classList.contains("formula")) {
-      const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? node.textContent ?? "";
+      const tex = node.getAttribute("data-tex") ?? node.textContent ?? "";
       out.push({ text: tex, atomic: true });
       nodes.push(node);
       return;

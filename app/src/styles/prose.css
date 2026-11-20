@@ -64,11 +64,17 @@
 .prose .diagram { overflow-x: auto; margin: 0.4em 0 1em; }
 .prose .diagram svg { max-width: 100%; height: auto; }
 
-math { font-family: "STIX Two Math", math; }
-.prose .formula { font-size: 1.06em; }
+.formula math { font-family: "STIX Two Math", math; }
+.prose .formula math { font-size: 1.06em; margin-block: -0.2em; }
 .prose .formula-display { display: block; margin: 0.7em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 0.1em 0; }
-.line .formula,
-.you .formula { font-size: 1em; }
+.prose .formula-display math { margin-block: 0; }
+.formula math > mrow { padding: 0; }
+math .wbk-acc { transform: none; margin-bottom: -0.431em; }
+math .wbk-sml-acc { transform: translate(0.07em, 0); margin-bottom: -0.431em; }
+math .wbk-med-acc { transform: translate(0.14em, 0); margin-bottom: -0.431em; }
+math .wbk-lrg-acc { transform: translate(0.21em, 0); margin-bottom: -0.431em; }
+math .tml-eqn,
+math .tml-tag { padding-left: 2em; }
 
 .math-wait { height: 2.4rem; }
 
@@ -105,8 +111,8 @@ math { font-family: "STIX Two Math", math; }
 }
 .now > article.turn > .tutor > .prose { contain-intrinsic-block-size: auto 300px; }
 .now > article.turn:not(.open):not(.last) > .tutor > .prose {
-  margin-left: calc(-1 * var(--hang));
-  padding-left: var(--hang);
+  margin: -0.25em 0 -0.25em calc(-1 * var(--hang));
+  padding: 0.25em 0 0.25em var(--hang);
 }
 :root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(.last):not([data-sizing]) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
 .now > article.turn:not(.open):not(.last) > .tutor > .prose > :last-child,
