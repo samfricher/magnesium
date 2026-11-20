@@ -101,22 +101,22 @@
 
 .prose .earlier { font: 400 0.765rem/1 var(--app); color: var(--quiet); margin-right: 0.35em; }
 
-.now > article.turn:not(.open):not(:last-of-type) > .tutor {
+.now > article.turn:not(.open):not(.last) > .tutor {
   margin-bottom: 0.85rem;
 }
 .now > article.turn > .tutor > .prose { contain-intrinsic-block-size: auto 300px; }
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose {
+.now > article.turn:not(.open):not(.last) > .tutor > .prose {
   margin-left: calc(-1 * var(--hang));
   padding-left: var(--hang);
 }
-:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(:last-of-type) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child,
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child,
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :last-child > :last-child > :last-child {
+:root:not([data-whole]) .now[data-measured] > article.turn:not(.open):not(.last):not([data-sizing]) > .tutor > .prose:not(:has(img, .diagram, pre.diagram-wait)) { content-visibility: auto; }
+.now > article.turn:not(.open):not(.last) > .tutor > .prose > :last-child,
+.now > article.turn:not(.open):not(.last) > .tutor > .prose > :last-child > :last-child,
+.now > article.turn:not(.open):not(.last) > .tutor > .prose > :last-child > :last-child > :last-child {
   margin-bottom: 0;
 }
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :first-child > :first-child,
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose > :first-child > :first-child > :first-child {
+.now > article.turn:not(.open):not(.last) > .tutor > .prose > :first-child > :first-child,
+.now > article.turn:not(.open):not(.last) > .tutor > .prose > :first-child > :first-child > :first-child {
   margin-top: 0;
 }
-.now > article.turn:not(.open):not(:last-of-type) > .tutor > .prose.has-task-rule::before { left: 0; }
+.now > article.turn:not(.open):not(.last) > .tutor > .prose.has-task-rule::before { left: 0; }

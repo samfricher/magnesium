@@ -256,7 +256,7 @@ button.next:hover { color: color-mix(in srgb, var(--text) 82%, var(--ink)); }
   line-height: round(1.45rem, 1px);
   color: var(--quiet);
 }
-.now > article.turn:first-of-type > .step-head:first-child { margin-top: 0; }
+.now > article.turn.first > .step-head:first-child { margin-top: 0; }
 .step-n {
   position: absolute;
   right: calc(100% + max(var(--hang) - 1ch, 0.5em));
@@ -711,10 +711,10 @@ button.line-end:hover { color: var(--text); }
 :root[data-field="soft"] .foot.asking .line.lesson:not(:focus-within) { background: color-mix(in srgb, var(--well) 50%, transparent); }
 .text-field:placeholder-shown:not(:focus) { border-bottom-color: transparent; }
 
-.foot.asking .line.lesson:not(:focus-within) .field-row::before { visibility: hidden; }
+.foot.asking .line.lesson:not(:focus-within) > .field-row::before { visibility: hidden; }
 .line .with.to-card { display: none; }
 .line .with.to-card .keys { color: var(--hint); margin-right: 0.15em; }
-:root:not([data-hints="off"]) .foot.asking .line.lesson:focus-within .with.to-card { display: block; }
+:root:not([data-hints="off"]) .foot.asking .line.lesson:focus-within > .with.to-card { display: block; }
 
 .record.note[role="alert"] { color: var(--text); font-size: 0.941rem; }
 .foot.asking.raised::before { display: none; }
@@ -857,7 +857,7 @@ button.line-end:hover { color: var(--text); }
   border-top: 1px solid color-mix(in srgb, var(--text) 28%, var(--rule-under));
   pointer-events: none;
 }
-:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--rule-under)); }
+:root[data-field="ruled"] .foot.asking .line.lesson:not(:focus-within) > .field-row::after { border-top-color: color-mix(in srgb, var(--text) 14%, var(--rule-under)); }
 
 :root[data-field="soft"] .line.lesson {
   margin: 0 calc(-1 * var(--field-in));
@@ -888,10 +888,13 @@ button.line-end:hover { color: var(--text); }
 .page-turn .keys { color: var(--hint); margin-right: 0.15em; }
 .head { position: relative; }
 .head .page-turn.at-head { position: absolute; top: calc(100% + 0.35rem); left: 0; }
-.now.lesson.turnable .head.bare { margin-bottom: 1.8rem; }
+.now.lesson.turnable > .head.bare { margin-bottom: 1.8rem; }
 .top-edge .inner > .page-turn.at-top { margin-left: auto; flex: none; pointer-events: auto; color: var(--quiet); }
 
-.now.folded > article.turn,
+.now.folded > article.turn { content-visibility: hidden; }
+@supports not (content-visibility: hidden) {
+  .now.folded > article.turn { display: none; }
+}
 .now.folded > .earlier-note { display: none; }
 .answer-task {
   margin: clamp(2.3rem, calc(13vh - 0.3rem), 5.7rem) 0 0 calc(-1 * var(--hang));
@@ -904,8 +907,8 @@ button.line-end:hover { color: var(--text); }
 .answer-task .prose div.task { margin: 0; padding: 0; border: 0; }
 .answer-task .prose > :last-child,
 .answer-task .prose div.task > :last-child { margin-bottom: 0; }
-.now.folded .foot,
-:root:not([data-field="soft"]) .now.folded .foot:not(.asking) { margin-top: 1.5rem; }
+.now.folded > .foot,
+:root:not([data-field="soft"]) .now.folded > .foot:not(.asking) { margin-top: 1.5rem; }
 @keyframes answer-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .answer-task { animation: none; } }
 

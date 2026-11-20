@@ -71,9 +71,12 @@ async function writePerf(): Promise<void> {
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
+const drawnNow = (element: HTMLElement): boolean => element.checkVisibility?.() !== false && element.getClientRects().length > 0;
+
 function visible(element: Element): boolean {
   if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) return false;
   if (element.closest("[hidden], [aria-hidden='true'], [inert]")) return false;
+  if (element.checkVisibility?.() === false) return false;
   const rects = element.getClientRects();
   if (rects.length === 0) return false;
   const style = getComputedStyle(element);
@@ -481,8 +484,35 @@ async function run(op: Op): Promise<Result> {
     case "click": {
       const element = find(String(op.target ?? ""), op.by === "drive");
       if (!element) return { ok: false, error: `nothing visible is named ${JSON.stringify(op.target)}` };
-      click(element);
-      return { ok: true, clicked: describe(element) };
+      if (!op.timed) {
+        click(element);
+        return { ok: true, clicked: describe(element) };
+      }
+      await nextPaint();
+      const started = performance.now();
+      if (op.bare) element.click();
+      else click(element);
+      const painted = await nextPaint();
+      const gaps: { at: number; ms: number }[] = [];
+      await new Promise<void>((done) => {
+        let last = painted;
+        const tick = (now: number) => {
+          gaps.push({ at: now, ms: now - last });
+          last = now;
+          if (now - started < Number(op.timed)) requestAnimationFrame(tick);
+          else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      const slow = gaps.filter((gap) => gap.ms > 50);
+      return {
+        ok: true,
+        clicked: describe(element),
+        paint_ms: Math.round(painted - started),
+        longest_gap_ms: Math.round(Math.max(0, ...gaps.map((gap) => gap.ms))),
+        slow_frames: slow.map((gap) => Math.round(gap.ms)),
+        settled_ms: Math.round((slow.length > 0 ? slow[slow.length - 1].at : painted) - started),
+      };
     }
     case "focus": {
       const element = find(String(op.target ?? ""), op.by === "drive");
@@ -543,7 +573,7 @@ async function run(op: Op): Promise<Result> {
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
       const heads = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head"))
-        .filter((head) => head.getClientRects().length > 0)
+        .filter(drawnNow)
         .map((head) => collapse(head.textContent ?? "").replace(/^\d+\s*/, ""));
       const count = document.querySelector<HTMLElement>(".session.in-front .top-edge .top-count");
       const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
@@ -633,7 +663,7 @@ async function run(op: Op): Promise<Result> {
         const last = replies[replies.length - 1];
         return last ? Math.round(last.getBoundingClientRect().top * 10) / 10 : null;
       };
-      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter((head) => head.getClientRects().length > 0).length;
+      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter(drawnNow).length;
       let endedAt: number | null = null;
       let stepAt: number | null = null;
       let headAt: number | null = null;
@@ -768,22 +798,34 @@ async function run(op: Op): Promise<Result> {
       };
     }
     case "select": {
-      if (op.read) return { ok: true, selected: collapse(window.getSelection()?.toString() ?? "").slice(0, 80), focused: describe(document.activeElement) };
+      const selection = window.getSelection()!;
+      const read = () => {
+        const text = collapse(selection.toString());
+        const holds = op.holds === undefined ? undefined : String(op.holds).split("|").map((words) => text.includes(words));
+        return { selected: text.slice(0, 80), chars: text.length, holds };
+      };
+      if (op.read) return { ok: true, ...read(), focused: describe(document.activeElement) };
+      if (op.clear) {
+        const started = performance.now();
+        selection.removeAllRanges();
+        return { ok: true, paint_ms: Math.round((await nextPaint()) - started) };
+      }
       const blocks = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .prose > *, .session.in-front .prose li"));
-      const holding = (words: string) => blocks.find((block) => collapse(block.innerText ?? "").includes(words)) ?? null;
+      const holding = (words: string) => blocks.find((block) => collapse(block.textContent ?? "").includes(words)) ?? null;
       const first = holding(String(op.from ?? ""));
       const last = op.to === undefined ? first : holding(String(op.to));
       if (!first || !last) return { ok: false, error: `no passage holds ${JSON.stringify(first ? op.to : op.from)}` };
-      first.scrollIntoView({ block: "center" });
+      if (!op.in_place) first.scrollIntoView({ block: "center" });
       const range = document.createRange();
       range.setStartBefore(first.firstChild ?? first);
       range.setEndAfter(last.lastChild ?? last);
       (document.activeElement as HTMLElement | null)?.blur();
-      const selection = window.getSelection()!;
       selection.removeAllRanges();
-      selection.addRange(range);
       await nextPaint();
-      return { ok: true, selected: collapse(selection.toString()).slice(0, 80) };
+      const started = performance.now();
+      selection.addRange(range);
+      const painted = await nextPaint();
+      return { ok: true, ...read(), paint_ms: Math.round(painted - started) };
     }
     case "caret": {
       const line = composer();

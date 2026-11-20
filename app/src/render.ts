@@ -360,10 +360,31 @@ export function taskWords(text: string): string[] {
   return plain.split(" ").filter((word) => word.length >= 3);
 }
 
+const WORDS_KEPT = 1_500_000;
+const wordSets = new Map<string, Set<string>>();
+let wordsHeld = 0;
+
+function wordsOf(text: string): Set<string> {
+  let found = wordSets.get(text);
+  if (found === undefined) {
+    found = new Set(taskWords(text));
+    wordsHeld += text.length;
+  } else {
+    wordSets.delete(text);
+  }
+  wordSets.set(text, found);
+  for (const oldest of wordSets.keys()) {
+    if (wordsHeld <= WORDS_KEPT || oldest === text) break;
+    wordSets.delete(oldest);
+    wordsHeld -= oldest.length;
+  }
+  return found;
+}
+
 export function coverage(text: string, task: string): number {
-  const wanted = new Set(taskWords(task));
+  const wanted = wordsOf(task);
   if (wanted.size === 0) return 0;
-  const have = new Set(taskWords(text));
+  const have = wordsOf(text);
   let found = 0;
   wanted.forEach((word) => have.has(word) && (found += 1));
   return found / wanted.size;

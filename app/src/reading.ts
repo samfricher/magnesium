@@ -14,9 +14,11 @@ const proseOf = (turn: Element) => turn.querySelector<HTMLElement>(":scope > .tu
 
 function anchorAt(view: HTMLElement, section: HTMLElement): Anchor | null {
   const line = view.getBoundingClientRect().top;
+  const folded = section.classList.contains("folded");
   for (const part of Array.from(section.children) as HTMLElement[]) {
-    if (part.matches(".foot.raised") || part.getClientRects().length === 0 || part.getBoundingClientRect().bottom <= line) continue;
-    const ms = part.matches("article.turn") ? (part.dataset.ms ?? null) : null;
+    const turn = part.matches("article.turn");
+    if ((folded && turn) || part.matches(".foot.raised") || part.getClientRects().length === 0 || part.getBoundingClientRect().bottom <= line) continue;
+    const ms = turn ? (part.dataset.ms ?? null) : null;
     const held = (el: Element, at: number): Anchor => ({ el: el as HTMLElement, ms, at, y: el.getBoundingClientRect().top });
     if (ms === null) return held(part, -1);
     for (const piece of Array.from(part.children)) {
@@ -33,6 +35,7 @@ function anchorAt(view: HTMLElement, section: HTMLElement): Anchor | null {
 }
 
 function anchorNow(section: HTMLElement, anchor: Anchor): HTMLElement | null {
+  if (anchor.ms !== null && section.classList.contains("folded")) return null;
   if (anchor.el.isConnected) return anchor.el;
   if (anchor.ms === null || anchor.at < 0) return null;
   const turn = section.querySelector(`:scope > article.turn[data-ms="${anchor.ms}"]`);
