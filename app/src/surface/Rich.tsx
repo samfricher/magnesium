@@ -21,12 +21,24 @@ export const darkNow = () => {
 };
 const keyOf = (source: string) => `${darkNow() ? "dark" : "light"}:${source}`;
 
-function keepWordsReadable(holder: HTMLElement) {
+function keepWordsReadable(holder: HTMLElement): () => void {
   const svg = holder.querySelector("svg");
-  if (!svg) return;
+  if (!svg) return () => {};
   const width = parseFloat(svg.getAttribute("width") ?? "") || Number(/^[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg.getAttribute("viewBox") ?? "")?.[1] ?? 0);
   if (width > 0) svg.style.minWidth = `${Math.round(width * 0.8)}px`;
-  whenShown(holder, () => holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1));
+  return whenShown(holder, () => holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1));
+}
+
+const awaited = new WeakMap<HTMLElement, Map<HTMLElement, () => void>>();
+
+function stopAwaiting(root: HTMLElement, all: boolean) {
+  const stops = awaited.get(root);
+  if (!stops) return;
+  for (const [holder, stop] of stops) {
+    if (!all && root.contains(holder)) continue;
+    stop();
+    stops.delete(holder);
+  }
 }
 
 function roundNodes(svg: string): string {
@@ -45,6 +57,9 @@ function roundNodes(svg: string): string {
 
 function reuseDiagrams(root: HTMLElement): HTMLElement[] {
   const waiting: HTMLElement[] = [];
+  stopAwaiting(root, false);
+  const stops = awaited.get(root) ?? new Map<HTMLElement, () => void>();
+  awaited.set(root, stops);
   for (const block of Array.from(root.querySelectorAll<HTMLElement>("pre > code.language-mermaid"))) {
     const pre = block.parentElement;
     const source = block.textContent ?? "";
@@ -55,7 +70,7 @@ function reuseDiagrams(root: HTMLElement): HTMLElement[] {
       holder.className = "diagram";
       holder.innerHTML = svg;
       pre.replaceWith(holder);
-      keepWordsReadable(holder);
+      stops.set(holder, keepWordsReadable(holder));
     } else if (failed.has(keyOf(source))) {
       pre.classList.add("undrawn");
     } else {
@@ -253,6 +268,13 @@ export const Rich = memo(function Rich({ text, final, onNote, linksOpen = true, 
     return caret ? withCaret(linked) : linked;
   }, [whole, linksOpen, onSource, opensNow, caret]);
   const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = ref.current;
+    return () => {
+      if (root) stopAwaiting(root, true);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const root = ref.current;
