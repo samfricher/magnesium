@@ -360,14 +360,23 @@ export function taskWords(text: string): string[] {
   return plain.split(" ").filter((word) => word.length >= 3);
 }
 
+const WORDS_KEPT = 1_500_000;
 const wordSets = new Map<string, Set<string>>();
+let wordsHeld = 0;
 
 function wordsOf(text: string): Set<string> {
   let found = wordSets.get(text);
   if (found === undefined) {
     found = new Set(taskWords(text));
-    if (wordSets.size > 2000) wordSets.clear();
-    wordSets.set(text, found);
+    wordsHeld += text.length;
+  } else {
+    wordSets.delete(text);
+  }
+  wordSets.set(text, found);
+  for (const oldest of wordSets.keys()) {
+    if (wordsHeld <= WORDS_KEPT || oldest === text) break;
+    wordSets.delete(oldest);
+    wordsHeld -= oldest.length;
   }
   return found;
 }

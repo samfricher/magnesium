@@ -1069,12 +1069,15 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
       if (!whole) return sizeAway();
       delete section.dataset.measured;
       frame = requestAnimationFrame(() => {
-        frame = requestAnimationFrame(() => (section.dataset.measured = ""));
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          section.dataset.measured = "";
+        });
       });
     };
     const at = () => `${section.clientWidth} ${getComputedStyle(section).fontSize} ${document.documentElement.style.cssText}`;
-    let measuredAt = inFront.current ? at() : "";
-    unchecked = !inFront.current;
+    delete section.dataset.measured;
+    let measuredAt = at();
     const check = () => {
       if (!inFront.current) {
         unchecked = true;
@@ -1102,7 +1105,6 @@ export const Session = forwardRef<HTMLDivElement, Props>(function Session(props,
     sized.observe(section);
     const styled = new MutationObserver(check);
     styled.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
-    delete section.dataset.measured;
     owed = "all";
     measure();
     return () => {

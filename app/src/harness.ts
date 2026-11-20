@@ -71,6 +71,8 @@ async function writePerf(): Promise<void> {
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
+const drawnNow = (element: HTMLElement): boolean => element.checkVisibility?.() !== false && element.getClientRects().length > 0;
+
 function visible(element: Element): boolean {
   if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) return false;
   if (element.closest("[hidden], [aria-hidden='true'], [inert]")) return false;
@@ -571,7 +573,7 @@ async function run(op: Op): Promise<Result> {
       if (!found) return { ok: false, error: "no session is in front" };
       const files = Array.from(document.querySelectorAll(".session.in-front .attached .file")).map((file) => collapse((file as HTMLElement).innerText).replace(/\s*×$/, ""));
       const heads = Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head"))
-        .filter((head) => head.getClientRects().length > 0)
+        .filter(drawnNow)
         .map((head) => collapse(head.textContent ?? "").replace(/^\d+\s*/, ""));
       const count = document.querySelector<HTMLElement>(".session.in-front .top-edge .top-count");
       const markSaid = document.querySelector<HTMLElement>('.session.in-front [data-role="mark-said"]')?.textContent ?? null;
@@ -661,7 +663,7 @@ async function run(op: Op): Promise<Result> {
         const last = replies[replies.length - 1];
         return last ? Math.round(last.getBoundingClientRect().top * 10) / 10 : null;
       };
-      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter((head) => head.getClientRects().length > 0).length;
+      const drawn = () => Array.from(document.querySelectorAll<HTMLElement>(".session.in-front .step-head")).filter(drawnNow).length;
       let endedAt: number | null = null;
       let stepAt: number | null = null;
       let headAt: number | null = null;

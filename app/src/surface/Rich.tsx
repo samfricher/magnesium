@@ -5,6 +5,7 @@ import { core } from "../bridge";
 import { holdBack, renderInline, renderMarkdown, setSourcesApart } from "../render";
 import { drawTaskRule } from "../taskRule";
 import { docTitle } from "../docs";
+import { whenShown } from "../shown";
 import { sourceRef, type SourceRef } from "../sources";
 
 let diagrams = 0;
@@ -25,7 +26,7 @@ function keepWordsReadable(holder: HTMLElement) {
   if (!svg) return;
   const width = parseFloat(svg.getAttribute("width") ?? "") || Number(/^[\d.-]+ [\d.-]+ ([\d.]+)/.exec(svg.getAttribute("viewBox") ?? "")?.[1] ?? 0);
   if (width > 0) svg.style.minWidth = `${Math.round(width * 0.8)}px`;
-  holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1);
+  whenShown(holder, () => holder.classList.toggle("wide", holder.scrollWidth > holder.clientWidth + 1));
 }
 
 function roundNodes(svg: string): string {
@@ -128,12 +129,19 @@ async function drawOne(source: string, room: number) {
   }
 }
 
+let roomSeen = 0;
+
+function roomIn(root: HTMLElement): number {
+  if (roomSeen === 0 || root.checkVisibility?.() !== false) roomSeen = root.clientWidth - 32;
+  return roomSeen;
+}
+
 async function drawDiagrams(root: HTMLElement, blocks: HTMLElement[]) {
   for (const block of blocks) {
     const source = block.textContent ?? "";
     let job = inflight.get(keyOf(source));
     if (!job) {
-      job = drawOne(source, root.clientWidth - 32).finally(() => inflight.delete(keyOf(source)));
+      job = drawOne(source, roomIn(root)).finally(() => inflight.delete(keyOf(source)));
       inflight.set(keyOf(source), job);
     }
     await job;

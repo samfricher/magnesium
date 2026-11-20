@@ -5,6 +5,7 @@ import { HELP, attachedWords, withQuote } from "../lesson";
 import { keepPlace, type KeyAction } from "../prefs";
 import { renderPlain } from "../render";
 import { selecting } from "../selection";
+import { whenShown } from "../shown";
 import { LineMenu, type LineRow } from "./LineMenu";
 
 export type Place = "rest" | "lesson";
@@ -109,6 +110,7 @@ export const Composer = memo(
     const moreRef = useRef<HTMLButtonElement>(null);
     const box = useRef<HTMLTextAreaElement>(null);
     const length = useRef(props.initial.length);
+    const shrunk = useRef(false);
     const caretAt = useRef<number | null>(null);
     const latest = useRef(props);
     latest.current = props;
@@ -119,16 +121,20 @@ export const Composer = memo(
     useLayoutEffect(() => {
       const el = box.current;
       if (!el) return;
-      if (text.length < length.current || text === "") {
-        const row = el.parentElement;
-        if (row) row.style.minHeight = `${row.offsetHeight}px`;
-        el.style.height = "auto";
-        el.style.height = `${el.scrollHeight}px`;
-        if (row) row.style.minHeight = "";
-      } else if (el.scrollHeight > el.clientHeight) {
-        el.style.height = `${el.scrollHeight}px`;
-      }
+      if (text.length < length.current || text === "") shrunk.current = true;
       length.current = text.length;
+      return whenShown(el, () => {
+        if (shrunk.current) {
+          const row = el.parentElement;
+          if (row) row.style.minHeight = `${row.offsetHeight}px`;
+          el.style.height = "auto";
+          el.style.height = `${el.scrollHeight}px`;
+          if (row) row.style.minHeight = "";
+        } else if (el.scrollHeight > el.clientHeight) {
+          el.style.height = `${el.scrollHeight}px`;
+        }
+        shrunk.current = false;
+      });
     }, [text]);
 
     useEffect(() => {
