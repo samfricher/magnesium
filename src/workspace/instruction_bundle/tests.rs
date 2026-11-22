@@ -41,7 +41,7 @@ fn temp_control(name: &str) -> PathBuf {
     fs::canonicalize(path).expect("canonical control directory")
 }
 
-const STAGES: [InstructionStage; 8] = [
+const STAGES: [InstructionStage; 9] = [
     InstructionStage::OrientAndProbe,
     InstructionStage::PlanAndRoute,
     InstructionStage::TeachAndPractice,
@@ -50,6 +50,7 @@ const STAGES: [InstructionStage; 8] = [
     InstructionStage::ConsolidateAndResume,
     InstructionStage::Papers,
     InstructionStage::PapersLoop,
+    InstructionStage::Planning,
 ];
 
 #[test]
@@ -71,7 +72,7 @@ fn every_stage_selects_its_manifest_workflow() {
 fn compiled_approved_bundle_activates_and_serves() {
     let bundle = compiled_bundle().expect("compiled approved assets validate");
     assert_eq!(bundle.status, "active");
-    assert_eq!(bundle.files.len(), 15);
+    assert_eq!(bundle.files.len(), 16);
     let control = temp_control("approved");
     assert_eq!(
         install_bundle(&control).expect("approved install"),
@@ -94,7 +95,7 @@ fn compiled_approved_bundle_activates_and_serves() {
     assert_eq!(loaded.status, "served");
     assert_eq!(loaded.bundle_hash, bundle.hash);
     assert!(loaded.immutable_bytes_reused);
-    assert_eq!(loaded.validation_file_count, 16);
+    assert_eq!(loaded.validation_file_count, 17);
     fs::remove_dir_all(control).unwrap();
 }
 
@@ -208,12 +209,16 @@ fn every_packaged_instruction_has_a_supported_load_route() {
             Some(InstructionOperation::ToolRecipes),
         ] {
             let loaded = load_inner(&control, stage, host, operation, "instruction_only").unwrap();
-            let mut expected_files = vec![
-                "MAGNESIUM.md",
-                "teaching-policy.md",
-                host.asset(),
-                stage.workflow(),
-            ];
+            let mut expected_files = if stage == InstructionStage::Planning {
+                vec![host.asset(), stage.workflow()]
+            } else {
+                vec![
+                    "MAGNESIUM.md",
+                    "teaching-policy.md",
+                    host.asset(),
+                    stage.workflow(),
+                ]
+            };
             if let Some(operation) = operation {
                 expected_files.push(operation.asset());
             }
@@ -231,7 +236,7 @@ fn every_packaged_instruction_has_a_supported_load_route() {
             assert_eq!(loaded.recommended_stage, stage);
             assert_eq!(loaded.bytes_served, expected_text.len());
             assert!(loaded.bytes_served <= super::RESPONSE_LIMIT);
-            assert_eq!(loaded.validation_file_count, 16);
+            assert_eq!(loaded.validation_file_count, 17);
             assert_eq!(loaded.validation_bytes, validation_bytes);
             assert!(loaded.immutable_bytes_reused);
             let response = super::load(&control, stage, host, operation, "instruction_only");
@@ -261,7 +266,7 @@ fn every_packaged_instruction_has_a_supported_load_route() {
             served.extend(loaded.files);
         }
     }
-    assert_eq!(served.len(), 14);
+    assert_eq!(served.len(), 15);
     assert_eq!(
         served,
         ALLOWED_PATHS
@@ -379,7 +384,7 @@ fn repeated_bundle_loads_revalidate_disk_and_serve_compiled_bytes() {
     let instructions = control.join("instructions");
     let first_validation = load_installed(&instructions, &bundle).unwrap();
     let second_validation = load_installed(&instructions, &bundle).unwrap();
-    assert_eq!(first_validation.file_count, 16);
+    assert_eq!(first_validation.file_count, 17);
     assert_eq!(
         first_validation.bytes,
         bundle.files.values().map(Vec::len).sum::<usize>()
@@ -399,15 +404,19 @@ fn repeated_bundle_loads_revalidate_disk_and_serve_compiled_bytes() {
         )
         .unwrap();
         assert_eq!(response.recommended_stage, stage);
-        assert_eq!(
-            response.files,
-            [
-                "MAGNESIUM.md",
-                "teaching-policy.md",
-                "adapters/claude.md",
-                stage.workflow(),
-            ]
-        );
+        if stage == InstructionStage::Planning {
+            assert_eq!(response.files, ["adapters/claude.md", stage.workflow()]);
+        } else {
+            assert_eq!(
+                response.files,
+                [
+                    "MAGNESIUM.md",
+                    "teaching-policy.md",
+                    "adapters/claude.md",
+                    stage.workflow(),
+                ]
+            );
+        }
         assert_eq!(
             response
                 .files
@@ -426,7 +435,7 @@ fn repeated_bundle_loads_revalidate_disk_and_serve_compiled_bytes() {
             !response.immutable_bytes_reused,
             "stage sequence item {sequence_index}"
         );
-        assert_eq!(response.validation_file_count, 16);
+        assert_eq!(response.validation_file_count, 17);
         assert_eq!(response.validation_bytes, second_validation.bytes);
     }
 
@@ -478,7 +487,7 @@ fn one_hundred_workspace_loads_share_immutable_bundle_storage() {
         assert!(Arc::ptr_eq(&loaded_bundle.files, &bundle.files));
         assert!(loaded.immutable_bytes_reused);
         assert_eq!(loaded.bundle_hash, bundle.hash);
-        assert_eq!(loaded.validation_file_count, 16);
+        assert_eq!(loaded.validation_file_count, 17);
         match validation_bytes_per_workspace {
             Some(bytes) => assert_eq!(loaded.validation_bytes, bytes),
             None => validation_bytes_per_workspace = Some(loaded.validation_bytes),
@@ -760,7 +769,7 @@ fn retired_subagent_asset_bundle_requires_fresh_instruction_setup() {
     }
     let old_manifest_bytes = serde_json::to_vec(&old_manifest).unwrap();
     old_files.insert(MANIFEST.to_owned(), old_manifest_bytes.clone());
-    assert_eq!(old_manifest["files"].as_array().unwrap().len(), 16);
+    assert_eq!(old_manifest["files"].as_array().unwrap().len(), 17);
     assert!(matches!(
         validate_bundle(old_manifest_bytes.clone(), old_files.clone()),
         Err(BundleError::ManifestMismatch)
@@ -819,8 +828,8 @@ fn retired_subagent_asset_bundle_requires_fresh_instruction_setup() {
         super::InstallDisposition::AlreadyActive
     );
     let fresh_validation = load_installed(&fresh_control.join("instructions"), &current).unwrap();
-    assert_eq!(fresh_validation.file_count, 16);
-    assert_eq!(current.files.len(), 15);
+    assert_eq!(fresh_validation.file_count, 17);
+    assert_eq!(current.files.len(), 16);
     assert_eq!(current.version, 2);
     fs::remove_dir_all(old_control).unwrap();
     fs::remove_dir_all(fresh_control).unwrap();
@@ -972,7 +981,7 @@ fn edited_current_pointer_is_rejected_without_replacement() {
     );
     assert_eq!(
         load_installed(&instructions, &bundle).unwrap().file_count,
-        16
+        17
     );
     fs::remove_dir_all(control).unwrap();
 }
@@ -993,7 +1002,7 @@ fn current_staged_bundle_is_validated_before_recreating_a_missing_pointer() {
     assert_eq!(fs::read(&pointer_path).unwrap(), original);
     assert_eq!(
         load_installed(&instructions, &bundle).unwrap().file_count,
-        16
+        17
     );
     #[cfg(unix)]
     {

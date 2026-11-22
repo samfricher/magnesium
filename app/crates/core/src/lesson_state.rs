@@ -22,7 +22,7 @@ pub struct Facts {
     pub known: Vec<String>,
     pub help: Vec<String>,
     pub open_labels: Vec<String>,
-    pub graphs: Vec<String>,
+    pub maps: Vec<String>,
     pub plans: Vec<String>,
     pub talk: bool,
 }
@@ -165,12 +165,7 @@ pub fn text(lesson: &Lesson, facts: &Facts) -> String {
                 ));
             }
         }
-        lines.extend(
-            facts
-                .graphs
-                .iter()
-                .map(|path| format!("Course graph: {path}")),
-        );
+        lines.extend(facts.maps.iter().map(|path| format!("Course map: {path}")));
         if facts.plans.is_empty() {
             lines.push("Study plan: none".to_owned());
         }
@@ -478,24 +473,24 @@ mod tests {
             },
         );
         assert!(!none.contains("Course graph"), "{none}");
-        let graphs = vec!["Study/midterm-1/graph.yaml".to_owned()];
+        let maps = vec!["Study/midterm-1/map.md".to_owned()];
         let one = text(
             &lesson,
             &Facts {
                 full: true,
-                graphs: graphs.clone(),
+                maps: maps.clone(),
                 ..Facts::default()
             },
         );
         assert!(
             one.lines()
-                .any(|line| line == "Course graph: Study/midterm-1/graph.yaml"),
+                .any(|line| line == "Course map: Study/midterm-1/map.md"),
             "{one}"
         );
         let later = text(
             &lesson,
             &Facts {
-                graphs,
+                maps,
                 ..Facts::default()
             },
         );

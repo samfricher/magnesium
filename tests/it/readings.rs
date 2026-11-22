@@ -207,22 +207,44 @@ fn a_kind_is_needed_for_no_start_and_names_a_method_not_a_problem() {
     );
 }
 
-const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax from the double reciprocal plot\n    kind: course\n    needs: [reciprocals]\n    key_need: [reciprocals]\n    contains: [reciprocals]\n    touches: []\n  reciprocals:\n    covers: 1/x and its inverse\n    kind: foundation\n    needs: []\n    key_need: []\n    contains: []\n    touches: []\n  inhibition:\n    covers: competitive and noncompetitive inhibition\n    kind: course\n    needs: [lineweaver-burk]\n    key_need: [lineweaver-burk]\n    contains: []\n    touches: []\n";
+const OLD_GRAPH: &str = "tags:\n  a:\n    needs: b, c\n";
 
 fn plan(e: &TestEnvironment) {
     let dir = e.workspace.join("Study/midterm-1");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("plan.md"),
-        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | <YYYY-MM-DD> |\n",
-    )
-    .unwrap();
-    std::fs::write(
         dir.join("gap-log.md"),
         include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
     )
     .unwrap();
-    std::fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
+    let written = v2::tool(
+        e,
+        "claude",
+        THREAD,
+        "course_map",
+        json!({"action": "write", "target": "midterm-1",
+               "facts": {"label": "Midterm 1"},
+               "items": [
+                   {"kind": "idea", "title": "Reading Km and Vmax from the double reciprocal plot", "ref": "lb"},
+                   {"kind": "foundation", "title": "1/x and its inverse", "ref": "recip", "origin": "outline"},
+                   {"kind": "idea", "title": "Competitive and noncompetitive inhibition", "ref": "inhib"}],
+               "links": [{"item": "outline.lb", "uses": ["found.recip"]}, {"item": "outline.inhib", "uses": ["outline.lb"]}],
+               "scope": [{"ref": "outline.lb", "state": "in"}, {"ref": "found.recip", "state": "in"}, {"ref": "outline.inhib", "state": "in"}]}),
+    );
+    assert_eq!(written["items_added"][1]["id"], "found.recip", "{written}");
+}
+
+fn has_reading(result: &Value, tag: &str) -> bool {
+    let plan = &result["readings"]["plans"][0];
+    ["open", "conditional", "sound"].iter().any(|name| {
+        plan[*name]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|entry| entry["tag"] == tag)
+    }) || plan["untested"]
+        .as_array()
+        .is_some_and(|tags| tags.contains(&json!(tag)))
 }
 
 fn reading(result: &Value, tag: &str) -> (String, String) {
@@ -245,7 +267,7 @@ fn reading(result: &Value, tag: &str) -> (String, String) {
 }
 
 #[test]
-fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_tutor() {
+fn an_item_reading_changes_when_its_gap_row_changes_and_nothing_passes_along_a_link() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     plan(&e);
@@ -255,8 +277,11 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
         json!({"schema":"learner-model/v2","action":"update","request_id":"start",
             "session":{"operation":"start","client_ref":"session","goal":"Midterm 1 practice papers"}}),
     );
-    assert_eq!(reading(&started, "lineweaver-burk").0, "untested");
-    assert_eq!(reading(&started, "inhibition").0, "untested");
+    assert_eq!(
+        started["readings"]["plans"][0]["plan"], "midterm-1",
+        "{started}"
+    );
+    assert!(!has_reading(&started, "outline.lb"), "{started}");
 
     let event = prompt(&e, "p-1", "Diagnostic: 1. Km = 2 (S) 2. Vmax = 4 (U)");
     let marked = step(
@@ -265,27 +290,24 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
             "observations":[{"client_ref":"paper","kind":"learner_work","description":"Diagnostic, timed.",
                 "events":[{"event_id":event,"role":"learner_response"}],
                 "attempts":[
-                    {"label":"lineweaver-burk","question":"Find Km from the plot","first_try":"right","help":"none","cold":true,
+                    {"label":"outline.lb","question":"Find Km from the plot","first_try":"right","help":"none","cold":true,
                      "paper":{"name":"Diagnostic","question":"1","marks":2,"out_of":2}},
-                    {"label":"reciprocals","question":"Find Vmax with an inhibitor","first_try":"partly","help":"none","cold":true,
+                    {"label":"found.recip","question":"Find Vmax with an inhibitor","first_try":"partly","help":"none","cold":true,
                      "paper":{"name":"Diagnostic","question":"2","marks":1,"out_of":3},
                      "gap":{"type":"K","what_went_wrong":"Took 1/0.25 as 0.4."}}]}]}),
     );
     assert_eq!(
-        reading(&marked, "reciprocals"),
+        reading(&marked, "found.recip"),
         (
             "open".to_owned(),
             "midterm-1#1 open, waiting for its repair".to_owned()
         )
     );
     assert_eq!(
-        reading(&marked, "lineweaver-burk"),
-        (
-            "conditional".to_owned(),
-            "needs reciprocals, which is open".to_owned()
-        )
+        reading(&marked, "outline.lb"),
+        ("sound".to_owned(), "cold in Diagnostic Q1".to_owned())
     );
-    assert_eq!(reading(&marked, "inhibition").0, "untested");
+    assert!(!has_reading(&marked, "outline.inhib"));
 
     let repaired = step(
         &e,
@@ -293,14 +315,14 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
             "practice":[{"item":"midterm-1#1","repaired":"drilled reciprocals",
                 "next":{"question":"Intercept 0.5: find Vmax.","answer_key":"2"}}]}),
     );
-    assert_eq!(reading(&repaired, "reciprocals").0, "open");
+    assert_eq!(reading(&repaired, "found.recip").0, "open");
 
     days_pass(&e, 1);
     answer(
         &e,
         "redo-1",
         "Vmax = 2",
-        json!({"label":"reciprocals","question":"Intercept 0.5: find Vmax.","first_try":"right","help":"none","cold":true,
+        json!({"label":"found.recip","question":"Intercept 0.5: find Vmax.","first_try":"right","help":"none","cold":true,
             "counts_for":["midterm-1#1"],"next":{"question":"Intercept 0.2: find Vmax.","answer_key":"5"}}),
     );
     let resumed = step(
@@ -309,12 +331,8 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
             "session":{"operation":"resume","session_id":started["references"]["session"],"expected_revision":1}}),
     );
     assert_eq!(
-        reading(&resumed, "reciprocals"),
+        reading(&resumed, "found.recip"),
         ("conditional".to_owned(), "midterm-1#1 at 1 of 3".to_owned())
-    );
-    assert_eq!(
-        reading(&resumed, "lineweaver-burk"),
-        ("sound".to_owned(), "cold in Diagnostic Q1".to_owned())
     );
 
     let load = v2::tool(
@@ -324,7 +342,7 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
         "context",
         json!({"action":"instructions","host":"claude","stage":"papers_loop"}),
     );
-    assert_eq!(reading(&load, "reciprocals").0, "conditional");
+    assert_eq!(reading(&load, "found.recip").0, "conditional");
     assert_eq!(memories(&e), 0);
 
     let stuck = answer(
@@ -335,15 +353,12 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
             "first_try":"declined","help":"none","cold":false,"kind":"inhibition","no_start":true}),
     );
     assert_eq!(
-        stuck["readings"]["plans"][0]["help_levels"]["inhibition"], "full",
+        stuck["help_levels"]["kinds"][0]["kind"], "inhibition",
         "{stuck}"
     );
+    assert_eq!(stuck["help_levels"]["kinds"][0]["level"], "full", "{stuck}");
 
-    std::fs::write(
-        e.workspace.join("Study/midterm-1/graph.yaml"),
-        "tags:\n  a:\n    needs: b, c\n",
-    )
-    .unwrap();
+    std::fs::write(e.workspace.join("Study/midterm-1/graph.yaml"), OLD_GRAPH).unwrap();
     let load = v2::tool(
         &e,
         "claude",
@@ -352,12 +367,6 @@ fn a_topic_reading_changes_when_its_gap_row_changes_with_nothing_written_by_the_
         json!({"action":"instructions","host":"claude","stage":"papers_loop"}),
     );
     let plan = &load["readings"]["plans"][0];
-    assert!(
-        plan["graph"]
-            .as_str()
-            .unwrap()
-            .starts_with("Study/midterm-1/graph.yaml: line 3:"),
-        "{load}"
-    );
-    assert_eq!(reading(&load, "reciprocals").0, "conditional");
+    assert!(plan.get("graph").is_none(), "{load}");
+    assert_eq!(reading(&load, "found.recip").0, "conditional");
 }

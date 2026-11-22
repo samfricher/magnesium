@@ -254,10 +254,6 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
         ),
     );
     scratch.write(
-        "Study/midterm-1/graph.yaml",
-        "tags:\n  km:\n    covers: reading Km from a plot\n  vmax:\n    covers: reading Vmax from a plot\n  slope:\n    covers: the slope of a Lineweaver-Burk line\n  units:\n    covers: units of a rate\n",
-    );
-    scratch.write(
         GAP_LOG,
         &format!(
             "# Gap log: midterm-1\n\n## Gaps\n\n\
@@ -376,9 +372,9 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
             row.dots
         );
     }
-    assert_eq!(
-        names(&progress.untested),
-        BTreeSet::from(["units".to_owned()])
+    assert!(
+        progress.untested.is_empty(),
+        "an item never answered is listed on the course map, not as a row: {progress:#?}"
     );
     let score = progress.scores.first().expect("the Diagnostic's score");
     assert_eq!(
@@ -425,14 +421,14 @@ fn the_readers_follow_what_the_runtime_in_this_checkout_writes() {
     assert!(!progress.level_unknown);
     assert!(progress.proofs.levelled);
     assert_eq!(progress.proofs.earned as usize, earned, "{progress:#?}");
-    assert_eq!(progress.proofs.skills as usize, written.len() + 1);
+    assert_eq!(progress.proofs.skills as usize, written.len());
     assert_eq!(progress.proofs.proven as usize, closed.len());
     assert_eq!(progress.proofs.total, progress.proofs.skills * 3);
     assert_eq!(
         progress.proofs.level as usize,
         1 + earned * 9 / (progress.proofs.total as usize)
     );
-    assert_eq!(progress.proofs.level, 4);
+    assert_eq!(progress.proofs.level, 5);
 
     assert_eq!(
         study::answered_days(&[scratch.folder.to_string_lossy().into_owned()]),

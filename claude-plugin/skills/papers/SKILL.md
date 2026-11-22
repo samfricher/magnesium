@@ -1,6 +1,6 @@
 ---
 name: papers
-description: Build or continue a plan of timed practice papers for a test, and turn Magnesium on for this session.
+description: Build or continue a study plan for a test from the course's own files, with its practice papers and marking, and turn Magnesium on for this session.
 disable-model-invocation: true
 ---
 
@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 The learner turned Magnesium on for this session by typing `/magnesium:papers`. Any words after it are their request, such as a test to plan for or a loop verb.
 
-Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Read tool, not a shell command. Load `context(action:"instructions",host:"claude",stage:"papers")` in build mode and for the verbs new mock and rebuild, and `stage:"papers_loop"` for every other verb. Follow that stage; it holds the policy. Load the same call with `operation:"tool_recipes"`. Then, before you read materials or templates, start or resume the Magnesium session for the target, because native capture expires within minutes. Reload after context loss or a bundle change.
+Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Read tool, not a shell command. Load `context(action:"instructions",host:"claude",stage:"papers")` in build mode and for the verbs new mock, re-plan and rebuild, and `stage:"papers_loop"` for every other verb. Follow that stage; it holds the policy. Load the same call with `operation:"tool_recipes"`. Then, before you read materials or templates, start or resume the Magnesium session for the target, because native capture expires within minutes. Reload after context loss or a bundle change.
 
-During this Magnesium session, the prompt notice usually repeats the teaching rule and can say that the previous reply had 200 words or more. The rule is for teaching replies. A build, a marking report or a plan change runs as long as this stage needs and needs no task, so ignore that feedback after one.
+During this Magnesium session, the prompt notice usually repeats the teaching rule and can say that the previous reply had 200 words or more. The rule is for teaching replies. A marking report or a plan change runs as long as this stage needs and needs no task, so ignore that feedback after one.
 
 When the learner says they are stopping for now (for today, they have to go, that is enough), send learning_step `{"schema":"learner-model/v2","action":"end_sitting"}` once, before your reply, and follow its note. Magnesium then shows the learner, under your reply, what their record says of today; never say it yourself, and set no task.
 
@@ -20,14 +20,14 @@ The target slug is short, given or derived from the request: `midterm-1`, `test-
 
 Start the Magnesium session with a goal that names the target slug, such as "midterm-1 practice papers". `/magnesium:help` finds the plan's session by that slug.
 
-- `Study/<target>/plan.md` does not exist: build mode.
-- `Study/<target>/plan.md` exists: run mode. Read `plan.md`, `gap-log.md` and `graph.yaml` and prepare current memory before you act. Do not rebuild.
+- The course map has no target of that name (course_map read with the target says so): build mode. The planning run builds the map and the plan, as stage papers says.
+- It has one: run mode. Read `plan.md` and `gap-log.md`, course_map read for the target, and prepare current memory before you act. Do not rebuild.
 
-In `plan.md`, the When cell starts with the date in ISO form, such as `2026-10-21 (Wed) 12:30 to 14:00`. `magnesium digest` reads the date from there. Each session line under Sessions starts `If it is <days> at <HH:MM>, then`, or `If it is <HH:MM>, then` for a session every day, with a 24-hour start time, as the template shows. `magnesium digest` reads the days and the time from there.
+The runtime writes `Study/<target>/plan.md` and `map.md` from the course map, in the forms `magnesium digest` reads. Never edit them: a change goes through course_map write, or through the planning run.
 
 ## Loop verbs
 
-Accept any phrasing of: mark my PAPER, teach me TAG, repair TAG, cold redo, new mock, re-time today, fix my plan files, rebuild. Only "rebuild" starts the plan over.
+Accept any phrasing of: mark my PAPER, teach me a section or item, repair an item, cold redo, new mock, re-time today, re-plan, fix my plan files, rebuild. Only "rebuild" starts the plan over.
 
 ## Templates
 
@@ -35,15 +35,13 @@ When Claude Code loads this skill, it prints "Base directory for this skill: <pa
 
 | Template | Copy to |
 |---|---|
-| `plan.md` | `Study/<target>/plan.md` |
 | `gap-log.md` | `Study/<target>/gap-log.md` |
-| `graph.yaml` | `Study/<target>/graph.yaml` |
 | `drills.md` | `Study/<target>/drills.md` |
 | `past-papers-README.md` | `Study/<target>/past-papers/README.md` |
 | `paper.md` | `Study/<target>/papers/<Name>.md`, one per Markdown paper; its key is `<Name>-KEY.md` |
 | `preamble.tex`, `build.sh` | `Study/<target>/papers/src/`, for LaTeX papers; one `<Name>-body.tex` per paper |
 
-Name papers Diagnostic, Paper1-Easy, Paper2-Medium, MockA, MockB and Stretch1, as the ramp needs them. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
+Name papers after the block that sets them, such as SectionC, MockA, MockB or Stretch1. Run the LaTeX build as `bash Study/<target>/papers/src/build.sh`, never as `./build.sh`, because the copied script keeps mode 0600 and is not executable. The script writes `<Name>.pdf` and `<Name>-KEY.pdf` into `papers/` and exits non-zero when a build fails.
 
 LaTeX cannot break a line inside `\text{}`, `\mbox{}` or a display, so such a line can be set wider than its column. The script finds where each such line ends on the page. When it ends past the right edge, where every PDF viewer cuts it mid-word, or within a quarter inch of the edge, which a printer cuts off, the script prints `CUT LINE` with the line of `<Name>-body.tex` and does not write that PDF. When it cannot tell where the line ends, it prints `UNCHECKED LINE` and does not write the PDF either. Rewrite each line it names so it fits its column. In running text, end the math before the words, as in `$\{\langle G,k\rangle :$ $G$ has a vertex cover of size at most $k\}$`. Break a long display into lines with `multline*` or `aligned` and `\\`. In a table, shorten the cell or widen its column. Then run the build again until it prints neither. Never give the learner a paper or key with a `CUT LINE`, an `UNCHECKED LINE` or a failed build. A `wide line` note names a line that stays on the page, in the margin or inside the text, where it can cover what is beside it. Look at that page, and rewrite the line if it covers anything.
 
@@ -51,11 +49,7 @@ In a folder from before this check, `papers/src/build.sh` has no `CUT LINE` in i
 
 ## Upgrade an old gap log
 
-Magnesium brings an older gap log's rows into the learner record when stage `papers_loop` loads, and writes its Gaps table from then on, as that stage says. A folder from before this has text above `## Tags` in `gap-log.md` that tells you to write the Next redo date or the Status, or has no `Conf:` line there. A folder from before confidence letters has a Method in `plan.md`, or a paper not yet marked, that does not ask for S, U or G. Check for these after that stage loads, and use this skill's templates:
-
-1. If the text above `## Tags` in `gap-log.md` differs from the `gap-log.md` template's, read the template, and replace the old file's text above `## Tags` with the template's text.
-2. If the Method in `plan.md` does not ask for the redo days or for S, U or G, replace steps 1, 4 and 5 of the Method with the template's steps.
-3. Update each paper not yet marked, so the learner sees the S, U and G line. A paper is marked when Scores has its row with a real score, not the template's `<score>` placeholder. In a Markdown paper, replace the paragraph under the title line that asks for a `?` with the `paper.md` template's paragraph. For LaTeX papers, replace the line of `\paperheader` in `papers/src/preamble.tex` that asks for a ? with the `preamble.tex` template's line, and run the build again.
+Magnesium brings an older gap log's rows into the learner record when stage `papers_loop` loads, and writes its Gaps table from then on, as that stage says. If the text above `## Gaps` in `gap-log.md` differs from the `gap-log.md` template's, read the template and replace the old file's text above `## Gaps` with the template's. A folder whose plan was written by hand, with a `graph.yaml` beside it, gets a new plan from the planning run; the old files stay as they are until the learner removes them.
 
 ## Optional tools
 

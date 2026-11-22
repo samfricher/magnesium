@@ -2,12 +2,13 @@ use rmcp::model::{JsonObject, Tool, ToolAnnotations};
 use schemars::JsonSchema;
 use serde_json::Value;
 use std::sync::Arc;
-pub(crate) const CANONICAL_OPERATIONS: [&str; 5] = [
+pub(crate) const CANONICAL_OPERATIONS: [&str; 6] = [
     "context",
     "memory",
     "learning_step",
     "search_sources",
     "sources",
+    "course_map",
 ];
 pub(crate) const REPLY_TOOL: &str = "reply";
 pub(crate) const SURFACE_ENV: &str = "MAGNESIUM_SURFACE";
@@ -35,7 +36,7 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
             generated_schema::<crate::adapter::ReplyRequest>(),
         ),
         "context" => (
-            "Load Magnesium's teaching instructions, or read the learner's current state. It takes one of two shapes. An instruction load is {\"action\":\"instructions\",\"host\":\"claude\",\"stage\":<stage>}, where stage is orient_and_probe, plan_and_route, teach_and_practice, interpret_and_repair, review_and_transfer, consolidate_and_resume, papers or papers_loop; add \"operation\": state_and_evidence, source_use or tool_recipes to load that contract. A learner-state read is {\"schema\":\"learner-model/v2\",\"action\": status, prepare, session_choices or pending_events, ...}, with no host or stage. prepare returns the current memory descriptions for a goal; status gives the current session revision a checkpoint needs. A session start or resume through learning_step already returns prepare for its goal, so call prepare yourself only for another goal or after a compaction. Reading changes nothing: it does not resume, bind, assess or process a session.",
+            "Load Magnesium's teaching instructions, or read the learner's current state. It takes one of two shapes. An instruction load is {\"action\":\"instructions\",\"host\":\"claude\",\"stage\":<stage>}, where stage is orient_and_probe, plan_and_route, teach_and_practice, interpret_and_repair, review_and_transfer, consolidate_and_resume, papers, papers_loop or planning (the planning run's guidance, served without the teaching rules); add \"operation\": state_and_evidence, source_use or tool_recipes to load that contract. A learner-state read is {\"schema\":\"learner-model/v2\",\"action\": status, prepare, session_choices or pending_events, ...}, with no host or stage. prepare returns the current memory descriptions for a goal; status gives the current session revision a checkpoint needs. A session start or resume through learning_step already returns prepare for its goal, so call prepare yourself only for another goal or after a compaction. Reading changes nothing: it does not resume, bind, assess or process a session.",
             generated_schema::<crate::adapter::ContextRequest>(),
         ),
         "memory" => (
@@ -54,6 +55,10 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
             "Read the original text at a source anchor that search_sources returned. action inspect returns the text for path, anchor_kind (page or line), anchor_start and optional anchor_end, cut at 64 KB with truncated set when it was cut; action status returns the anchor's coverage and extraction limits without the text; action sections returns the file's section titles with the anchor each one covers, read from the file's own headings, outline or page layout, so a whole file's structure is known without reading it; a file not indexed yet says so, with how much of the folder is. Pass the content_sha256 the search result gave to make sure the file has not changed since. Parsed text can miss what a page image shows, such as layout, notation, plots or code indentation: when that matters to the point, Read the page itself.",
             generated_schema::<crate::adapter::SourcesRequest>(),
         ),
+        "course_map" => (
+            "The course map: every item the material sets apart (a slide section, a listed exercise, a past-paper question, a section of a reading), the use links between them, and, for a test or goal, its scope, schedule, carried ideas and cuts. inventory lists the folder's files and which need reading by eye; add_files puts files on the map with the sections the runtime reads from their headings; write adds items, links, facts, scope, blocks, carried ideas and traces in one atomic call; read states coverage for a target (items never asked, items no planned task asks), or one file or item; reach counts, for each candidate, the items it uses that were never asked, have no blank-page pass, or are due. Item ids come back from add_files and write; use them exactly. After a write the runtime rewrites Study/<target>/map.md and plan.md; never edit those files by hand.",
+            generated_schema::<crate::course_map::CourseMapRequest>(),
+        ),
         _ => return None,
     };
     let description = if name == "learning_step" {
@@ -66,7 +71,7 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
     };
     let tool = Tool::new(name.to_owned(), description, schema).annotate(
         ToolAnnotations::new()
-            .read_only(!matches!(name, "learning_step" | REPLY_TOOL))
+            .read_only(!matches!(name, "learning_step" | "course_map" | REPLY_TOOL))
             .destructive(false),
     );
     Some(tool)

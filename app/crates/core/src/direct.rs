@@ -41,7 +41,11 @@ const RECORD_TOOLS: [&str; 3] = [
     "mcp__magnesium__learning_step",
     "mcp__magnesium__memory",
 ];
-const LOOKUP_TOOLS: [&str; 2] = ["mcp__magnesium__search_sources", "mcp__magnesium__sources"];
+const LOOKUP_TOOLS: [&str; 3] = [
+    "mcp__magnesium__search_sources",
+    "mcp__magnesium__sources",
+    "mcp__magnesium__course_map",
+];
 const SITTING_GAP: Duration = Duration::from_secs(3 * 60 * 60);
 
 pub fn study_root(folder: &Path) -> PathBuf {
@@ -128,7 +132,7 @@ pub fn direct_args(
 
 pub fn plan_rules(root: &Path) -> Vec<String> {
     let mut rules = Vec::new();
-    for file in ["plan.md", "graph.yaml"] {
+    for file in ["plan.md"] {
         for tool in ["Edit", "Write"] {
             rules.push(format!("{tool}(/{}/Study/*/{file})", root.display()));
         }
@@ -1085,7 +1089,7 @@ fn due_of(result: &Value) -> Option<Due> {
 
 const MAX_GRAPHS: usize = 8;
 
-fn course_graphs(root: &Path) -> Vec<String> {
+fn course_maps(root: &Path) -> Vec<String> {
     let Ok(inside) = root.canonicalize() else {
         return Vec::new();
     };
@@ -1099,7 +1103,7 @@ fn course_graphs(root: &Path) -> Vec<String> {
         .filter(|plan| {
             root.join("Study")
                 .join(plan)
-                .join("graph.yaml")
+                .join("map.md")
                 .canonicalize()
                 .is_ok_and(|file| file.starts_with(&inside) && file.is_file())
         })
@@ -1108,7 +1112,7 @@ fn course_graphs(root: &Path) -> Vec<String> {
     plans
         .into_iter()
         .take(MAX_GRAPHS)
-        .map(|plan| format!("Study/{plan}/graph.yaml"))
+        .map(|plan| format!("Study/{plan}/map.md"))
         .collect()
 }
 
@@ -1418,7 +1422,7 @@ fn prepare(
     facts.new_repairs = std::mem::take(&mut state.repairs_new);
     facts.repair_outcome = state.repair_outcome.take();
     if facts.full {
-        facts.graphs = course_graphs(&shared.root);
+        facts.maps = course_maps(&shared.root);
         facts.plans = plan_lines(&shared.root);
     }
     facts.help = std::mem::take(&mut state.help);
@@ -2509,36 +2513,32 @@ mod tests {
         let base = dir.path().canonicalize().unwrap();
         let root = base.join("Course");
         let study = root.join("Study");
-        assert!(course_graphs(&root).is_empty(), "no Study folder yet");
+        assert!(course_maps(&root).is_empty(), "no Study folder yet");
         for plan in ["midterm-1", "final", "empty"] {
             std::fs::create_dir_all(study.join(plan)).unwrap();
         }
-        std::fs::write(study.join("midterm-1/graph.yaml"), "tags:\n").unwrap();
-        std::fs::write(study.join("final/graph.yaml"), "tags:\n").unwrap();
-        std::fs::create_dir_all(study.join("odd/graph.yaml")).unwrap();
+        std::fs::write(study.join("midterm-1/map.md"), "# map\n").unwrap();
+        std::fs::write(study.join("final/map.md"), "# map\n").unwrap();
+        std::fs::create_dir_all(study.join("odd/map.md")).unwrap();
         let outside = base.join("elsewhere");
         std::fs::create_dir_all(&outside).unwrap();
-        std::fs::write(outside.join("graph.yaml"), "tags:\n").unwrap();
+        std::fs::write(outside.join("map.md"), "# map\n").unwrap();
         std::os::unix::fs::symlink(&outside, study.join("linked")).unwrap();
         std::fs::create_dir_all(study.join("filelink")).unwrap();
-        std::os::unix::fs::symlink(
-            outside.join("graph.yaml"),
-            study.join("filelink/graph.yaml"),
-        )
-        .unwrap();
+        std::os::unix::fs::symlink(outside.join("map.md"), study.join("filelink/map.md")).unwrap();
         std::os::unix::fs::symlink(study.join("final"), study.join("alias")).unwrap();
         assert_eq!(
-            course_graphs(&root),
+            course_maps(&root),
             [
-                "Study/alias/graph.yaml",
-                "Study/final/graph.yaml",
-                "Study/midterm-1/graph.yaml"
+                "Study/alias/map.md",
+                "Study/final/map.md",
+                "Study/midterm-1/map.md"
             ]
         );
         let other = base.join("Other");
         std::fs::create_dir_all(&other).unwrap();
         std::os::unix::fs::symlink(&study, other.join("Study")).unwrap();
-        assert!(course_graphs(&other).is_empty());
+        assert!(course_maps(&other).is_empty());
     }
 
     #[test]
@@ -2573,8 +2573,7 @@ mod tests {
             after("--allowedTools"),
             "Read(//study/**),\
              Edit(//study/Study/*/plan.md),Write(//study/Study/*/plan.md),\
-             Edit(//study/Study/*/graph.yaml),Write(//study/Study/*/graph.yaml),\
-             mcp__magnesium__search_sources,mcp__magnesium__sources",
+             mcp__magnesium__search_sources,mcp__magnesium__sources,mcp__magnesium__course_map",
             "Read reaches the study root, Edit and Write its plan files, and nothing else"
         );
         assert!(args.contains(&"--strict-mcp-config".to_owned()));

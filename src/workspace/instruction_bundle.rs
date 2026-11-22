@@ -33,6 +33,7 @@ pub(crate) enum InstructionStage {
     ConsolidateAndResume,
     Papers,
     PapersLoop,
+    Planning,
 }
 
 impl InstructionStage {
@@ -46,6 +47,7 @@ impl InstructionStage {
             Self::ConsolidateAndResume => "consolidate-and-resume",
             Self::Papers => "papers",
             Self::PapersLoop => "papers-loop",
+            Self::Planning => "planning",
         }
     }
 
@@ -950,12 +952,16 @@ fn render(
     validation: ValidationWork,
     immutable_bytes_reused: bool,
 ) -> Result<InstructionLoad, BundleError> {
-    let mut files = vec![
-        "MAGNESIUM.md",
-        "teaching-policy.md",
-        host.asset(),
-        stage.workflow(),
-    ];
+    let mut files = if stage == InstructionStage::Planning {
+        vec![host.asset(), stage.workflow()]
+    } else {
+        vec![
+            "MAGNESIUM.md",
+            "teaching-policy.md",
+            host.asset(),
+            stage.workflow(),
+        ]
+    };
     if let Some(operation) = operation {
         files.push(operation.asset());
     }

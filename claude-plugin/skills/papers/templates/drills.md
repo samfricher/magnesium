@@ -1,31 +1,23 @@
 # Drills: <target>
 
-Short items for one gap tag, used during repair. Do the items for a tag where you lost marks. The cold redos come on later days, on that question or one that covers its tag. Answers are at the end of this file.
+Tasks the planning run wrote for ideas that no listed exercise or past question asks. Each one is on the course map as `<code>.d<n>`, with the items it uses, and the plan's blocks name it there. Work each one from a blank page; the answers are at the end of this file.
 
-## <TAG>
+## d1
 
-Re-read: `<file>` pages <pages>.
+<the task, posed whole: every number, name and condition it needs, and no step or method named>
 
-1. <item>
-2. <item>
+## d2
 
-## <TAG>
-
-Re-read: `<file>` pages <pages>.
-
-3. <item>
-4. <item>
+<the task>
 
 ---
 
 ## Answers
 
-### <TAG>
+### d1
 
-1. <answer, with the step that the gap log says was missing>
-2. <answer>
+<the answer, with each step a marker would look for>
 
-### <TAG>
+### d2
 
-3. <answer>
-4. <answer>
+<the answer>

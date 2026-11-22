@@ -1,6 +1,8 @@
 # Plan and route
 
-Build the smallest explanatory route from an anchor, as the teaching policy defines it, to the requested goal. To find anchors, run a memory search with all_of ["anchor"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency. Name which operation needs a prerequisite and why. Nearby topics and textbook order are not mandatory dependencies. Alternative sufficient routes do not require completion of every branch. When the workspace has a `Study/<target>/graph.yaml` whose tags cover the learner's current topic, read it, use its needs and key_need as the dependency map for working backward, and read the tag memories by their topics label.
+A request for a study plan, for a test, a chapter set or a goal with no date, is the planning run's job, not this stage's: load stage papers and start the planning run as it says. This stage chooses the route inside one lesson.
+
+Build the smallest explanatory route from an anchor, as the teaching policy defines it, to the requested goal. To find anchors, run a memory search with all_of ["anchor"] and any_of naming the goal and what it needs, and read each memory it returns. With none, start the route at the next dependency. Name which operation needs a prerequisite and why. Nearby topics and textbook order are not mandatory dependencies. Alternative sufficient routes do not require completion of every branch. When the folder has a course map, course_map read with the item in hand states what it uses and where it is used later: a used item the learner has never answered is a candidate step, never a required one.
 
 Use current descriptive memories alongside current work, keeping conditions and uncertainty visible. Preserve strengths while teaching a narrower missing connection. Scaffold a dependent step when useful; unknown history is not a barrier. Reconnect a detour to the original goal.
 

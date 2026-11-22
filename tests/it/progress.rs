@@ -300,8 +300,6 @@ fn a_due_check_answered_today_without_a_pass_is_counted_due_tomorrow_not_today()
     assert_eq!(value["today_counts"]["due_tomorrow"], 1, "{value}");
 }
 
-const GRAPH: &str = "tags:\n  lineweaver-burk:\n    covers: reading Km and Vmax from the double reciprocal plot\n    kind: course\n    needs: [reciprocals]\n    key_need: [reciprocals]\n    contains: [reciprocals]\n    touches: []\n  reciprocals:\n    covers: 1/x and its inverse\n    kind: foundation\n    needs: []\n    key_need: []\n    contains: []\n    touches: []\n";
-
 #[test]
 fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_something_new() {
     let e = plan_folder();
@@ -311,18 +309,18 @@ fn a_plans_level_counts_its_own_skills_and_holds_when_the_learner_starts_somethi
         &e,
         "a-1",
         "Km is minus one over the x intercept",
-        json!({"label":"Lineweaver Burk","question":"Read Km from this plot.","first_try":"right","help":"none","cold":true}),
+        json!({"label":"OUTLINE.LB","question":"Read Km from this plot.","first_try":"right","help":"none","cold":true}),
     );
     let before = progress(&e);
     assert_eq!(
         plan_progress(&before),
-        json!({"passes": 1, "level_passes": 1, "of": 6, "proven": 0, "skills": 2, "level": 2, "to_next": 1}),
+        json!({"passes": 1, "level_passes": 1, "of": 3, "proven": 0, "skills": 1, "level": 4, "to_next": 1}),
         "{before}"
     );
     let label: String = store(&e)
         .query_row("SELECT label FROM attempts", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(label, "lineweaver-burk");
+    assert_eq!(label, "outline.lb");
 
     answer(
         &e,
@@ -352,16 +350,22 @@ fn plan_folder() -> TestEnvironment {
     let dir = e.workspace.join("Study/midterm-1");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
-        dir.join("plan.md"),
-        "# Midterm 1: study plan\n\n## 1. Facts\n\n| Item | Value |\n|---|---|\n| Target | Midterm 1 |\n| When | <YYYY-MM-DD> |\n",
-    )
-    .unwrap();
-    fs::write(
         dir.join("gap-log.md"),
         include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
     )
     .unwrap();
-    fs::write(dir.join("graph.yaml"), GRAPH).unwrap();
+    v2::tool(
+        &e,
+        "claude",
+        THREAD,
+        "course_map",
+        json!({"action": "write", "target": "midterm-1", "facts": {"label": "Midterm 1"},
+               "items": [
+                   {"kind": "idea", "title": "Reading Km and Vmax from the double reciprocal plot", "ref": "lb"},
+                   {"kind": "foundation", "title": "1/x and its inverse", "ref": "recip", "origin": "outline"}],
+               "links": [{"item": "outline.lb", "uses": ["found.recip"]}],
+               "scope": [{"ref": "outline.lb", "state": "in"}, {"ref": "found.recip", "state": "in"}]}),
+    );
     v2::start(&e, "claude", THREAD);
     e
 }
@@ -370,7 +374,7 @@ fn plan_folder() -> TestEnvironment {
 fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
     let e = plan_folder();
     let km = |id: &str, first_try: &str| {
-        json!({"label":"lineweaver-burk","question":format!("Read Km from plot {id}."),
+        json!({"label":"outline.lb","question":format!("Read Km from plot {id}."),
             "first_try":first_try,"help":"none","cold":first_try == "right"})
     };
     answer(&e, "a-1", "Km is the y intercept", km("a-1", "wrong"));
@@ -392,14 +396,14 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
     let level = |value: &Value| value["plans"][0]["progress"].clone();
     assert_eq!(
         level(&passed),
-        json!({"passes": 2, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
+        json!({"passes": 2, "level_passes": 2, "of": 3, "proven": 0, "skills": 1, "level": 7, "to_next": 1}),
         "{passed}"
     );
     days_pass(&e, 7);
     answer(&e, "d-1", "the slope", km("d-1", "wrong"));
     let failed = progress(&e);
     let skill = &failed["plans"][0]["skills"][0];
-    assert_eq!(skill["skill"], "lineweaver-burk", "{failed}");
+    assert_eq!(skill["skill"], "outline.lb", "{failed}");
     assert_eq!(
         (
             skill["passes"].as_i64(),
@@ -411,7 +415,7 @@ fn a_failed_check_leaves_the_plans_level_where_its_passes_took_it() {
     );
     assert_eq!(
         level(&failed),
-        json!({"passes": 0, "level_passes": 2, "of": 6, "proven": 0, "skills": 2, "level": 4, "to_next": 1}),
+        json!({"passes": 0, "level_passes": 2, "of": 3, "proven": 0, "skills": 1, "level": 7, "to_next": 1}),
         "{failed}"
     );
 }

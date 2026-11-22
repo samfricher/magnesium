@@ -4,6 +4,7 @@ mod adapter;
 mod attempts;
 mod cli;
 mod closing;
+mod course_map;
 mod diagnostics;
 mod digest;
 mod export;
@@ -54,6 +55,11 @@ pub fn run() -> ExitCode {
             matches.get_flag("json"),
         ),
         Some(("progress", matches)) => progress::print_progress(matches.get_flag("json")),
+        Some(("map", matches)) => course_map::print_map(
+            matches.get_one::<String>("target").map(String::as_str),
+            matches.get_flag("json"),
+            matches.get_flag("write-pages"),
+        ),
         Some(("closing", matches)) => closing::print_closing(matches.get_flag("json")),
         Some(("searchable", matches)) => {
             let paths: Vec<PathBuf> = matches

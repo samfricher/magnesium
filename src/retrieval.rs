@@ -92,8 +92,9 @@ pub(crate) use search::{MAX_RESULTS as MAX_SEARCH_RESULTS, SourceSearchRequest};
 #[cfg(test)]
 pub(crate) use manifest::status::SpanFact;
 pub(crate) use manifest::status::{
-    CandidateFacts, FactsInterest, FolderFiles, Interval, ManifestRow, PreparationDisposition,
-    SOURCES_EXCERPT_CHAR_CAP, folder_files, read_sections,
+    CandidateFacts, FactsInterest, FolderFiles, IndexedFile, Interval, ManifestRow,
+    PreparationDisposition, SOURCES_EXCERPT_CHAR_CAP, SectionFact, folder_files, indexed_files,
+    read_sections, sections_at,
 };
 #[cfg(test)]
 pub(crate) mod manifest_test_facts {

@@ -2,82 +2,6 @@ use super::*;
 use crate::learner::practice::{ItemFacts, ItemState, Origin};
 use chrono::NaiveDate;
 
-const GRAPH: &str = r#"# Course graph: midterm-1
-tags:
-  chain-rule:
-    covers: "Rule 3.1: derivative of a composite"
-    pages: notes.pdf pages 4-6
-    kind: course
-    needs: [power-rule, "algebra"]
-    key_need: [power-rule]
-    contains: [power-rule]
-    touches: [algebra]
-  power-rule:
-    covers: d/dx x^n
-    kind: foundation
-    needs: []
-    key_need: []
-    contains:
-      - algebra   # fully exercised
-    touches: []
-  algebra:
-    covers: rearranging
-    kind: foundation
-    needs: []
-    key_need: []
-    contains: []
-    touches: []
-"#;
-
-#[test]
-fn a_graph_is_read_in_flow_and_block_form_with_comments() {
-    let graph = parse_graph(GRAPH).unwrap();
-    assert_eq!(graph.order, ["chain-rule", "power-rule", "algebra"]);
-    let chain = &graph.tags["chain-rule"];
-    assert_eq!(chain.needs, ["power-rule", "algebra"]);
-    assert_eq!(chain.key_need, ["power-rule"]);
-    assert_eq!(graph.tags["power-rule"].contains, ["algebra"]);
-}
-
-#[test]
-fn a_block_list_may_sit_at_its_key_indent_and_under_an_ignored_field() {
-    let graph = parse_graph(
-        "tags:\n  a:\n    pages:\n    - notes.pdf p4\n    - notes.pdf p9\n    needs:\n    - b\n    - c\n    key_need:\n      - b\n    touches:\n    - c\n  b:\n    contains: []\n  c:\n    needs: []\n",
-    )
-    .unwrap();
-    assert_eq!(graph.order, ["a", "b", "c"]);
-    let a = &graph.tags["a"];
-    assert_eq!(a.needs, ["b", "c"]);
-    assert_eq!(a.key_need, ["b"]);
-    assert!(a.contains.is_empty());
-}
-
-#[test]
-fn the_shipped_template_is_read() {
-    let graph = parse_graph(include_str!(
-        "../../claude-plugin/skills/papers/templates/graph.yaml"
-    ))
-    .unwrap();
-    assert_eq!(graph.order, ["<tag>", "<foundation_tag>"]);
-    let tag = &graph.tags["<tag>"];
-    assert_eq!(tag.needs, ["<foundation_tag>"]);
-    assert_eq!(tag.key_need, ["<foundation_tag>"]);
-    assert_eq!(tag.contains, ["<foundation_tag>"]);
-}
-
-#[test]
-fn a_graph_it_cannot_be_sure_of_is_refused_with_its_line() {
-    let error = parse_graph("tags:\n  a:\n    needs: b, c\n").unwrap_err();
-    assert!(error.starts_with("line 3:"), "{error}");
-    assert!(
-        parse_graph("tags:\n  a:\n  a:\n")
-            .unwrap_err()
-            .contains("twice")
-    );
-    assert!(parse_graph("title: x\n").is_err());
-    assert!(parse_graph("tags:\n\ta:\n").is_err());
-}
-
 fn row(plan: &str, n: i64, tag: &str, passes: i64, next_on: Option<NaiveDate>) -> Item {
     let day = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
     Item {
@@ -129,11 +53,16 @@ fn attempt(tag: &str, right: bool, cold: bool, slow: bool) -> TagAttempt {
     }
 }
 
+fn scope() -> BTreeSet<String> {
+    ["chain-rule", "power-rule", "algebra"]
+        .map(String::from)
+        .into()
+}
+
 fn readings(items: &[Item], attempts: &[TagAttempt]) -> BTreeMap<String, (Reading, String)> {
-    let graph = parse_graph(GRAPH).unwrap();
     read_plan(&PlanInputs {
         plan: "midterm-1",
-        graph: Some(&graph),
+        scoped: &scope(),
         items,
         attempts,
         imported: &BTreeMap::new(),
@@ -144,46 +73,38 @@ fn readings(items: &[Item], attempts: &[TagAttempt]) -> BTreeMap<String, (Readin
 }
 
 #[test]
-fn with_no_evidence_every_tag_is_untested() {
-    let read = readings(&[], &[]);
-    assert!(
-        read.values().all(|(r, _)| *r == Reading::Untested),
-        "{read:?}"
-    );
+fn with_no_evidence_nothing_is_read() {
+    assert!(readings(&[], &[]).is_empty());
 }
 
 #[test]
-fn a_cold_pass_is_sound_for_the_tag_and_what_it_contains() {
+fn a_cold_pass_is_sound_for_its_own_item_and_passes_nothing_on() {
     let read = readings(&[], &[attempt("chain-rule", true, true, false)]);
     assert_eq!(
         read["chain-rule"],
         (Reading::Sound, "cold in MockA Q2".into())
     );
-    assert_eq!(
-        read["power-rule"],
-        (Reading::Sound, "from chain-rule via contains".into())
-    );
-    assert_eq!(
-        read["algebra"],
-        (
-            Reading::Sound,
-            "inferred from chain-rule via contains".into()
-        )
-    );
+    assert!(!read.contains_key("power-rule"));
+    assert!(!read.contains_key("algebra"));
 }
 
 #[test]
-fn a_slow_or_helped_pass_is_conditional_and_goes_nowhere() {
+fn an_answer_on_a_label_outside_the_scope_and_with_no_row_is_not_read_for_the_plan() {
+    let read = readings(&[], &[attempt("limits", true, true, false)]);
+    assert!(read.is_empty());
+}
+
+#[test]
+fn a_slow_or_helped_pass_is_conditional() {
     let read = readings(&[], &[attempt("chain-rule", true, true, true)]);
     assert_eq!(read["chain-rule"].0, Reading::Conditional);
     assert!(read["chain-rule"].1.contains("slow"));
-    assert_eq!(read["power-rule"].0, Reading::Untested);
     let read = readings(&[], &[attempt("chain-rule", true, false, false)]);
     assert_eq!(read["chain-rule"].0, Reading::Conditional);
 }
 
 #[test]
-fn a_reading_follows_its_gap_row_and_its_key_need() {
+fn a_reading_follows_its_gap_row_and_an_open_row_holds_nothing_else_back() {
     let day = NaiveDate::from_ymd_opt(2026, 11, 12);
     let passed = [attempt("chain-rule", true, true, false)];
     let read = readings(&[row("midterm-1", 1, "power-rule", 0, None)], &passed);
@@ -194,56 +115,36 @@ fn a_reading_follows_its_gap_row_and_its_key_need() {
             "midterm-1#1 open, waiting for its repair".into()
         )
     );
-    assert_eq!(
-        read["chain-rule"],
-        (
-            Reading::Conditional,
-            "needs power-rule, which is open".into()
-        )
-    );
+    assert_eq!(read["chain-rule"].0, Reading::Sound);
     let read = readings(&[row("midterm-1", 1, "power-rule", 1, day)], &passed);
     assert_eq!(
         read["power-rule"],
         (Reading::Conditional, "midterm-1#1 at 1 of 3".into())
     );
-    assert_eq!(read["chain-rule"].0, Reading::Sound);
     let read = readings(&[row("midterm-1", 1, "power-rule", 3, None)], &[]);
     assert_eq!(
         read["power-rule"],
         (Reading::Sound, "midterm-1#1 closed".into())
     );
     let read = readings(&[row("final", 1, "power-rule", 0, None)], &[]);
-    assert_eq!(read["power-rule"].0, Reading::Untested);
+    assert!(!read.contains_key("power-rule"));
 }
 
 #[test]
-fn an_open_tag_in_needs_holds_a_cold_pass_at_conditional() {
-    let read = readings(
-        &[row("midterm-1", 1, "algebra", 0, None)],
-        &[attempt("chain-rule", true, true, false)],
-    );
-    assert_eq!(
-        read["chain-rule"],
-        (Reading::Conditional, "needs algebra, which is open".into())
-    );
-}
-
-#[test]
-fn a_row_on_a_tag_the_graph_lacks_is_still_read() {
+fn a_row_on_any_label_is_read() {
     let read = readings(&[row("midterm-1", 1, "limits", 0, None)], &[]);
     assert_eq!(read["limits"].0, Reading::Open);
 }
 
 #[test]
 fn a_reading_brought_in_from_a_memory_counts_as_evidence() {
-    let graph = parse_graph(GRAPH).unwrap();
     let imported = BTreeMap::from([(
         "algebra".to_owned(),
         ("sound".to_owned(), "sound from Diagnostic Q1".to_owned()),
     )]);
     let read = read_plan(&PlanInputs {
         plan: "midterm-1",
-        graph: Some(&graph),
+        scoped: &scope(),
         items: &[],
         attempts: &[],
         imported: &imported,

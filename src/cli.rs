@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command as ClapCommand, value_parser};
 
-const PUBLIC_COMMANDS: [(&str, &str); 13] = [
+const PUBLIC_COMMANDS: [(&str, &str); 14] = [
     ("init", "Initialize Magnesium in a workspace"),
     (
         "update",
@@ -24,6 +24,10 @@ const PUBLIC_COMMANDS: [(&str, &str); 13] = [
     (
         "progress",
         "Show each skill's passes, the level, what is due, and the days with a marked answer",
+    ),
+    (
+        "map",
+        "Show the course map for a test or goal: every item in scope, what each uses, and what was never asked",
     ),
     (
         "closing",
@@ -102,6 +106,26 @@ pub(crate) fn command() -> ClapCommand {
                         })
                         .action(ArgAction::SetTrue),
                 )
+            } else if name == "map" {
+                subcommand
+                    .arg(
+                        Arg::new("target")
+                            .long("target")
+                            .value_name("TARGET")
+                            .help("The test or goal, by its folder name under Study/"),
+                    )
+                    .arg(
+                        Arg::new("json")
+                            .long("json")
+                            .help("Print the map as JSON, with every item in scope, instead of text")
+                            .action(ArgAction::SetTrue),
+                    )
+                    .arg(
+                        Arg::new("write-pages")
+                            .long("write-pages")
+                            .help("Write map.md and plan.md again from the map before printing")
+                            .action(ArgAction::SetTrue),
+                    )
             } else if name == "lesson" {
                 subcommand
                     .arg(

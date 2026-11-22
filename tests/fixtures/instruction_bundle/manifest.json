@@ -91,6 +91,13 @@
       "stage": "papers-loop"
     },
     {
+      "path": "workflows/planning.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "stage": "planning",
+      "sha256": "e461aa22c663b7ab8abc62b52321f667f02bc2522f7a39089b1f56d5b47097f6"
+    },
+    {
       "path": "adapters/claude.md",
       "role": "adapter",
       "required_for_activation": true,

@@ -11,9 +11,7 @@ use crate::learner::label_key;
 use crate::learner::practice::{Effect, EventKind, Origin, PASSES_TO_CLOSE, local_day, plans};
 use crate::learner::store::LearnerStore;
 use crate::practice::{Item, snapshot};
-use crate::readings::{
-    PlanInputs, TagReading, load_attempts, load_imported, read_graph, read_plan,
-};
+use crate::readings::{PlanInputs, TagReading, load_attempts, load_imported, read_plan};
 use crate::workspace::{Workspace, reject_symlink_components};
 
 const TOP_LEVEL: u64 = 10;
@@ -431,12 +429,12 @@ fn plan_skills(conn: &Connection, record: &Record<'_>, plan: &str) -> Option<Vec
     if !taken && on_disk {
         return None;
     }
-    let graph = read_graph(record.root, plan);
     let attempts = load_attempts(conn).ok()?;
     let imported = load_imported(conn).ok()?;
+    let scoped = crate::course_map::scoped_ids(record.root, plan);
     let readings: Vec<TagReading> = read_plan(&PlanInputs {
         plan,
-        graph: graph.as_ref().ok(),
+        scoped: &scoped,
         items: record.items,
         attempts: &attempts,
         imported: &imported,

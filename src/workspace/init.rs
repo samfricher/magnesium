@@ -704,16 +704,8 @@ const CLAUDE_PLUGIN_FILES: &[(&str, &str)] = &[
         include_str!("../../claude-plugin/skills/papers/SKILL.md"),
     ),
     (
-        "skills/papers/templates/plan.md",
-        include_str!("../../claude-plugin/skills/papers/templates/plan.md"),
-    ),
-    (
         "skills/papers/templates/gap-log.md",
         include_str!("../../claude-plugin/skills/papers/templates/gap-log.md"),
-    ),
-    (
-        "skills/papers/templates/graph.yaml",
-        include_str!("../../claude-plugin/skills/papers/templates/graph.yaml"),
     ),
     (
         "skills/papers/templates/drills.md",
@@ -734,6 +726,10 @@ const CLAUDE_PLUGIN_FILES: &[(&str, &str)] = &[
     (
         "skills/papers/templates/paper.md",
         include_str!("../../claude-plugin/skills/papers/templates/paper.md"),
+    ),
+    (
+        "agents/planner.md",
+        include_str!("../../claude-plugin/agents/planner.md"),
     ),
     (
         "skills/checks/SKILL.md",

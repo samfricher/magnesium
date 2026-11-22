@@ -12,20 +12,6 @@ Raw files are in `raw/`. Plain-text copies are in `text/`.
 
 <!-- State here any evidence that the current instructor reuses a source. Only that evidence moves another instructor's paper to bucket 1. -->
 
-## In-scope question map
+## Questions
 
-| Paper | Q | Topic | In scope | Answer |
-|---|---|---|---|---|
-| <paper> | <Q> | <topic> | <yes, no or optional> | <key file and question, or "below"> |
-
-## Searched and not found
-
-- <source>: searched for <terms> on <YYYY-MM-DD>. <Result.>
-
-## Answers for questions without a key
-
-### <paper>, <Q>
-
-<Worked answer.>
-
-Marking: <marks per part, and the half-credit rules>.
+Each question is an item on the course map, traced to the listed exercise or slide it came from, with what was changed. `plan.md` lists the traces under Earlier tests.

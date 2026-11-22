@@ -1,27 +1,53 @@
 # Papers
 
-Each turn, first start or resume the Magnesium session for the target (a slug like `midterm-1`) before reading materials, since native capture expires within minutes. This stage builds `Study/<target>/` and serves the verbs new mock and rebuild; stage papers_loop serves every other verb. Only an explicit rebuild starts over. If a plan exists without `graph.yaml`, first write the graph as Course graph says, from the plan, the gap log and the keys.
+Each turn, first start or resume the Magnesium session for the target (a slug like `midterm-1`) before reading materials, since native capture expires within minutes. Stage papers_loop serves marking, repair and redos.
 
-## Build
+## The plan is built outside the lesson
 
-An assessment needs name, date, length, aids, weight, coverage, exclusions and the instructor's words on what questions draw from; a topic needs scope and coverage. Note materials present and missing, proficiency in the learner's words, and hours and commitments with weights (optional for a topic). Read every in-scope material, photos included, since tutorial and board work often reveals reuse, then ask only for what is missing, each with a skippable default (answers return as photos or PDF). Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question. Write the answer under a Sessions heading in `plan.md`. Each session is one line, "If it is <days> at <HH:MM>, then I <what> <where>.", with a 24-hour start time. Leave out "<days> at" for every day. Then add one backup line that starts "If I miss". Also prepare current memories for this workspace and read the ones about skills this course uses.
+The planning run builds the course map and the plan, in a run of its own, so this conversation never reads the folder file by file. Start it with the subagent tool (Agent, called Task in some hosts), subagent_type `magnesium:planner`, and a brief that names:
 
-For a university course, search in order: the instructor's past assessments; the course under other instructors; the institution's past-exam collection (offer once to use the learner's login); other universities on the same slides or textbook. The order is a nudge, but do search every source the folder and web allow before writing papers, since reuse evidence is often there.
+- the target slug;
+- the learner's own words about the test or goal (what, when, how long, aids);
+- the hours they have, and when and where they practise;
+- anything they have already agreed or refused.
 
-Rank the bank by fidelity: bucket 1 is the instructor's past tests and exams; bucket 2, the instructor's material with answers (assignments with feedback, tutorials with solutions, quizzes, lecture exercises, the homework list) and papers by the course's other instructors or other universities; bucket 3, generated papers modelled on both. Promote another instructor's paper to bucket 1 only on stated evidence this instructor reuses it. Schedule the best predictor late and cold; a mixed or strong learner can meet it on the Diagnostic if a varied version follows, well spaced.
+Before you start it, ask only for what the learner's message and the folder do not show, each with a default they can skip. Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question. Write the answer with course_map write facts sessions. Each session is one line, "If it is <days> at <HH:MM>, then I <what> <where>.", with a 24-hour start time. Leave out "<days> at" for every day. Then add one backup line that starts "If I miss".
 
-Question types are easy (recall, one step), medium (the course's usual multi-step form), hard (an unfamiliar form or a full proof), connection and transfer (two topics combined, a new setting, or a method chosen without a cue) and stretch (beyond scope, labelled, scored apart). Read them in course context: in a proofs course, easy is a short proof. Three question shapes resist pattern matching. Give the result, ask the reason: state a true result and ask why it holds, such as "Var(3X) is 9 Var(X), not 3 Var(X). Why?" Two look-alikes, one difference: set side by side two problems that look the same but need different methods, and ask which method each needs and what feature decides it. Break one assumption: drop one condition of a method and ask which step fails, with a counterexample. Every mock paper has at least one question of each shape. A given result earns full marks only for a correct reason.
+When no subagent tool is available, load stage planning yourself and follow it here.
 
-Rate the learner overall from their words. Weak starts at easy and medium, to check basic moves; mixed at medium with hard items per topic, to split sound topics from weak; strong at hard and connection, with stretch. The Diagnostic covers every in-scope topic and sets the ramp. Starting shapes after it: weak takes Paper1-Easy (scaffolded), Paper2-Medium (assignment level), the instructor's material cold, MockA, MockB; mixed skips Paper1-Easy; strong takes MockA, Stretch1, MockB, all hard. A paper costs about three times its length with marking and repair, so hours set the count you propose, at least the Diagnostic and one mock.
+While it runs, tell the learner in one line that the plan is being built from their files.
 
-## Course graph
+When it returns:
 
-After the plan skeleton, write `Study/<target>/graph.yaml` from its template, using the syllabus, the lecture list, the tutorials, the past papers and those memories. Its tags are the gap tags, 20 to 40 for a course, and it is the only list of them. Add foundation tags for skills from prerequisite courses that the questions run through. A memory about a skill this course uses becomes a tag. Fill every field the template names for every tag. Walk each needs chain before you write, and break a cycle by removing the weaker edge. The graph holds course structure only, never learner state. If the learner corrects it, keep the correction. After you write it, read it again and check that it parses as YAML, each key_need is also in needs, needs has no cycle, each course tag has covers, and each tag named in an edge exists. Fix the file before you write the Diagnostic.
+1. Ask the questions its report lists: each cut to agree, and each assumed fact.
+2. Record each answer with course_map write: a cut agreed (scope state confirm), a cut refused (scope state in), and new facts.
+3. Say the plan's shape in a few lines: where it starts, and how much it covers.
+4. Begin block 1.
 
-Then build the Diagnostic from the graph. For each tag, choose the simplest question that would convince the instructor the tag is sound and that runs through its needs. Prefer questions whose contains cover several untested tags, so the paper has fewer questions than tags; inference at marking places the rest. The level follows the rating. Every course tag appears in some question's `Tags:` line, as the primary tag or as a contained tag. Ask at least one item per foundation tag when the rating is weak or the syllabus names prerequisite courses; otherwise reach foundations through contains. A memory that describes a weakness gets an item whatever the rating.
+The runtime writes `Study/<target>/plan.md` and `map.md` from the map; never edit them. Start the planning run again when a sitting ends, when a block runs well past its minutes, or when the learner asks to re-plan.
 
-## Plan, papers and keys
+## A practice paper samples the map
 
-The plan has facts, the instructor's words, research (misses included, with a personal-use line for downloads), the ranked bank with a provenance table, the method, ordered blocks, sessions, must-know-cold items, anchors, an assessment-day checklist, TA or instructor questions, the verbs and Changes. At build, run a memory search with all_of ["anchor"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each "anchor:" line that names a skill this course uses. If there are none, write "none yet", and marking the Diagnostic can add the first. Proficiency in the learner's words is a self-report, not an anchor. Give each block a purpose, a stop line ("90 min, stop at 100") and what to have open. Plan in hours with a running total, a never-drop set and a drop order, and leave room for three cold redo days per gap, at least 1, 3 and 7 days apart and before the assessment, as papers-loop spaces them.
+A practice paper or mock is a set of tasks over in-scope items, in the form the instructor's past papers use. Build one when a block of the plan names it, or when the learner asks for a new mock.
 
-Use the format that renders best (LaTeX for math, Markdown with runnable keys for code, or HTML) and any host templates. Each paper gets a separate key with a mark scheme and half-credit rules, checked where possible by an executable method the plan names (compile, tests, numeric check). When you make a figure or page as a file, render it to an image with what the machine has, such as a headless browser screenshot or an SVG-to-PNG converter, then look at the image, fix what is wrong and look again. Show it only after you have looked at the final version. Check that nothing overlaps or is cut off, every label is readable, the picture shows what its question or key says, and nothing in it is unlabelled decoration. When a browser is available, open a page with scripts once in a headless browser to confirm it runs without errors. If the machine cannot render the file, say so and use text or a Mermaid diagram instead. Never give the learner a paper or key with a line cut off at the edge of the page. When the build names such a line, rewrite it so it can break, and build again. Each paper tells the learner to write `?` instead of looking anything up, and S (sure), U (unsure) or G (guess) after each answer. Each key question, not each part, has one `Tags:` line: the primary tag first, then the other tags it fully exercises. Write the plan skeleton, the graph and the Diagnostic first so sitting can start, then every other paper the blocks name, with its key, in the same build; re-planning revises them later. A new mock follows the tag readings Magnesium states. A build resumes from what exists and ends with what you built, where to start and the provenance table.
+1. course_map read with the target states which items were never asked and which have no blank-page pass; reach counts, for each candidate, the items it uses.
+2. Choose the questions from those counts, in this order: the instructor's own exercises and past questions, posed whole, as the source poses them or in a new setting (the source's form with one thing changed, as the traces on the map show); then a problem you write, for an item no listed one asks.
+3. Never rank by marks on a paper you wrote.
+
+Three question shapes resist pattern matching. Give the result, ask the reason: state a true result and ask why it holds, such as "Var(3X) is 9 Var(X), not 3 Var(X). Why?" Two look-alikes, one difference: set side by side two problems that look the same but need different methods, and ask which method each needs and what feature decides it. Break one assumption: drop one condition of a method and ask which step fails, with a counterexample. Every mock paper has at least one question of each shape. A given result earns full marks only for a correct reason. A stretch question goes beyond scope, is labelled, and is scored apart.
+
+## Format and keys
+
+Use the format that renders best: LaTeX for math, Markdown with runnable keys for code, or HTML.
+
+Each paper gets a separate key:
+
+- a mark scheme and half-credit rules;
+- one line per question, not per part, such as `Items: lec05.4, w5-list.6.63`: the course map items it uses, the item it comes from first;
+- a check of the key where possible, by an executable method the key names (compile, tests, numeric check).
+
+Write each paper you add to the map as a task item (kind task, ref its name and question, such as mocka.q2) with its use links, and name it in its block.
+
+When you make a figure or page as a file, render it to an image with what the machine has, such as a headless browser screenshot or an SVG-to-PNG converter, then look at the image, fix what is wrong and look again. Show it only after you have looked at the final version. Check that nothing overlaps or is cut off, every label is readable, the picture shows what its question or key says, and nothing in it is unlabelled decoration. When a browser is available, open a page with scripts once in a headless browser to confirm it runs without errors. If the machine cannot render the file, say so and use text or a Mermaid diagram instead. Never give the learner a paper or key with a line cut off at the edge of the page. When the build names such a line, rewrite it so it can break, and build again.
+
+Each paper tells the learner to write `?` instead of looking anything up, and S (sure), U (unsure) or G (guess) after each answer.

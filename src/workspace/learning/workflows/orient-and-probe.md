@@ -1,6 +1,6 @@
 # Orient and probe
 
-Translate the learner's goal into a useful next operation. Inspect named sources before teaching from them. Look for a course graph at `Study/*/graph.yaml`; if one has a tag that covers the topic the learner names, read that tag's needs and key_need, and its memory by the topics label, before you choose where to start. Prepare current context: use all summaries when the directory fits; otherwise search alternative explanations and useful strengths, plus a query with all_of ["anchor"] and the topic in any_of for anchors, then read relevant descriptions/support. Broaden, use literal wording, or browse after an unhelpful query. Stop when enough context supports the next move.
+Translate the learner's goal into a useful next operation. Inspect named sources before teaching from them. When the folder has a course map, course_map read with the target, or with the item that matches the learner's topic, states what it uses and what was never asked, before you choose where to start. Prepare current context: use all summaries when the directory fits; otherwise search alternative explanations and useful strengths, plus a query with all_of ["anchor"] and the topic in any_of for anchors, then read relevant descriptions/support. Broaden, use literal wording, or browse after an unhelpful query. Stop when enough context supports the next move.
 
 Preserve demonstrated reasoning and known help. Missing history is not inability. Identify the smallest uncertainty that changes teaching.
 

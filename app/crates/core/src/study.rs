@@ -800,14 +800,7 @@ fn record_board(
             if plan["from"].as_str() != Some("record") {
                 return None;
             }
-            let graph =
-                fs::read_to_string(root.join("Study").join(&exam.target).join("graph.yaml"))
-                    .unwrap_or_default();
-            covers = gaplog::read_tags(&graph)
-                .into_iter()
-                .map(|(tag, covers)| (tag.trim().to_ascii_lowercase(), covers))
-                .filter(|(_, covers)| !covers.is_empty())
-                .collect();
+            covers = crate::runtime::map_titles(root, &exam.target);
             board.scores = gap_log(root, &exam.target).scores;
             board.place(skill_rows(&plan["skills"], &covers, today));
             &plan["progress"]
@@ -853,28 +846,6 @@ fn board(
             log.gaps
                 .iter()
                 .map(|gap| (place(gap.closed), gap_row(gap, today))),
-        );
-        let graph = fs::read_to_string(root.join("Study").join(&exam.target).join("graph.yaml"))
-            .unwrap_or_default();
-        let plain = |t: &str| t.trim().to_ascii_lowercase();
-        rows.extend(
-            gaplog::read_tags(&graph)
-                .into_iter()
-                .filter(|(tag, _)| log.gaps.iter().all(|gap| plain(&gap.tag) != plain(tag)))
-                .map(|(tag, covers)| {
-                    let row = Row {
-                        dots: [0; 3],
-                        name: tag,
-                        what: covers,
-                        note: "–".into(),
-                        due: false,
-                        next_day: None,
-                        needs_repair: false,
-                        last_answer: None,
-                        order: None,
-                    };
-                    (Place::Untested, row)
-                }),
         );
     }
     match record {

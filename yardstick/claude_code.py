@@ -57,6 +57,7 @@ class Conversation:
         self.session_id: str | None = None
         self.init: dict | None = None
         self.counter = 0
+        self.background: set[str] = set()
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_err, daemon=True).start()
         self._write({"type": "control_request", "request_id": self._id(), "request": {"subtype": "initialize", "hooks": None}})
@@ -97,10 +98,19 @@ class Conversation:
         self._write({"type": "control_response", "response": {"subtype": "success", "request_id": rid, "response": response}})
 
     def say(self, text: str, timeout: float = 1200) -> Reply:
+        self._write({"type": "user", "message": {"role": "user", "content": text}, "parent_tool_use_id": None, "session_id": "default"})
+        return self._collect(timeout)
+
+    def wait_background(self, timeout: float = 3600, quiet: float = 180) -> Reply | None:
+        if not self.background:
+            return None
+        return self._collect(timeout, quiet_after_background=quiet)
+
+    def _collect(self, timeout: float, quiet_after_background: float | None = None) -> Reply:
         reply = Reply()
         started = time.monotonic()
-        self._write({"type": "user", "message": {"role": "user", "content": text}, "parent_tool_use_id": None, "session_id": "default"})
         seen: set[str] = set()
+        idle_since = None
         while True:
             left = timeout - (time.monotonic() - started)
             if left <= 0:
@@ -112,17 +122,24 @@ class Conversation:
                 if self.proc.poll() is not None:
                     reply.error = "Claude Code exited: " + "".join(self.stderr[-20:])[-1500:]
                     break
+                if quiet_after_background is not None and not self.background:
+                    idle_since = idle_since or time.monotonic()
+                    if time.monotonic() - idle_since > quiet_after_background:
+                        break
                 continue
+            idle_since = None
             if value is None:
                 reply.error = "Claude Code exited: " + "".join(self.stderr[-20:])[-1500:]
                 break
             kind = value.get("type")
+            if kind == "system" and value.get("subtype") == "background_tasks_changed":
+                self.background = {str(t.get("task_id")) for t in value.get("tasks") or []}
             if kind == "system" and value.get("subtype") == "init":
                 self.init = value
                 self.session_id = value.get("session_id") or self.session_id
             elif kind == "control_request":
                 self._answer(value)
-            elif kind == "assistant":
+            elif kind == "assistant" and not value.get("parent_tool_use_id"):
                 for block in (value.get("message") or {}).get("content") or []:
                     if block.get("type") == "tool_use" and block.get("id") not in seen:
                         seen.add(block.get("id"))
@@ -137,10 +154,14 @@ class Conversation:
                             part.get("text", "") for part in content or [] if isinstance(part, dict))
                         reply.results.append({"id": block.get("tool_use_id"), "chars": len(body), "error": bool(block.get("is_error"))})
             elif kind == "result":
+                if quiet_after_background is not None and self.background:
+                    add_usage(reply.usage, value.get("usage") or {})
+                    reply.cost_usd += float(value.get("total_cost_usd") or 0)
+                    continue
                 reply.session_id = value.get("session_id")
                 self.session_id = reply.session_id or self.session_id
                 add_usage(reply.usage, value.get("usage") or {})
-                reply.cost_usd = float(value.get("total_cost_usd") or 0)
+                reply.cost_usd += float(value.get("total_cost_usd") or 0)
                 if value.get("is_error"):
                     reply.error = str(value.get("result") or value.get("subtype"))
                 if signed_out(str(value.get("result") or "")) or signed_out(reply.text):

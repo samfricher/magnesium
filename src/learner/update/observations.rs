@@ -321,7 +321,7 @@ fn check_attempt(path: &str, attempt: &Attempt, host: &HostContext) -> Result<()
     if names_a_problem(label) {
         return Err(field_error(
             &format!("{path}.label"),
-            "A label names the skill or misunderstanding in a few words, such as \"sign of b in the quadratic formula\", never the problem: no equation and no question number. Put the problem in question. One check per label, so reuse an open check's label exactly when it is the same skill",
+            "A label names the skill or misunderstanding in a few words, such as \"sign of b in the quadratic formula\", or is a course map item id, such as w1-list.6.63, never the problem itself: no equation and no question number. Put the problem in question. One check per label, so reuse an open check's label exactly when it is the same skill",
             host,
         ));
     }
@@ -578,33 +578,30 @@ fn insert_attempt(
 }
 
 pub(crate) fn plan_tag_named(tx: &Connection, label: &str) -> Option<String> {
-    let loose = |text: &str| -> String {
-        text.chars()
-            .filter(|c| c.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect()
-    };
-    let wanted = loose(label);
-    if wanted.is_empty() {
+    let wanted = label.trim().to_lowercase();
+    if !looks_like_item_id(&wanted) || wanted == label {
         return None;
     }
     let root = crate::learner::practice::study_root(tx)?;
-    let mut found: Option<String> = None;
-    for plan in crate::learner::practice::plans(&root) {
-        let Ok(graph) = crate::readings::read_graph(&root, &plan) else {
-            continue;
-        };
-        for tag in graph.tags.keys().filter(|tag| loose(tag) == wanted) {
-            match &found {
-                Some(other) if other != tag => return None,
-                _ => found = Some(tag.clone()),
-            }
-        }
-    }
-    found.filter(|tag| tag != label)
+    crate::course_map::item_known(&root, &wanted).then_some(wanted)
+}
+
+fn looks_like_item_id(label: &str) -> bool {
+    let label = label.trim();
+    !label.is_empty()
+        && label.len() <= 80
+        && label.contains('.')
+        && !label.starts_with('.')
+        && !label.ends_with('.')
+        && label
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 fn names_a_problem(label: &str) -> bool {
+    if looks_like_item_id(label) && label.chars().any(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
     let words = label
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
