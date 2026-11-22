@@ -103,7 +103,7 @@ pub(crate) fn check(
             if reason == "too_large" {
                 "It is too large for search."
             } else {
-                "Search does not read this kind of file. It reads PDFs, text, Markdown, web pages and code."
+                "Search does not read this kind of file. It reads PDFs, text, Markdown, slide sources, LaTeX, notebooks, web pages and code."
             },
         );
     };

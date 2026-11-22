@@ -379,7 +379,7 @@ fn catch_up_indexes_a_pdf_that_outlasts_a_search() {
         "pending"
     );
 
-    catch_up(&fixture.root, &slow, &mut Skipped::new()).expect("catch up after the search");
+    catch_up(&fixture.root, &slow, &mut Skipped::new(), false).expect("catch up after the search");
     assert_eq!(
         source_status(&fixture.index(), "slides/lecture.pdf"),
         "indexed"
@@ -417,7 +417,7 @@ fn catch_up_makes_files_searchable_before_discovery_finishes() {
         }))
     };
     let _scope = enter_request_cancellation(&watch);
-    catch_up(&fixture.root, &watch, &mut Skipped::new()).expect("catch up");
+    catch_up(&fixture.root, &watch, &mut Skipped::new(), false).expect("catch up");
     assert_eq!(
         *scanning_at_first_publication.lock().unwrap(),
         Some(true),
@@ -446,6 +446,7 @@ fn catch_up_continues_past_files_it_cannot_finish() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "indexed");
@@ -475,6 +476,7 @@ fn catch_up_reaches_a_file_after_a_full_window_of_newly_excluded_files() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "lesson.md"), "indexed");
@@ -504,6 +506,7 @@ fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
             &fixture.root,
             &OperationCancellation::none(),
             &mut skipped,
+            false,
             times_out,
         )
         .unwrap_or_else(|error| panic!("run {run}: {error}"));
@@ -531,7 +534,13 @@ fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
         budget(8),
     )
     .expect("a search's recheck records the change");
-    catch_up(&fixture.root, &OperationCancellation::none(), &mut skipped).expect("catch up");
+    catch_up(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut skipped,
+        false,
+    )
+    .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "a-slow.pdf"), "indexed");
 }
 
@@ -563,6 +572,7 @@ fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
             &fixture.root,
             &OperationCancellation::none(),
             &mut Skipped::new(),
+            false,
         )
         .expect("catch up");
         for index in 0..6 {
@@ -599,6 +609,7 @@ fn catch_up_leaves_a_failed_source_and_indexes_the_rest() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "b-lesson.md"), "indexed");
@@ -614,7 +625,13 @@ fn a_search_succeeds_when_catch_up_publishes_its_fallback_source_first() {
     let root = fixture.root.clone();
     let background = std::thread::spawn(move || {
         ready_rx.recv().unwrap();
-        catch_up(&root, &OperationCancellation::none(), &mut Skipped::new()).unwrap();
+        catch_up(
+            &root,
+            &OperationCancellation::none(),
+            &mut Skipped::new(),
+            false,
+        )
+        .unwrap();
         published_tx.send(()).unwrap();
     });
     let published_rx = std::sync::Mutex::new(published_rx);

@@ -256,6 +256,80 @@ pub(crate) fn stale_candidates(
 }
 
 pub(crate) const SOURCES_EXCERPT_CHAR_CAP: usize = 65_536;
+pub(crate) const MAX_LISTED_SECTIONS: usize = 2_000;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SectionFact {
+    pub(crate) heading: String,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+}
+
+pub(crate) struct FileSections {
+    pub(crate) sections: Vec<SectionFact>,
+    pub(crate) untitled_anchors: usize,
+    pub(crate) truncated: bool,
+}
+
+pub(crate) fn read_sections(
+    index_path: &Path,
+    row: &ManifestRow,
+) -> Result<FileSections, ManifestError> {
+    let connection = open_index(index_path)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT anchor_start, anchor_end, structural_path, chunk_kind FROM source_candidates
+             WHERE manifest_id = ?1 AND content_sha256 = ?2 AND status = 'current'
+             ORDER BY anchor_start, anchor_end, candidate_id",
+        )
+        .map_err(|error| sqlite(index_path, "read file sections", error))?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![
+                row.manifest_id,
+                row.content_sha256.as_deref().unwrap_or_default()
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|error| sqlite(index_path, "read file sections", error))?;
+    let mut listed = FileSections {
+        sections: Vec::new(),
+        untitled_anchors: 0,
+        truncated: false,
+    };
+    for found in rows {
+        let (start, end, path, kind) =
+            found.map_err(|error| sqlite(index_path, "read file sections", error))?;
+        let Some(heading) = path.filter(|path| *path != format!("page {start}")) else {
+            listed.untitled_anchors += 1;
+            continue;
+        };
+        let full = listed.sections.len() == MAX_LISTED_SECTIONS;
+        match listed.sections.last_mut() {
+            Some(last)
+                if last.heading == heading
+                    && kind != "heading"
+                    && start <= last.end.saturating_add(1) =>
+            {
+                last.end = last.end.max(end);
+            }
+            _ if full => listed.truncated = true,
+            _ => listed.sections.push(SectionFact {
+                heading,
+                start,
+                end,
+            }),
+        }
+    }
+    Ok(listed)
+}
 
 pub(crate) struct ManifestRow {
     pub(crate) manifest_id: i64,

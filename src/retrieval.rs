@@ -27,13 +27,69 @@ pub(crate) use manifest::schema::{
 };
 pub(crate) use manifest::source::{OpenSource, open_workspace_source};
 pub(crate) use readable::run as run_searchable;
+
+pub(crate) const BACKGROUND_INDEX_OFF: &str = "MAGNESIUM_NO_BACKGROUND_INDEX";
+const BACKGROUND_INDEX_LIMIT: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+pub(crate) fn run_index() -> std::process::ExitCode {
+    let started = std::time::Instant::now();
+    let result = std::env::current_dir()
+        .map_err(|error| error.to_string())
+        .and_then(|cwd| {
+            crate::workspace::Workspace::discover(&cwd)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "this folder has no Magnesium workspace".to_owned())
+        })
+        .and_then(|workspace| {
+            catch_up::index_folder(workspace.root(), BACKGROUND_INDEX_LIMIT)
+                .map_err(|error| error.to_string())
+        });
+    match result {
+        Ok(outcome) => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "outcome": outcome.as_str(),
+                    "seconds": started.elapsed().as_secs_f64(),
+                })
+            );
+            std::process::ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("magnesium: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+pub(crate) fn start_background_index(root: &Path) -> &'static str {
+    if std::env::var_os(BACKGROUND_INDEX_OFF).is_some() {
+        return "off";
+    }
+    let Ok(executable) = std::env::current_exe() else {
+        return "not_started";
+    };
+    let mut command = std::process::Command::new(executable);
+    command
+        .args(["_internal", "index"])
+        .current_dir(root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    match command.spawn() {
+        Ok(_) => "started",
+        Err(_) => "not_started",
+    }
+}
 pub(crate) use search::{MAX_RESULTS as MAX_SEARCH_RESULTS, SourceSearchRequest};
 
 #[cfg(test)]
 pub(crate) use manifest::status::SpanFact;
 pub(crate) use manifest::status::{
     CandidateFacts, FactsInterest, Interval, ManifestRow, PreparationDisposition,
-    SOURCES_EXCERPT_CHAR_CAP,
+    SOURCES_EXCERPT_CHAR_CAP, read_sections,
 };
 #[cfg(test)]
 pub(crate) mod manifest_test_facts {
@@ -96,6 +152,7 @@ pub(crate) const EXPORT_BOUNDARY_MARKER: &str = ".magnesium-export";
 const EXCLUDED_DIRECTORIES: &[&str] = &[
     ".git",
     crate::workspace::CONTROL_DIR,
+    ".learn",
     "node_modules",
     "vendor",
     "target",
@@ -117,9 +174,9 @@ const EXCLUDED_DIRECTORIES: &[&str] = &[
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "adoc", "bash", "c", "cc", "cpp", "css", "csv", "fish", "go", "h", "hpp", "htm", "html",
-    "java", "js", "json", "jsx", "kt", "kts", "less", "md", "mdx", "mjs", "mts", "php", "ps1",
-    "py", "rb", "rs", "rst", "scss", "sh", "sql", "swift", "toml", "ts", "tsx", "txt", "lock",
-    "xml", "yaml", "yml", "zsh", "cjs", "cts",
+    "ipynb", "java", "js", "json", "jsx", "kt", "kts", "less", "md", "mdx", "mjs", "mts", "php",
+    "ps1", "py", "qmd", "rb", "rmd", "rs", "rst", "scss", "sh", "sql", "swift", "tex", "toml",
+    "ts", "tsx", "txt", "lock", "xml", "yaml", "yml", "zsh", "cjs", "cts",
 ];
 
 const SUPPORTED_EXTENSIONLESS_NAMES: &[&str] =

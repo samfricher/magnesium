@@ -22,8 +22,14 @@ const PDF_EXIT_TICK: Duration = Duration::from_millis(1);
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum PdfWorkerReply {
-    Pages { pages: Vec<String> },
-    ContentFailure { diagnostic: String },
+    Pages {
+        pages: Vec<String>,
+        #[serde(default)]
+        layout: super::pdf_layout::PdfLayout,
+    },
+    ContentFailure {
+        diagnostic: String,
+    },
 }
 
 pub(crate) fn run_pdf_extractor() -> ExitCode {
@@ -58,7 +64,7 @@ pub(crate) fn run_pdf_extractor() -> ExitCode {
 pub(crate) fn child_extract_pdf() -> Result<PdfWorkerReply, ManifestError> {
     let bytes = read_bounded(io::stdin().lock(), MAX_PDF_SOURCE_BYTES)
         .map_err(|error| ManifestError::Pdf(format!("PDF input is invalid: {error}")))?;
-    match std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(&bytes)) {
+    match std::panic::catch_unwind(|| super::pdf_layout::read_pdf(&bytes)) {
         Err(_) => Err(ManifestError::Pdf(
             "PDF parser panicked on input".to_owned(),
         )),
@@ -68,7 +74,9 @@ pub(crate) fn child_extract_pdf() -> Result<PdfWorkerReply, ManifestError> {
                 .take(240)
                 .collect(),
         }),
-        Ok(Ok(pages)) => validate_pdf_pages(pages).map(|pages| PdfWorkerReply::Pages { pages }),
+        Ok(Ok((pages, layout))) => {
+            validate_pdf_pages(pages).map(|pages| PdfWorkerReply::Pages { pages, layout })
+        }
     }
 }
 
@@ -180,14 +188,21 @@ pub(crate) fn extract_pdf_from_file(
     file: std::fs::File,
     cancellation: Option<&crate::retrieval::OperationCancellation>,
 ) -> Result<Vec<String>, ManifestError> {
+    extract_pdf_with_layout(file, cancellation).map(|(pages, _)| pages)
+}
+
+pub(crate) fn extract_pdf_with_layout(
+    file: std::fs::File,
+    cancellation: Option<&crate::retrieval::OperationCancellation>,
+) -> Result<(Vec<String>, super::pdf_layout::PdfLayout), ManifestError> {
     let mut command = pdf_command()?;
     command.stdin(Stdio::from(file));
-    match cancellation {
-        Some(cancellation) => {
-            run_pdf_process_with_cancellation(command, None, PDF_DEADLINE, cancellation)
-        }
-        None => run_pdf_process(command, None, PDF_DEADLINE),
-    }
+    run_pdf_process_with_layout(
+        command,
+        None,
+        PDF_DEADLINE,
+        cancellation.unwrap_or(&crate::retrieval::OperationCancellation::none()),
+    )
 }
 
 #[cfg(test)]
@@ -204,6 +219,7 @@ pub(crate) fn run_pdf_command(
     run_pdf_process(command, Some(bytes), deadline)
 }
 
+#[cfg(test)]
 pub(crate) fn run_pdf_process(
     command: Command,
     bytes_to_write: Option<&[u8]>,
@@ -217,12 +233,23 @@ pub(crate) fn run_pdf_process(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn run_pdf_process_with_cancellation(
-    mut command: Command,
+    command: Command,
     bytes_to_write: Option<&[u8]>,
     deadline: Duration,
     cancellation: &crate::retrieval::OperationCancellation,
 ) -> Result<Vec<String>, ManifestError> {
+    run_pdf_process_with_layout(command, bytes_to_write, deadline, cancellation)
+        .map(|(pages, _)| pages)
+}
+
+fn run_pdf_process_with_layout(
+    mut command: Command,
+    bytes_to_write: Option<&[u8]>,
+    deadline: Duration,
+    cancellation: &crate::retrieval::OperationCancellation,
+) -> Result<(Vec<String>, super::pdf_layout::PdfLayout), ManifestError> {
     if bytes_to_write.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -321,14 +348,23 @@ pub(crate) fn run_pdf_process_with_cancellation(
         )));
     }
     let payload = framed_pdf_payload(&output)?;
-    decode_pdf_reply(payload)
+    decode_pdf_reply_with_layout(payload)
 }
 
+#[cfg(test)]
 fn decode_pdf_reply(payload: &[u8]) -> Result<Vec<String>, ManifestError> {
+    decode_pdf_reply_with_layout(payload).map(|(pages, _)| pages)
+}
+
+fn decode_pdf_reply_with_layout(
+    payload: &[u8],
+) -> Result<(Vec<String>, super::pdf_layout::PdfLayout), ManifestError> {
     let reply: PdfWorkerReply = serde_json::from_slice(payload)
         .map_err(|error| ManifestError::Pdf(format!("PDF output is invalid JSON: {error}")))?;
     match reply {
-        PdfWorkerReply::Pages { pages } => validate_pdf_pages(pages),
+        PdfWorkerReply::Pages { pages, layout } => {
+            validate_pdf_pages(pages).map(|pages| (pages, layout))
+        }
         PdfWorkerReply::ContentFailure { diagnostic }
             if diagnostic.len() <= MAX_PDF_ERROR_BYTES && !diagnostic.is_empty() =>
         {

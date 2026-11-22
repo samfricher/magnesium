@@ -5,7 +5,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
-use super::pdf::{extract_pdf_from_file, read_bounded_with_cancellation};
+use super::pdf::{extract_pdf_with_layout, read_bounded_with_cancellation};
+use super::pdf_layout::{PdfLayout, page_titles};
 use super::publication::{PreparedOutcome, prepare_extraction, publish_extraction};
 use super::schema::open_index_for_write;
 use super::source::{OpenSource, open_workspace_source};
@@ -299,7 +300,7 @@ fn prepare_source_content(
                     cancellation.check()?;
                 }
                 pages
-                    .and_then(native_pages_to_drafts)
+                    .and_then(|pages| native_pages_to_drafts(pages, None))
                     .map(|outcome| (outcome, None))
             } else {
                 use std::io::{Seek, SeekFrom, Write};
@@ -359,18 +360,19 @@ fn prepare_source_content(
                 snapshot_file
                     .seek(SeekFrom::Start(0))
                     .map_err(|source| io_error("rewind pdf snapshot", &snapshot_path, source))?;
-                let native = extract_pdf_from_file(snapshot_file, cancellation);
+                let native = extract_pdf_with_layout(snapshot_file, cancellation);
                 let worker = super::convert::worker_config_from_env();
                 match try_worker_for_blank_pdf(
                     source,
-                    &native,
+                    native.as_ref().ok().map(|(pages, _)| pages.as_slice()),
                     &snapshot_path,
                     worker.as_ref(),
                     cancellation,
                 )? {
                     Some((outcome, provenance)) => Ok((outcome, provenance)),
                     None => match native {
-                        Ok(pages) => native_pages_to_drafts(pages).map(|outcome| (outcome, None)),
+                        Ok((pages, layout)) => native_pages_to_drafts(pages, Some(&layout))
+                            .map(|outcome| (outcome, None)),
                         Err(error) => Err(error),
                     },
                 }
@@ -390,20 +392,24 @@ pub(super) enum PdfOutcome {
     Drafts(Vec<ChunkDraft>),
 }
 
-fn native_pages_to_drafts(pages: Vec<String>) -> Result<PdfOutcome, ManifestError> {
+fn native_pages_to_drafts(
+    pages: Vec<String>,
+    layout: Option<&PdfLayout>,
+) -> Result<PdfOutcome, ManifestError> {
     if let Some(sensitivity) = pages
         .iter()
         .find_map(|page| sensitive_content(page.as_bytes()))
     {
         return Ok(PdfOutcome::Sensitive(sensitivity));
     }
+    let titles = layout.map_or_else(Vec::new, |layout| page_titles(layout, pages.len()));
     Ok(PdfOutcome::Drafts(
         pages
             .into_iter()
             .enumerate()
             .map(|(index, text)| {
                 let page = u32::try_from(index + 1).expect("PDF page limit fits u32");
-                page_chunk(page, text)
+                page_chunk(page, text, titles.get(index).cloned().flatten())
             })
             .collect(),
     ))
@@ -411,12 +417,12 @@ fn native_pages_to_drafts(pages: Vec<String>) -> Result<PdfOutcome, ManifestErro
 
 pub(super) fn try_worker_for_blank_pdf(
     source: &CurrentSource,
-    native: &Result<Vec<String>, ManifestError>,
+    native: Option<&[String]>,
     snapshot_path: &Path,
     worker: Option<&super::convert::WorkerConfig>,
     cancellation: Option<&crate::retrieval::OperationCancellation>,
 ) -> Result<Option<(PdfOutcome, Option<super::convert::ConverterProvenance>)>, ManifestError> {
-    let Ok(pages) = native else {
+    let Some(pages) = native else {
         return Ok(None);
     };
     if pages.iter().any(|page| !page.trim().is_empty()) {
@@ -460,7 +466,7 @@ pub(super) fn try_worker_for_blank_pdf(
             extraction
                 .blocks
                 .into_iter()
-                .map(|block| page_chunk(block.anchor_start, block.text))
+                .map(|block| page_chunk(block.anchor_start, block.text, None))
                 .collect(),
         ),
         Some(provenance),

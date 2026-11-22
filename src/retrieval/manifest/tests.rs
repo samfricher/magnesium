@@ -1590,10 +1590,10 @@ fn blank_pdf_uses_a_configured_worker_and_maps_anchors() {
     let body = ConversionWorker::response_for(&source.content_sha256, &["First", "Second"]);
     let worker = ConversionWorker::new(&ConversionWorker::framed(&body), "success");
     let connection = Connection::open(&index).expect("open source index");
-    let native = Ok(vec!["".to_owned(), "  ".to_owned()]);
+    let native = vec!["".to_owned(), "  ".to_owned()];
     let drafts = try_worker_for_blank_pdf(
         &source,
-        &native,
+        Some(&native),
         &fixture.root.join("blank.pdf"),
         Some(&worker.config()),
         None,
@@ -1625,10 +1625,10 @@ fn corrupt_worker_output_preserves_the_native_result() {
     reconcile_manifest(&fixture.root, &index).expect("reconcile blank PDF");
     let source = current_source_for(&index, "blank.pdf");
     let worker = ConversionWorker::new(b"not framed at all", "success");
-    let native: Result<Vec<String>, ManifestError> = Ok(vec!["".to_owned()]);
+    let native = vec!["".to_owned()];
     let outcome = try_worker_for_blank_pdf(
         &source,
-        &native,
+        Some(&native),
         &fixture.root.join("blank.pdf"),
         Some(&worker.config()),
         None,
@@ -1649,20 +1649,25 @@ fn readable_pages_and_missing_workers_never_spawn() {
     let source = current_source_for(&index, "book.pdf");
     let body = ConversionWorker::response_for(&source.content_sha256, &["X"]);
     let worker = ConversionWorker::new(&ConversionWorker::framed(&body), "sentinel");
-    let native: Result<Vec<String>, ManifestError> = Ok(vec!["readable".to_owned()]);
+    let native = vec!["readable".to_owned()];
     let outcome = try_worker_for_blank_pdf(
         &source,
-        &native,
+        Some(&native),
         &fixture.root.join("book.pdf"),
         Some(&worker.config()),
         None,
     )
     .expect("readable pages skip the worker");
     assert!(outcome.is_none());
-    let blank: Result<Vec<String>, ManifestError> = Ok(vec!["".to_owned()]);
-    let outcome =
-        try_worker_for_blank_pdf(&source, &blank, &fixture.root.join("book.pdf"), None, None)
-            .expect("missing worker keeps the native result");
+    let blank = vec!["".to_owned()];
+    let outcome = try_worker_for_blank_pdf(
+        &source,
+        Some(&blank),
+        &fixture.root.join("book.pdf"),
+        None,
+        None,
+    )
+    .expect("missing worker keeps the native result");
     assert!(outcome.is_none());
     assert!(
         !worker.dir.join("spawned").exists(),
@@ -1682,11 +1687,11 @@ fn worker_text_passes_the_sensitivity_gate() {
     let source = current_source_for(&index, "blank.pdf");
     let body = ConversionWorker::response_for(&source.content_sha256, &["password=hunter2"]);
     let worker = ConversionWorker::new(&ConversionWorker::framed(&body), "success");
-    let native: Result<Vec<String>, ManifestError> = Ok(vec!["".to_owned()]);
+    let native = vec!["".to_owned()];
     let before = extraction_publication_snapshot(&index);
     let outcome = try_worker_for_blank_pdf(
         &source,
-        &native,
+        Some(&native),
         &fixture.root.join("blank.pdf"),
         Some(&worker.config()),
         None,
@@ -1742,10 +1747,10 @@ fn worker_provenance_persists_in_the_derived_index_and_clears_on_native() {
     let source = current_source_for(&index, "blank.pdf");
     let body = ConversionWorker::response_for(&source.content_sha256, &["Converted"]);
     let worker = ConversionWorker::new(&ConversionWorker::framed(&body), "success");
-    let native: Result<Vec<String>, ManifestError> = Ok(vec!["".to_owned()]);
+    let native = vec!["".to_owned()];
     let (outcome, provenance) = try_worker_for_blank_pdf(
         &source,
-        &native,
+        Some(&native),
         &fixture.root.join("blank.pdf"),
         Some(&worker.config()),
         None,

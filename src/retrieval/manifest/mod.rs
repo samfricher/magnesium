@@ -1,6 +1,7 @@
 pub(crate) mod convert;
 pub(crate) mod extract;
 pub(crate) mod pdf;
+pub(crate) mod pdf_layout;
 pub(crate) mod publication;
 #[cfg(test)]
 mod publication_tests;

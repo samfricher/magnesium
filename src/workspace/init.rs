@@ -22,7 +22,11 @@ const CONTROL_DIRS: &[&str] = &["index", "cache", "scratch", "backups"];
 pub(crate) fn run_init(requested_path: Option<&Path>, upgrade_instructions: bool) -> ExitCode {
     match initialize(requested_path, upgrade_instructions) {
         Ok(report) => {
+            let root = report.root.clone();
             report.print();
+            if crate::retrieval::start_background_index(&root) == "started" {
+                println!("Search: indexing this folder's files in the background");
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -37,6 +41,9 @@ pub(crate) fn run_init_json(requested_path: Option<&Path>, upgrade_instructions:
     match init_report_json(requested_path, upgrade_instructions) {
         Ok(mut value) => {
             value["ok"] = json!(true);
+            if let Some(root) = value["root"].as_str().map(PathBuf::from) {
+                value["indexing"] = json!(crate::retrieval::start_background_index(&root));
+            }
             println!(
                 "{}",
                 serde_json::to_string(&value).expect("init report is JSON-serializable")

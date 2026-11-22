@@ -16,7 +16,7 @@ use crate::retrieval::manifest_test_facts::{
 use crate::retrieval::{
     CandidateFacts, FactsInterest, Interval, MAX_PDF_SOURCE_BYTES, ManifestError, ManifestRow,
     OperationCancellation, SOURCES_EXCERPT_CHAR_CAP, open_workspace_source,
-    prepare_explicit_source,
+    prepare_explicit_source, read_sections,
 };
 #[cfg(test)]
 use crate::retrieval::{
@@ -198,6 +198,9 @@ fn sources_resolved(
                 ),
             ));
         }
+        if action == SourceAction::Sections {
+            return sections_view(&workspace_id, &root, &anchor, &row);
+        }
         open_current_source(action, &workspace_id, &root, &anchor, &row, facts)
     })()?;
     view["preparation"] = json!(preparation);
@@ -222,6 +225,45 @@ fn external_citation(action: SourceAction, reference: &str) -> Value {
         "snapshot_guidance": "to make external material durable, add the downloaded file to the workspace normally or explicitly authorize saving an accessible snapshot into the workspace's ordinary source directory; a quoted URL or hash alone is never native source verification and never bypasses paywalls",
         "basis": basis_view(),
     })
+}
+
+fn sections_view(
+    workspace_id: &str,
+    root: &Path,
+    anchor: &SourceAnchorRequest,
+    row: &ManifestRow,
+) -> Result<Value, String> {
+    let index = crate::workspace::source_index_path(root);
+    let listed = read_sections(&index, row).map_err(|error| error.to_string())?;
+    let kind = if row.source_kind == "pdf" {
+        "page"
+    } else {
+        "line"
+    };
+    let note = if listed.sections.is_empty() {
+        "The runtime found no section titles in this file. Read it by eye to name its sections."
+    } else if listed.untitled_anchors > 0 {
+        "Titles come from the file's own headings, outline or page layout. Anchors outside every listed section have no title of their own."
+    } else {
+        "Titles come from the file's own headings, outline or page layout."
+    };
+    Ok(json!({
+        "schema_version": 1,
+        "action": SourceAction::Sections,
+        "active": true,
+        "file": {"path": anchor.path, "content_sha256": row.content_sha256},
+        "authority": {"workspace_id": workspace_id, "type": "original_source"},
+        "anchor_kind": kind,
+        "sections": listed.sections.iter().map(|section| json!({
+            "heading": section.heading,
+            "anchor_start": section.start,
+            "anchor_end": section.end,
+        })).collect::<Vec<_>>(),
+        "count": listed.sections.len(),
+        "untitled_anchors": listed.untitled_anchors,
+        "truncated": listed.truncated,
+        "note": note,
+    }))
 }
 
 fn resolve_anchor(reference: &SourcesRequest) -> Result<SourceAnchorRequest, String> {

@@ -143,6 +143,7 @@ pub fn run() -> ExitCode {
                 matches.get_one::<String>("host-kind").cloned(),
             ),
             Some(("extract-pdf", _)) => retrieval::run_pdf_extractor(),
+            Some(("index", _)) => retrieval::run_index(),
             Some(("hook", hook_matches)) => {
                 let event = hook_matches
                     .get_one::<String>("event")

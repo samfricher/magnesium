@@ -51,7 +51,7 @@ fn tool_for(name: &str, window: bool) -> Option<Tool> {
             generated_schema::<crate::adapter::SearchRequest>(),
         ),
         "sources" => (
-            "Read the original text at a source anchor that search_sources returned. action inspect returns the text for path, anchor_kind (page or line), anchor_start and optional anchor_end, cut at 64 KB with truncated set when it was cut; action status returns the anchor's coverage and extraction limits without the text. Pass the content_sha256 the search result gave to make sure the file has not changed since. Parsed text can miss what a page image shows, such as layout, notation, plots or code indentation: when that matters to the point, Read the page itself.",
+            "Read the original text at a source anchor that search_sources returned. action inspect returns the text for path, anchor_kind (page or line), anchor_start and optional anchor_end, cut at 64 KB with truncated set when it was cut; action status returns the anchor's coverage and extraction limits without the text; action sections returns the file's section titles with the anchor each one covers, read from the file's own headings, outline or page layout, so a whole file's structure is known without reading it. Pass the content_sha256 the search result gave to make sure the file has not changed since. Parsed text can miss what a page image shows, such as layout, notation, plots or code indentation: when that matters to the point, Read the page itself.",
             generated_schema::<crate::adapter::SourcesRequest>(),
         ),
         _ => return None,

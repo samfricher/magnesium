@@ -20,11 +20,12 @@ pub(crate) struct SearchRequest {
 pub(crate) enum SourceAction {
     Inspect,
     Status,
+    Sections,
 }
 
 impl SourceAction {
     pub(crate) fn includes_content(self) -> bool {
-        !matches!(self, Self::Status)
+        matches!(self, Self::Inspect)
     }
 }
 

@@ -98,7 +98,8 @@ impl TestEnvironment {
             .env("TMPDIR", &self.temp)
             .env("TEMP", &self.temp)
             .env("TMP", &self.temp)
-            .env("MAGNESIUM_UNSAFE_NO_SYNC", "1");
+            .env("MAGNESIUM_UNSAFE_NO_SYNC", "1")
+            .env("MAGNESIUM_NO_BACKGROUND_INDEX", "1");
         command
     }
 
