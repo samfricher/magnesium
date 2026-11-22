@@ -225,20 +225,29 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
     started = time.monotonic()
     message = request_for(fixture, adapter)
     built: list[str] = []
+    has_map = adapter.cli_json(place, "map", "--json") is not None
     try:
-        for n in range(1 + len(FOLLOW_UPS)):
+        for n in range(max(1 + len(FOLLOW_UPS), args.max_turns)):
             reply = conversation.say(message, timeout=args.turn_timeout)
             add_usage(usage, reply.usage)
+            waited = conversation.wait_background(timeout=args.turn_timeout)
+            if waited is not None:
+                add_usage(usage, waited.usage)
+                reply.tools += waited.tools
+                reply.text += waited.text
+                reply.cost_usd += waited.cost_usd
+                reply.seconds += waited.seconds
+                reply.error = reply.error or waited.error
             said = "\n".join(t for t in (adapter.tutor_text(x["name"], x["input"]) for x in reply.tools) if t) or reply.text
             turns.append({"learner": message, "tutor": said, "tools": [x["name"] for x in reply.tools], "seconds": round(reply.seconds, 1),
                           "usage": reply.usage, "cost_usd": reply.cost_usd, "error": reply.error})
             now = plans_in(place.folder)
             built = [k for k, v in now.items() if before.get(k) != v]
-            view = adapter.map_view(place, fixture.target) if hasattr(adapter, "map_view") else None
+            view = adapter.map_view(place, fixture.target) if has_map else None
             scheduled = bool(view and view.get("schedule"))
-            if (built and (scheduled or view is None)) or reply.error:
+            if (built and (scheduled or not has_map)) or reply.error:
                 break
-            message = FOLLOW_UPS[n] if n < len(FOLLOW_UPS) else FOLLOW_UPS[-1]
+            message = FOLLOW_UPS[n] if n < len(FOLLOW_UPS) else "Go on."
     except SignedOut as signed:
         conversation.close()
         return {"signed_out": str(signed), "turns": turns}
