@@ -618,6 +618,7 @@ const DOCUMENT_EXTENSIONS: &[&str] = &[
 ];
 const PAGE_CODE_EXTENSIONS: &[&str] = &["css", "scss", "less", "js", "mjs", "cjs", "map"];
 const PAGE_CODE_FOLDERS: &[&str] = &["_assets", "site_libs", "libs", "assets", "static", "vendor"];
+const PRIVATE_GROUPS: &[&str] = &["name_word", "password_like"];
 const LISTED_FOLDERS: usize = 3;
 const LISTED_EXAMPLES: usize = 3;
 const LISTED_PAGE_CODE: usize = 5;
@@ -756,6 +757,14 @@ pub(crate) fn folder_files(index_path: &Path) -> Result<FolderFiles, ManifestErr
     let mut unreadable = groups
         .into_iter()
         .map(|(kind, paths)| {
+            if PRIVATE_GROUPS.contains(&kind) {
+                return UnreadableGroup {
+                    kind,
+                    count: paths.len(),
+                    folders: Vec::new(),
+                    examples: Vec::new(),
+                };
+            }
             let mut folders: HashMap<String, usize> = HashMap::new();
             for path in &paths {
                 *folders.entry(parent(path)).or_insert(0) += 1;

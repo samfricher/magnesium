@@ -1110,6 +1110,51 @@ fn a_secret_in_the_text_a_reader_extracts_excludes_the_file() {
     }
 }
 
+#[test]
+fn the_folder_report_counts_files_left_out_for_a_password_without_naming_them() {
+    let fixture = Fixture::new("folder-report-private");
+    fixture.write("Banking/secrets.md", b"my list\n");
+    fixture.write("Banking/aws-credentials.txt", b"my keys\n");
+    fixture.write("Setup/env-notes.md", b"password = hunter2\n");
+    fixture.write("Lab/run.ipynb", br#"{"cells": [{"cell_type": "code", "metadata": {}, "outputs": [], "source": ["api_key = \"sk-1\"\n"]}]}"#);
+    fixture.write("Slides/figure.png", b"\x89PNG\r\n");
+    fixture.write("Slides/lecture.md", b"# Lecture\n");
+    let index = fixture.index();
+    reconcile_manifest(&fixture.root, &index).expect("reconcile folder report fixture");
+    extract_source(&fixture.root, &index, Path::new("Lab/run.ipynb"))
+        .expect("the notebook is left out for its text");
+
+    let files = folder_files(&index).expect("read the folder report");
+    let group = |kind: &str| {
+        files
+            .unreadable
+            .iter()
+            .find(|group| group.kind == kind)
+            .unwrap_or_else(|| panic!("no {kind} group"))
+    };
+    assert_eq!(group("name_word").count, 2);
+    assert_eq!(group("password_like").count, 2);
+    for kind in ["name_word", "password_like"] {
+        assert!(group(kind).examples.is_empty(), "{kind} names a file");
+        assert!(group(kind).folders.is_empty(), "{kind} names a folder");
+    }
+    assert_eq!(group("image").examples, ["Slides/figure.png"]);
+    let shown = format!("{:?}", files.unreadable);
+    for private in [
+        "Banking",
+        "Setup",
+        "Lab",
+        "secrets",
+        "credentials",
+        "env-notes",
+    ] {
+        assert!(
+            !shown.contains(private),
+            "the report names {private}: {shown}"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn reconciliation_and_extraction_reject_symlink_swaps_after_open() {
