@@ -84,9 +84,11 @@ fn write_page(
                 "{slug}-{}-{stamp}.md",
                 name.trim_end_matches(".md")
             ));
+        reject_symlink_components(&backup, workspace.control()).map_err(|e| e.to_string())?;
         if let Some(parent) = backup.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        reject_symlink_components(&backup, workspace.control()).map_err(|e| e.to_string())?;
         crate::workspace::write_private_atomic(&backup, current.as_bytes())
             .map_err(|e| e.to_string())?;
     }
@@ -101,28 +103,26 @@ fn write_pages(
     map: &Map,
     evidence: &Evidence,
     slugs: &[String],
-) -> Result<Vec<String>, String> {
+) -> (Vec<String>, Vec<String>) {
     let mut pages = Vec::new();
+    let mut problems = Vec::new();
     for slug in slugs {
         let Some(target) = map.target(slug) else {
             continue;
         };
-        pages.push(write_page(
-            workspace,
-            store,
-            slug,
-            "map.md",
-            &render::map_page(map, evidence, target, today()),
-        )?);
-        pages.push(write_page(
-            workspace,
-            store,
-            slug,
-            "plan.md",
-            &render::plan_page(map, evidence, target, today()),
-        )?);
+        for (name, text) in [
+            ("map.md", render::map_page(map, evidence, target, today())),
+            ("plan.md", render::plan_page(map, evidence, target, today())),
+        ] {
+            match write_page(workspace, store, slug, name, &text) {
+                Ok(page) => pages.push(page),
+                Err(error) => {
+                    problems.push(format!("Study/{slug}/{name} was not written: {error}"))
+                }
+            }
+        }
     }
-    Ok(pages)
+    (pages, problems)
 }
 
 fn evidence_for(workspace: &Workspace) -> Evidence {
@@ -154,10 +154,13 @@ pub(crate) fn handle(cwd: &Path, request: CourseMapRequest) -> Result<Value, Str
                 .iter()
                 .map(|t| t.slug.clone())
                 .collect::<Vec<_>>();
-            let pages = write_pages(&workspace, &store, &map, &evidence, &slugs)?;
+            let (pages, problems) = write_pages(&workspace, &store, &map, &evidence, &slugs);
             let mut value = report.to_json(revision);
             if let Some(slug) = report.targets.iter().next() {
                 value["coverage"] = target_counts(&map, &evidence, slug);
+            }
+            if !problems.is_empty() {
+                value["page_warnings"] = json!(problems);
             }
             value["pages"] = json!(pages);
             Ok(value)
@@ -765,7 +768,10 @@ pub(crate) fn print_map(target: Option<&str>, as_json: bool, rewrite: bool) -> E
                 .iter()
                 .map(|t| t.slug.clone())
                 .collect::<Vec<_>>();
-            write_pages(&workspace, &store, &map, &evidence, &slugs)?;
+            let (_, problems) = write_pages(&workspace, &store, &map, &evidence, &slugs);
+            if let Some(problem) = problems.first() {
+                return Err(problem.clone());
+            }
         }
         match target {
             Some(slug) => target_view(&workspace, &map, &evidence, &valid_slug(slug)?, true),

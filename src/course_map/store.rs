@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS traces(
     PRIMARY KEY(question, source),
     CHECK (question <> source)
 ) STRICT;
+CREATE TABLE IF NOT EXISTS retired(
+    id TEXT PRIMARY KEY
+) STRICT;
 CREATE TABLE IF NOT EXISTS pages(
     path TEXT PRIMARY KEY,
     sha256 TEXT NOT NULL

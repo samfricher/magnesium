@@ -183,6 +183,15 @@ pub(crate) fn file_code(tx: &Transaction<'_>, reference: &str) -> Result<Option<
     .map_err(fail)
 }
 
+fn id_taken(tx: &Transaction<'_>, id: &str) -> Result<bool, String> {
+    tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1) OR EXISTS(SELECT 1 FROM retired WHERE id = ?1)",
+        [id],
+        |r| r.get(0),
+    )
+    .map_err(fail)
+}
+
 fn item_exists(tx: &Transaction<'_>, id: &str) -> Result<bool, String> {
     tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1)",
@@ -370,31 +379,41 @@ pub(crate) fn insert_sections(
             parts.remove(0);
         }
     }
-    let mut ids: BTreeMap<Vec<String>, String> = BTreeMap::new();
+    let mut open: Vec<(String, String)> = Vec::new();
     let mut spans: BTreeMap<String, (u32, u32)> = BTreeMap::new();
     let mut position = 0i64;
     let mut next = 0u32;
+    let mut made = 0usize;
     for (section, parts) in sections.iter().zip(&paths) {
-        for depth in 1..=parts.len() {
-            let key = parts[..depth].to_vec();
-            let id = match ids.get(&key) {
-                Some(id) => id.clone(),
-                None => {
-                    next += 1;
-                    position += 1;
-                    let parent = (depth > 1).then(|| ids[&parts[..depth - 1].to_vec()].clone());
-                    let id = format!("{code}.{next}");
-                    tx.execute(
-                        "INSERT INTO items(id, file, parent, kind, origin, title, anchor_start, anchor_end, position, content_sha256, added_ms)
-                         VALUES (?1, ?2, ?3, 'section', 'extracted', ?4, ?5, ?6, ?7, ?8, ?9)",
-                        params![id, code, parent, key[depth - 1], section.start, section.end, position, sha, now_ms],
-                    )
-                    .map_err(fail)?;
-                    ids.insert(key, id.clone());
-                    id
+        let shared = open
+            .iter()
+            .zip(parts)
+            .take_while(|((title, _), part)| title == *part)
+            .count();
+        open.truncate(shared);
+        for part in &parts[shared..] {
+            let id = loop {
+                next += 1;
+                let candidate = format!("{code}.{next}");
+                if !id_taken(tx, &candidate)? {
+                    break candidate;
                 }
             };
-            let span = spans.entry(id).or_insert((section.start, section.end));
+            position += 1;
+            let parent = open.last().map(|(_, id)| id.clone());
+            tx.execute(
+                "INSERT INTO items(id, file, parent, kind, origin, title, anchor_start, anchor_end, position, content_sha256, added_ms)
+                 VALUES (?1, ?2, ?3, 'section', 'extracted', ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![id, code, parent, part, section.start, section.end, position, sha, now_ms],
+            )
+            .map_err(fail)?;
+            made += 1;
+            open.push((part.clone(), id));
+        }
+        for (_, id) in &open {
+            let span = spans
+                .entry(id.clone())
+                .or_insert((section.start, section.end));
             span.0 = span.0.min(section.start);
             span.1 = span.1.max(section.end);
         }
@@ -406,7 +425,7 @@ pub(crate) fn insert_sections(
         )
         .map_err(fail)?;
     }
-    Ok(ids.len())
+    Ok(made)
 }
 
 pub(crate) fn add_folder(
@@ -455,7 +474,7 @@ pub(crate) fn add_folder(
 fn next_child(tx: &Transaction<'_>, base: &str) -> Result<String, String> {
     let prefix = format!("{base}.");
     let mut statement = tx
-        .prepare("SELECT id FROM items WHERE id LIKE ?1 || '%'")
+        .prepare("SELECT id FROM items WHERE id LIKE ?1 || '%' UNION SELECT id FROM retired WHERE id LIKE ?1 || '%'")
         .map_err(fail)?;
     let highest = statement
         .query_map([&prefix], |r| r.get::<_, String>(0))
@@ -470,7 +489,7 @@ fn next_child(tx: &Transaction<'_>, base: &str) -> Result<String, String> {
     let mut n = highest + 1;
     loop {
         let id = format!("{base}.{n}");
-        if !item_exists(tx, &id)? {
+        if !id_taken(tx, &id)? {
             return Ok(id);
         }
         n += 1;
@@ -507,7 +526,14 @@ fn next_position(
             .map_err(fail)?;
             Ok(after + 1)
         }
-        (Some(after), None) => Ok(after + 1),
+        (Some(after), None) => {
+            tx.execute(
+                "UPDATE items SET position = position + 1 WHERE file IS NULL AND position > ?1",
+                [after],
+            )
+            .map_err(fail)?;
+            Ok(after + 1)
+        }
         (None, Some(file)) => tx
             .query_row(
                 "SELECT coalesce(max(position), 0) + 1 FROM items WHERE file = ?1",
@@ -596,6 +622,11 @@ fn add_item(
             if item_exists(tx, &id)? {
                 return Err(format!(
                     "item {id:?} is already on the map; give its id to change it"
+                ));
+            }
+            if id_taken(tx, &id)? {
+                return Err(format!(
+                    "item {id:?} was on the map before and was removed; its answers stay with it, so give the new item another ref"
                 ));
             }
             id
@@ -1123,8 +1154,25 @@ pub(crate) fn apply(
     }
     for id in &request.remove_items {
         let id = need_item(tx, id)?;
-        tx.execute("DELETE FROM scope WHERE ref = ?1", [&id])
-            .map_err(fail)?;
+        let gone = {
+            let mut statement = tx
+                .prepare(
+                    "WITH RECURSIVE under(id) AS (SELECT ?1 UNION SELECT items.id FROM items JOIN under ON items.parent = under.id)
+                     SELECT id FROM under",
+                )
+                .map_err(fail)?;
+            statement
+                .query_map([&id], |r| r.get::<_, String>(0))
+                .map_err(fail)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(fail)?
+        };
+        for removed in &gone {
+            tx.execute("DELETE FROM scope WHERE ref = ?1", [removed])
+                .map_err(fail)?;
+            tx.execute("INSERT OR IGNORE INTO retired(id) VALUES (?1)", [removed])
+                .map_err(fail)?;
+        }
         report.items_removed += tx
             .execute("DELETE FROM items WHERE id = ?1", [&id])
             .map_err(fail)?;

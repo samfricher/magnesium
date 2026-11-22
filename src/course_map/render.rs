@@ -335,9 +335,6 @@ pub(crate) fn plan_page(
             running as f64 / 60.0
         );
     }
-    if blocks.is_empty() {
-        let _ = writeln!(text, "| 1 | no blocks yet | | | | | | |");
-    }
     let tasks = blocks
         .iter()
         .flat_map(|b| b.tasks.iter().cloned())

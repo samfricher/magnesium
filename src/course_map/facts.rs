@@ -315,7 +315,11 @@ impl Map {
     }
 
     pub(crate) fn is_leaf(&self, id: &str) -> bool {
-        self.children.get(id).is_none_or(Vec::is_empty)
+        self.children.get(id).is_none_or(|children| {
+            children
+                .iter()
+                .all(|c| self.item(c).is_some_and(|i| i.kind == "task"))
+        })
     }
 
     fn ancestors(&self, id: &str) -> Vec<String> {
@@ -402,6 +406,16 @@ impl Map {
                 }
             })
             .collect::<Vec<_>>();
+        let mut cut_seen: BTreeSet<String> = cut.iter().cloned().collect();
+        for item in &self.items {
+            if item.kind != "task"
+                && !cut_seen.contains(&item.id)
+                && self.state_for(&by_ref, item).as_deref() == Some("cut")
+            {
+                cut_seen.insert(item.id.clone());
+                cut.push(item.id.clone());
+            }
+        }
         let cuts = rows.iter().filter(|r| r.state == "cut").cloned().collect();
         Scoped { items, cut, cuts }
     }
@@ -563,11 +577,19 @@ pub(crate) fn planned(map: &Map, slug: &str) -> Planned {
             }
         }
     }
+    let scheduled: BTreeSet<&String> = map
+        .blocks
+        .get(slug)
+        .into_iter()
+        .flatten()
+        .flat_map(|b| b.tasks.iter())
+        .collect();
     let carried_by = map
         .carried
         .get(slug)
         .into_iter()
         .flatten()
+        .filter(|c| scheduled.contains(&c.by))
         .map(|c| (c.idea.clone(), (c.by.clone(), c.reserve.clone())))
         .collect();
     Planned {
@@ -584,10 +606,15 @@ impl Planned {
 }
 
 pub(crate) fn reach_of(map: &Map, evidence: &Evidence, id: &str) -> Value {
-    let mut used: Vec<String> = map.uses.get(id).cloned().unwrap_or_default();
-    for child in map.children.get(id).into_iter().flatten() {
-        if !used.contains(child) {
-            used.push(child.clone());
+    let mut inside = vec![id.to_owned()];
+    map.descendants(id, &mut inside);
+    let inside_set: BTreeSet<&String> = inside.iter().collect();
+    let mut used: Vec<String> = Vec::new();
+    for from in &inside {
+        for target in map.uses.get(from).into_iter().flatten() {
+            if !inside_set.contains(target) && !used.contains(target) {
+                used.push(target.clone());
+            }
         }
     }
     let mut counts = Counts::default();
@@ -599,6 +626,7 @@ pub(crate) fn reach_of(map: &Map, evidence: &Evidence, id: &str) -> Value {
         "id": id,
         "title": item.map(|i| i.title.clone()),
         "kind": item.map(|i| i.kind.clone()),
+        "inside": inside.len() - 1,
         "uses": counts.items,
         "never_asked": counts.never_asked,
         "no_blank_page_pass": counts.no_pass,

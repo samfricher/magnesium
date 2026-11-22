@@ -402,3 +402,294 @@ fn a_symlinked_store_is_refused() {
     #[cfg(unix)]
     assert!(MapStore::open(&workspace).is_err());
 }
+
+fn workspace_folder(files: &[&str]) -> Folder {
+    let folder = Folder::new(files);
+    std::fs::create_dir_all(folder.root.join(".magnesium")).unwrap();
+    folder
+}
+
+#[test]
+fn a_write_that_commits_reports_a_page_it_could_not_write_and_a_retry_adds_nothing_twice() {
+    let folder = workspace_folder(&[]);
+    std::fs::create_dir_all(folder.root.join("Study/t/plan.md")).unwrap();
+    let first = super::handle(
+        &folder.root,
+        request(json!({"action": "write", "target": "t", "facts": {"label": "T"}, "items": [{"kind": "task", "title": "one", "ref": "a"}]})),
+    )
+    .unwrap();
+    assert!(
+        first["page_warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("Study/t/plan.md"),
+        "{first}"
+    );
+    let again = super::handle(
+        &folder.root,
+        request(
+            json!({"action": "write", "target": "t", "items": [{"kind": "task", "title": "one", "ref": "a"}]}),
+        ),
+    );
+    assert!(again.unwrap_err().contains("already on the map"));
+}
+
+#[test]
+fn a_removed_id_is_never_given_to_a_new_item() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "items": [
+        {"kind": "task", "title": "one"}, {"kind": "task", "title": "two"}]}),
+    )
+    .unwrap();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "remove_items": ["task.2"]}),
+    )
+    .unwrap();
+    let added = write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "items": [{"kind": "task", "title": "three"}]}),
+    )
+    .unwrap();
+    assert_eq!(added["items_added"][0]["id"], "task.3");
+    let refused = write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "items": [{"kind": "task", "title": "x", "ref": "2"}]}),
+    );
+    assert!(refused.unwrap_err().contains("removed"));
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "remove_items": ["lec08.4"]}),
+    )
+    .unwrap();
+    let section = write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "items": [{"file": "lec08", "kind": "section", "title": "new"}]}),
+    )
+    .unwrap();
+    assert_eq!(section["items_added"][0]["id"], "lec08.7");
+}
+
+#[test]
+fn removing_an_item_takes_the_cut_rows_of_the_items_inside_it() {
+    let (mut store, folder) = course();
+    write(&mut store, &folder, json!({"action": "write", "target": "m",
+        "scope": [{"ref": "lec08", "state": "in"}, {"ref": "lec08.3", "state": "cut", "reason": "teacher forcing, not on this test"}]}))
+    .unwrap();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "remove_items": ["lec08.1"]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    assert!(map.in_scope("m").cuts.is_empty());
+}
+
+#[test]
+fn a_task_inside_a_section_leaves_the_section_counted() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "target": "m", "scope": [{"ref": "lec08", "state": "in"}],
+        "items": [{"parent": "lec08.6", "kind": "task", "title": "sample a sequence"}]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let leaves = map
+        .in_scope("m")
+        .items
+        .into_iter()
+        .filter(|id| map.is_leaf(id))
+        .collect::<Vec<_>>();
+    assert_eq!(leaves, vec!["lec08.2", "lec08.3", "lec08.5", "lec08.6"]);
+}
+
+#[test]
+fn an_empty_schedule_writes_no_block_row() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "target": "m", "facts": {"label": "M"}}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let page =
+        super::render::plan_page(&map, &Evidence::default(), map.target("m").unwrap(), day());
+    let blocks = page
+        .split("## Blocks")
+        .nth(1)
+        .unwrap()
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert_eq!(
+        blocks
+            .lines()
+            .filter(|l| l.starts_with("| ") && !l.starts_with("| #"))
+            .count(),
+        0,
+        "{blocks}"
+    );
+}
+
+#[test]
+fn an_idea_counts_as_carried_only_when_its_carrier_is_in_the_schedule() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "target": "m", "scope": [{"ref": "lec08", "state": "in"}],
+        "items": [{"kind": "task", "title": "a", "ref": "a"}],
+        "carried": [{"idea": "lec08.2", "by": "task.a"}]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    assert!(!super::facts::planned(&map, "m").asked("lec08.2"));
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "target": "m", "blocks": [{"title": "b", "tasks": ["task.a"]}]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    assert!(super::facts::planned(&map, "m").asked("lec08.2"));
+}
+
+#[test]
+fn a_heading_repeated_later_in_a_file_is_a_new_item_with_its_own_span() {
+    let (store, _folder) = course();
+    let mut store = store;
+    let tx = store.write().unwrap();
+    tx.execute(
+        "INSERT INTO files(code, path, readable, added_ms) VALUES ('s', 'Materials/s.pdf', 1, 1)",
+        [],
+    )
+    .unwrap();
+    insert_sections(
+        &tx,
+        "s",
+        None,
+        &[
+            section("Intro", 1, 2),
+            section("Example", 3, 3),
+            section("Bayes", 4, 10),
+            section("Example", 11, 11),
+            section("MLE", 12, 30),
+            section("Example", 31, 31),
+        ],
+        1,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let examples = map
+        .items
+        .iter()
+        .filter(|i| i.title == "Example")
+        .map(|i| (i.start, i.end))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        examples,
+        vec![
+            (Some(3), Some(3)),
+            (Some(11), Some(11)),
+            (Some(31), Some(31))
+        ]
+    );
+}
+
+#[test]
+fn a_child_of_an_item_with_no_file_comes_right_after_its_parent() {
+    let (mut store, folder) = course();
+    let items = (1..=10)
+        .map(|n| json!({"kind": "idea", "title": format!("idea {n}")}))
+        .collect::<Vec<_>>();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "items": items}),
+    )
+    .unwrap();
+    write(&mut store, &folder, json!({"action": "write", "items": [{"parent": "outline.9", "kind": "idea", "title": "inside 9"}]})).unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let order = map
+        .items
+        .iter()
+        .filter(|i| i.file.is_none())
+        .map(|i| i.id.as_str())
+        .collect::<Vec<_>>();
+    let at = order.iter().position(|id| *id == "outline.9").unwrap();
+    assert_eq!(
+        &order[at..at + 3],
+        &["outline.9", "outline.9.1", "outline.10"]
+    );
+}
+
+#[test]
+fn a_whole_file_cut_counts_as_cut() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "target": "m", "scope": [
+        {"ref": "Materials/week8-list.png", "state": "in"},
+        {"ref": "lec08", "state": "cut", "reason": "lecture 8, after this test"}]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let cut = map
+        .in_scope("m")
+        .cut
+        .into_iter()
+        .filter(|id| map.is_leaf(id))
+        .count();
+    assert_eq!(cut, 4);
+}
+
+#[test]
+fn reach_counts_what_a_section_and_the_items_inside_it_use_from_elsewhere() {
+    let (mut store, folder) = course();
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "links": [
+        {"item": "lec08.6", "uses": ["lec08.5"]},
+        {"item": "lec08.3", "uses": ["lec08.2", "lec08.5"]}]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    let reach = reach_of(&map, &Evidence::default(), "lec08.1");
+    assert_eq!(
+        (reach["inside"].as_u64(), reach["uses"].as_u64()),
+        (Some(2), Some(1))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_backup_is_never_written_through_a_symlinked_backups_folder() {
+    let folder = workspace_folder(&[]);
+    let outside = std::env::temp_dir().join(crate::learner::store::new_id("map-outside").unwrap());
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, folder.root.join(".magnesium/backups")).unwrap();
+    let workspace = crate::workspace::Workspace::discover(&folder.root)
+        .unwrap()
+        .unwrap();
+    let store = MapStore::open(&workspace).unwrap();
+    super::write_page(&workspace, &store, "t", "plan.md", "one\n").unwrap();
+    std::fs::write(folder.root.join("Study/t/plan.md"), "edited\n").unwrap();
+    assert!(super::write_page(&workspace, &store, "t", "plan.md", "two\n").is_err());
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+    let _ = std::fs::remove_dir_all(outside);
+}
