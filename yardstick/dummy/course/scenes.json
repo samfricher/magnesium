@@ -1,0 +1,664 @@
+{
+  "basis": "Seven scenes from real sessions, played on the dummy course. Seeds go through public surfaces only.",
+  "scenes": [
+    {
+      "id": "explain-first",
+      "title": "He asks for an explanation before the task",
+      "messages": [
+        "/magnesium:learn Variance for Test 1",
+        "Before I try that, can you explain properly how variance works, and why the shortcut E[X²] − (E[X])² gives the same number as the definition?"
+      ],
+      "decide": [
+        {
+          "kind": "judged",
+          "turn": 2,
+          "rubric": "Judge only what the tutor wrote in reply to the learner's last message. Pass if the reply gives the explanation he asked for, whole, in that reply: what variance measures and why the shortcut equals the definition. Fail if it first asks him to attempt, guess or say what he thinks before explaining, or gives only a fragment and defers the rest until he answers something."
+        }
+      ]
+    },
+    {
+      "id": "just-tell-me",
+      "title": "\"Just tell me, I'm reviewing\"",
+      "messages": [
+        "/magnesium:learn Just tell me, I'm reviewing: what is the answer to Problem 1b in Materials/Past/old-test-1.md, and how do you get it? This isn't a study session."
+      ],
+      "decide": [
+        {
+          "kind": "contains",
+          "turn": 1,
+          "any": [
+            "2.25",
+            "9/4"
+          ]
+        },
+        {
+          "kind": "no_open_task"
+        },
+        {
+          "kind": "judged",
+          "turn": 1,
+          "rubric": "Judge only what the tutor wrote in reply to the learner's last message. Pass if the reply gives the answer with its working, sets no new task or question for him to answer, and does not ask him what he wrote or what he got. A closing offer such as 'say if you want another' is not a task. Fail if it asks him to try, asks what he wrote, or ends with a practice question."
+        }
+      ]
+    },
+    {
+      "id": "side-question",
+      "title": "A side question while a task is open",
+      "messages": [
+        "/magnesium:learn Binomial distribution for Test 1",
+        "Quick side question before I answer: is the expected value always one of the values X can take?"
+      ],
+      "decide": [
+        {
+          "kind": "open_task_after",
+          "turn": 1
+        },
+        {
+          "kind": "open_task_kept",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "kind": "judged",
+          "turn": 2,
+          "rubric": "Judge only what the tutor wrote in reply to the learner's last message. Pass if the reply answers the side question correctly (no: the expected value need not be a value X can take) and does not drop the earlier task or replace it with a different one. It need not restate the task. Fail if it ignores or dodges the side question, answers it wrongly, or sets a new task in place of the open one."
+        }
+      ]
+    },
+    {
+      "id": "due-checks",
+      "title": "Due checks at the start of a sitting, the day after a helped answer",
+      "seed": {
+        "kind": "answers",
+        "turns": [
+          {
+            "day": -1,
+            "time": "19:30",
+            "learner": "I think it's 1 - 0.25 = 0.75 throws?",
+            "task_asked": "A player makes each free throw with probability 0.25. Find the expected number of throws up to and including her first make.",
+            "shows": "Uses the failure probability instead of 1/p; right after a hint.",
+            "attempt": {
+              "label": "geometric mean",
+              "kind": "GEOM",
+              "question": "A player makes each free throw with probability 0.25. Find the expected number of throws up to and including her first make.",
+              "first_try": "wrong",
+              "help": "hint",
+              "cold": false,
+              "next": {
+                "question": "A machine jams on each run with probability 0.2, independently. Find the expected number of runs up to and including the first jam.",
+                "answer_key": "1/0.2 = 5 runs"
+              }
+            }
+          },
+          {
+            "day": -1,
+            "time": "19:45",
+            "learner": "np = 8 x 0.25 = 2, and variance np too, so 2",
+            "task_asked": "A quiz has 8 questions with 4 options each and a student guesses every one. Find the mean and the variance of the number correct.",
+            "shows": "Mean right; uses np for the variance; right after a step.",
+            "attempt": {
+              "label": "binomial mean and variance",
+              "kind": "BINOM",
+              "question": "A quiz has 8 questions with 4 options each and a student guesses every one. Find the mean and the variance of the number correct.",
+              "first_try": "partly",
+              "help": "step",
+              "cold": false,
+              "next": {
+                "question": "X is Binomial(20, 0.1). Find E[X] and Var(X).",
+                "answer_key": "E[X] = 2, Var(X) = 1.8"
+              }
+            }
+          }
+        ],
+        "end_sitting": true
+      },
+      "messages": [
+        "/magnesium:learn Indicators and sums for Test 1"
+      ],
+      "decide": [
+        {
+          "kind": "stated_due_checks"
+        },
+        {
+          "kind": "posed_check",
+          "turn": 1,
+          "words": [
+            [
+              "0.2",
+              "jam"
+            ],
+            [
+              "20",
+              "0.1"
+            ]
+          ],
+          "labels": [
+            "geometric mean",
+            "binomial mean and variance",
+            "geometric",
+            "binomial"
+          ]
+        }
+      ],
+      "new_sitting": true
+    },
+    {
+      "id": "not-landed",
+      "title": "An idea not landed after two explanations",
+      "messages": [
+        "/magnesium:learn Variance for Test 1",
+        "I don't get why Var(aX + b) ignores the b. Can you explain?",
+        "I still don't get it.",
+        "Sorry, I'm still not getting it."
+      ],
+      "decide": [
+        {
+          "kind": "judged",
+          "turn": 4,
+          "context": [
+            2,
+            3,
+            4
+          ],
+          "rubric": "Compare the tutor's three explanations, in reply to the learner's second, third and fourth messages. Pass if the third explanation (the last reply) takes a different form from the first two: a worked numeric case, a smaller example, or a contrast with a look-alike, not the same argument reworded. Fail if the third repeats the form of either earlier explanation, or asks him a question instead of explaining."
+        }
+      ]
+    },
+    {
+      "id": "three-days",
+      "title": "Three days to a test with 30 open items",
+      "seed": {
+        "kind": "answers",
+        "turns": [
+          {
+            "day": -1,
+            "time": "18:10",
+            "learner": "My answer for expected value from a table: not sure",
+            "task_asked": "A short question on expected value from a table.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "expected value from a table",
+              "question": "A short question on expected value from a table.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:11",
+            "learner": "My answer for E[g(X)] applied to each value: not sure",
+            "task_asked": "A short question on E[g(X)] applied to each value.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "E[g(X)] applied to each value",
+              "question": "A short question on E[g(X)] applied to each value.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:12",
+            "learner": "My answer for E[X squared] against the square of E[X]: not sure",
+            "task_asked": "A short question on E[X squared] against the square of E[X].",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "E[X squared] against the square of E[X]",
+              "question": "A short question on E[X squared] against the square of E[X].",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:13",
+            "learner": "My answer for linearity of expectation: not sure",
+            "task_asked": "A short question on linearity of expectation.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "linearity of expectation",
+              "question": "A short question on linearity of expectation.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:14",
+            "learner": "My answer for expected fare by linearity: not sure",
+            "task_asked": "A short question on expected fare by linearity.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "expected fare by linearity",
+              "question": "A short question on expected fare by linearity.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:15",
+            "learner": "My answer for variance from the definition: not sure",
+            "task_asked": "A short question on variance from the definition.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance from the definition",
+              "question": "A short question on variance from the definition.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:16",
+            "learner": "My answer for variance shortcut: not sure",
+            "task_asked": "A short question on variance shortcut.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance shortcut",
+              "question": "A short question on variance shortcut.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:17",
+            "learner": "My answer for variance of aX+b: not sure",
+            "task_asked": "A short question on variance of aX+b.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance of aX+b",
+              "question": "A short question on variance of aX+b.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:18",
+            "learner": "My answer for why a shift adds no spread: not sure",
+            "task_asked": "A short question on why a shift adds no spread.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "why a shift adds no spread",
+              "question": "A short question on why a shift adds no spread.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:19",
+            "learner": "My answer for standard deviation units: not sure",
+            "task_asked": "A short question on standard deviation units.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "standard deviation units",
+              "question": "A short question on standard deviation units.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:20",
+            "learner": "My answer for standard deviation of aX+b: not sure",
+            "task_asked": "A short question on standard deviation of aX+b.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "standard deviation of aX+b",
+              "question": "A short question on standard deviation of aX+b.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:21",
+            "learner": "My answer for Bernoulli mean and variance: not sure",
+            "task_asked": "A short question on Bernoulli mean and variance.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "Bernoulli mean and variance",
+              "question": "A short question on Bernoulli mean and variance.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:22",
+            "learner": "My answer for binomial conditions: not sure",
+            "task_asked": "A short question on binomial conditions.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "binomial conditions",
+              "question": "A short question on binomial conditions.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:23",
+            "learner": "My answer for binomial probability formula: not sure",
+            "task_asked": "A short question on binomial probability formula.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "binomial probability formula",
+              "question": "A short question on binomial probability formula.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:24",
+            "learner": "My answer for binomial mean and variance: not sure",
+            "task_asked": "A short question on binomial mean and variance.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "binomial mean and variance",
+              "question": "A short question on binomial mean and variance.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:25",
+            "learner": "My answer for geometric probability formula: not sure",
+            "task_asked": "A short question on geometric probability formula.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "geometric probability formula",
+              "question": "A short question on geometric probability formula.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:26",
+            "learner": "My answer for geometric mean: not sure",
+            "task_asked": "A short question on geometric mean.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "geometric mean",
+              "question": "A short question on geometric mean.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:27",
+            "learner": "My answer for memoryless property: not sure",
+            "task_asked": "A short question on memoryless property.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "memoryless property",
+              "question": "A short question on memoryless property.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:28",
+            "learner": "My answer for binomial or geometric from the story: not sure",
+            "task_asked": "A short question on binomial or geometric from the story.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "binomial or geometric from the story",
+              "question": "A short question on binomial or geometric from the story.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:29",
+            "learner": "My answer for indicator expectation equals probability: not sure",
+            "task_asked": "A short question on indicator expectation equals probability.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "indicator expectation equals probability",
+              "question": "A short question on indicator expectation equals probability.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:30",
+            "learner": "My answer for expected count by indicators: not sure",
+            "task_asked": "A short question on expected count by indicators.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "expected count by indicators",
+              "question": "A short question on expected count by indicators.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:31",
+            "learner": "My answer for indicators that are dependent: not sure",
+            "task_asked": "A short question on indicators that are dependent.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "indicators that are dependent",
+              "question": "A short question on indicators that are dependent.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:32",
+            "learner": "My answer for hat matching expected count: not sure",
+            "task_asked": "A short question on hat matching expected count.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "hat matching expected count",
+              "question": "A short question on hat matching expected count.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:33",
+            "learner": "My answer for expected hearts in a hand: not sure",
+            "task_asked": "A short question on expected hearts in a hand.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "expected hearts in a hand",
+              "question": "A short question on expected hearts in a hand.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:34",
+            "learner": "My answer for variance of a sum of independent variables: not sure",
+            "task_asked": "A short question on variance of a sum of independent variables.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance of a sum of independent variables",
+              "question": "A short question on variance of a sum of independent variables.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:35",
+            "learner": "My answer for variance of a difference: not sure",
+            "task_asked": "A short question on variance of a difference.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance of a difference",
+              "question": "A short question on variance of a difference.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:36",
+            "learner": "My answer for probabilities that add to one: not sure",
+            "task_asked": "A short question on probabilities that add to one.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "probabilities that add to one",
+              "question": "A short question on probabilities that add to one.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:37",
+            "learner": "My answer for expected value that is not a possible value: not sure",
+            "task_asked": "A short question on expected value that is not a possible value.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "expected value that is not a possible value",
+              "question": "A short question on expected value that is not a possible value.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:38",
+            "learner": "My answer for mean of a fair die: not sure",
+            "task_asked": "A short question on mean of a fair die.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "mean of a fair die",
+              "question": "A short question on mean of a fair die.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          },
+          {
+            "day": -1,
+            "time": "18:39",
+            "learner": "My answer for variance of a fair die: not sure",
+            "task_asked": "A short question on variance of a fair die.",
+            "shows": "Wrong first try.",
+            "attempt": {
+              "label": "variance of a fair die",
+              "question": "A short question on variance of a fair die.",
+              "first_try": "wrong",
+              "help": "none",
+              "cold": false
+            }
+          }
+        ],
+        "end_sitting": true,
+        "test_in_days": 3
+      },
+      "messages": [
+        "/magnesium:learn Test 1 is in three days. Let's start today's sitting."
+      ],
+      "decide": [
+        {
+          "kind": "stated_due_checks"
+        },
+        {
+          "kind": "judged",
+          "turn": 1,
+          "rubric": "Judge only what the tutor wrote in reply to the learner's last message. Pass only if all three hold: the reply states how many minutes this sitting's opening work will take; what it sets out plausibly fits those minutes (at two to four minutes a question); and it names by content, in the course's words, what it leaves out of today, not only a number or 'the rest'. Fail if any one is missing."
+        }
+      ],
+      "new_sitting": true
+    },
+    {
+      "id": "pickup",
+      "title": "A new chat picks up a lesson",
+      "seed": {
+        "kind": "lesson",
+        "script": {
+          "goal": "Variance for Test 1",
+          "stages": [
+            "teach_and_practice"
+          ],
+          "turns": [
+            {
+              "learner": "/magnesium:learn Variance for Test 1",
+              "tutor": "Let's start from scaling. Var(X) = 9. Find Var(2X + 5).",
+              "task": "Var(X) = 9. Find Var(2X + 5)."
+            },
+            {
+              "learner": "4 x 9 = 36",
+              "tutor": "Right: the 2 is squared and the 5 adds no spread.\n\nA thermometer reads Celsius C with Var(C) = 4. Fahrenheit is F = 1.8C + 32. Find Var(F).",
+              "task": "A thermometer reads Celsius C with Var(C) = 4. Fahrenheit is F = 1.8C + 32. Find Var(F).",
+              "attempt": {
+                "label": "variance of aX+b",
+                "kind": "VARSCALE",
+                "question": "Var(X) = 9. Find Var(2X + 5).",
+                "first_try": "right",
+                "help": "none",
+                "cold": false
+              },
+              "shows": "Squares the scale and drops the shift."
+            }
+          ]
+        }
+      },
+      "messages": [
+        "Let's pick up the lesson where I left off."
+      ],
+      "decide": [
+        {
+          "kind": "contains",
+          "turn": 1,
+          "all": [
+            "1.8",
+            "32"
+          ]
+        },
+        {
+          "kind": "tool_calls",
+          "turn": 1
+        }
+      ]
+    }
+  ]
+}

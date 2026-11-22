@@ -1,0 +1,11 @@
+{
+  "name": "dummy-goal",
+  "as_of": "2026-11-21",
+  "test": null,
+  "folder": "folder",
+  "target": null,
+  "goal": "By the end of the month I want to solve exponential growth and decay problems with logarithms on my own. I am reading chapter 4 alone; there is no course and no test.",
+  "attempts": "attempts.json",
+  "asked": "asked.json",
+  "transcripts": []
+}

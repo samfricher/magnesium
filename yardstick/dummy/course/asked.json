@@ -1,0 +1,188 @@
+{
+  "basis": "An invented Test 1 for the dummy course, written for the yardstick. Taught or not is set by hand from the plan and the record.",
+  "items": [
+    {
+      "id": "Q1a",
+      "label": "E[X] from a table",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 2"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.1"
+        }
+      ],
+      "terms": [
+        "expected value"
+      ],
+      "plan_refs": [
+        "EXPVAL"
+      ],
+      "record_tags": [
+        "expected value from a table",
+        "EXPVAL"
+      ],
+      "taught_before_test": true,
+      "evidence": "Plan block 3 and drills 1 to 2; answers in the record."
+    },
+    {
+      "id": "Q1b",
+      "label": "Var(X) with the shortcut",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 6"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.5"
+        }
+      ],
+      "terms": [
+        "shortcut"
+      ],
+      "plan_refs": [
+        "VARSHORT"
+      ],
+      "record_tags": [
+        "variance shortcut",
+        "VARSHORT"
+      ],
+      "taught_before_test": true,
+      "evidence": "Plan block 3 and drills 3 to 4; five answers in the record."
+    },
+    {
+      "id": "Q2",
+      "label": "binomial: name it, mean and variance",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 11"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.10"
+        }
+      ],
+      "terms": [
+        "binomial"
+      ],
+      "plan_refs": [
+        "BINOM"
+      ],
+      "record_tags": [
+        "binomial conditions",
+        "binomial mean and variance",
+        "BINOM"
+      ],
+      "taught_before_test": true,
+      "evidence": "Plan block 4 and drill 5."
+    },
+    {
+      "id": "Q3",
+      "label": "Var(3X + 2) and why the shift drops out",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 7"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.8"
+        }
+      ],
+      "terms": [
+        "scaling"
+      ],
+      "plan_refs": [
+        "VARSCALE"
+      ],
+      "record_tags": [
+        "variance of aX+b",
+        "VARSCALE"
+      ],
+      "taught_before_test": true,
+      "evidence": "Plan block 5."
+    },
+    {
+      "id": "Q4",
+      "label": "further throws after three misses (memoryless)",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 13"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.13"
+        }
+      ],
+      "terms": [
+        "memoryless"
+      ],
+      "plan_refs": [
+        "memoryless",
+        "MEMORYLESS"
+      ],
+      "record_tags": [
+        "memoryless property"
+      ],
+      "taught_before_test": false,
+      "evidence": "Listed exercise 2.13; no plan row, no lesson, no answer."
+    },
+    {
+      "id": "Q5",
+      "label": "expected number of matches by indicators",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 15"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.17"
+        }
+      ],
+      "terms": [
+        "indicator"
+      ],
+      "plan_refs": [
+        "INDICATOR",
+        "indicators"
+      ],
+      "record_tags": [
+        "indicator expected count"
+      ],
+      "taught_before_test": false,
+      "evidence": "Listed exercises 2.15 and 2.17; the plan's graph has no tag for section D."
+    },
+    {
+      "id": "Q6",
+      "label": "Var(X − Y) for independent X and Y",
+      "material": [
+        {
+          "path": "Materials/Slides/unit-2-slides.md",
+          "where": "Slide 16"
+        },
+        {
+          "path": "Materials/Exercises/exercise-book.md",
+          "where": "2.18"
+        }
+      ],
+      "terms": [
+        "independent"
+      ],
+      "plan_refs": [
+        "VARSUM",
+        "Var(X + Y)"
+      ],
+      "record_tags": [
+        "variance of a sum"
+      ],
+      "taught_before_test": false,
+      "evidence": "Slide 16 only; exercise 2.18 is not on the weekly list."
+    }
+  ]
+}

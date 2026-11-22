@@ -1,0 +1,113 @@
+{
+  "deck": "Materials/chapter-4-logarithms.md",
+  "kind": "chapter sections",
+  "ideas": [
+    {
+      "id": "4.1a",
+      "page": null,
+      "section": "4.1",
+      "title": "The logarithm is the inverse of b^x",
+      "idea": "log_b(y) = x means b^x = y",
+      "terms": [
+        "inverse",
+        "log_b(y) = x"
+      ]
+    },
+    {
+      "id": "4.2a",
+      "page": null,
+      "section": "4.2",
+      "title": "Product law",
+      "idea": "log of a product is a sum",
+      "terms": [
+        "product law",
+        "log_b(mn)"
+      ]
+    },
+    {
+      "id": "4.2b",
+      "page": null,
+      "section": "4.2",
+      "title": "Quotient law",
+      "idea": "log of a quotient is a difference",
+      "terms": [
+        "quotient law"
+      ]
+    },
+    {
+      "id": "4.2c",
+      "page": null,
+      "section": "4.2",
+      "title": "Power law",
+      "idea": "log of m^k is k log m",
+      "terms": [
+        "power law"
+      ]
+    },
+    {
+      "id": "4.2d",
+      "page": null,
+      "section": "4.2",
+      "title": "No law for a sum",
+      "idea": "log(m + n) is not log m + log n",
+      "terms": [
+        "log_b(m + n)",
+        "no law"
+      ]
+    },
+    {
+      "id": "4.3a",
+      "page": null,
+      "section": "4.3",
+      "title": "Change of base",
+      "idea": "log_b(y) = ln y / ln b",
+      "terms": [
+        "change of base"
+      ]
+    },
+    {
+      "id": "4.4a",
+      "page": null,
+      "section": "4.4",
+      "title": "Solving b^x = c",
+      "idea": "x = ln c / ln b",
+      "terms": [
+        "b^x = c",
+        "exponential equation"
+      ]
+    },
+    {
+      "id": "4.4b",
+      "page": null,
+      "section": "4.4",
+      "title": "Unknown in two exponents",
+      "idea": "collect the x terms and factor",
+      "terms": [
+        "two exponents",
+        "factor x"
+      ]
+    },
+    {
+      "id": "4.5a",
+      "page": null,
+      "section": "4.5",
+      "title": "Doubling time",
+      "idea": "t = ln 2 / ln(1 + r)",
+      "terms": [
+        "doubling",
+        "double"
+      ]
+    },
+    {
+      "id": "4.5b",
+      "page": null,
+      "section": "4.5",
+      "title": "Half-life",
+      "idea": "a factor of 1/2 per half-life",
+      "terms": [
+        "half-life",
+        "halving"
+      ]
+    }
+  ]
+}

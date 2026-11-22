@@ -1,0 +1,241 @@
+{
+  "deck": "Materials/Slides/unit-2-slides.md",
+  "ideas": [
+    {
+      "id": "S1",
+      "page": 1,
+      "title": "A random variable and its table",
+      "idea": "a table of values and probabilities that add to 1",
+      "terms": [
+        "random variable",
+        "table"
+      ],
+      "pages": [
+        1,
+        1
+      ],
+      "section": "A"
+    },
+    {
+      "id": "S2",
+      "page": 2,
+      "title": "Expected value from a table",
+      "idea": "E[X] is the sum of x p(x)",
+      "terms": [
+        "expected value",
+        "E[X]"
+      ],
+      "pages": [
+        2,
+        2
+      ],
+      "section": "A"
+    },
+    {
+      "id": "S3",
+      "page": 3,
+      "title": "Expected value of a function of X",
+      "idea": "E[g(X)] applies g to each value; E[X²] is not (E[X])²",
+      "terms": [
+        "E[g(X)]",
+        "E[X²]"
+      ],
+      "pages": [
+        3,
+        3
+      ],
+      "section": "A"
+    },
+    {
+      "id": "S4",
+      "page": 4,
+      "title": "Linearity of expectation",
+      "idea": "E[aX + b] = aE[X] + b and E[X + Y] = E[X] + E[Y] without independence",
+      "terms": [
+        "linearity"
+      ],
+      "pages": [
+        4,
+        4
+      ],
+      "section": "A"
+    },
+    {
+      "id": "S5",
+      "page": 5,
+      "title": "Variance from the definition",
+      "idea": "Var(X) = E[(X − µ)²]",
+      "terms": [
+        "definition",
+        "Var(X)"
+      ],
+      "pages": [
+        5,
+        5
+      ],
+      "section": "B"
+    },
+    {
+      "id": "S6",
+      "page": 6,
+      "title": "The shortcut for variance",
+      "idea": "Var(X) = E[X²] − (E[X])²",
+      "terms": [
+        "shortcut"
+      ],
+      "pages": [
+        6,
+        6
+      ],
+      "section": "B"
+    },
+    {
+      "id": "S7",
+      "page": 7,
+      "title": "Scaling and shifting",
+      "idea": "Var(aX + b) = a² Var(X); the shift drops out",
+      "terms": [
+        "scaling",
+        "shifting",
+        "aX + b"
+      ],
+      "pages": [
+        7,
+        7
+      ],
+      "section": "B"
+    },
+    {
+      "id": "S8",
+      "page": 8,
+      "title": "Standard deviation and units",
+      "idea": "SD(aX + b) = |a| SD(X), in the units of X",
+      "terms": [
+        "standard deviation",
+        "SD"
+      ],
+      "pages": [
+        8,
+        8
+      ],
+      "section": "B"
+    },
+    {
+      "id": "S9",
+      "page": 9,
+      "title": "Bernoulli trials",
+      "idea": "an indicator of success has mean p and variance p(1 − p)",
+      "terms": [
+        "Bernoulli"
+      ],
+      "pages": [
+        9,
+        9
+      ],
+      "section": "C"
+    },
+    {
+      "id": "S10",
+      "page": 10,
+      "title": "Binomial: counting successes",
+      "idea": "P(X = k) = C(n, k) p^k (1 − p)^(n − k), with three conditions",
+      "terms": [
+        "binomial",
+        "conditions"
+      ],
+      "pages": [
+        10,
+        10
+      ],
+      "section": "C"
+    },
+    {
+      "id": "S11",
+      "page": 11,
+      "title": "Binomial mean and variance",
+      "idea": "np and np(1 − p)",
+      "terms": [
+        "np(1 − p)",
+        "binomial mean"
+      ],
+      "pages": [
+        11,
+        11
+      ],
+      "section": "C"
+    },
+    {
+      "id": "S12",
+      "page": 12,
+      "title": "Geometric: waiting for the first success",
+      "idea": "P(N = k) = (1 − p)^(k − 1) p; the number of trials is not fixed",
+      "terms": [
+        "geometric"
+      ],
+      "pages": [
+        12,
+        12
+      ],
+      "section": "C"
+    },
+    {
+      "id": "S13",
+      "page": 13,
+      "title": "Geometric mean and memorylessness",
+      "idea": "E[N] = 1/p; after m failures the wait starts again",
+      "terms": [
+        "memoryless",
+        "1/p"
+      ],
+      "pages": [
+        13,
+        13
+      ],
+      "section": "C"
+    },
+    {
+      "id": "S14",
+      "page": 14,
+      "title": "Indicator variables",
+      "idea": "E[I] = P(A)",
+      "terms": [
+        "indicator"
+      ],
+      "pages": [
+        14,
+        14
+      ],
+      "section": "D"
+    },
+    {
+      "id": "S15",
+      "page": 15,
+      "title": "Counting with indicators",
+      "idea": "an expected count is a sum of probabilities, even when dependent",
+      "terms": [
+        "indicators",
+        "expected count"
+      ],
+      "pages": [
+        15,
+        15
+      ],
+      "section": "D"
+    },
+    {
+      "id": "S16",
+      "page": 16,
+      "title": "Variance of a sum",
+      "idea": "Var(X + Y) = Var(X) + Var(Y) needs independence",
+      "terms": [
+        "Var(X + Y)",
+        "independent"
+      ],
+      "pages": [
+        16,
+        16
+      ],
+      "section": "D"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "basis": "No test: these are what the goal needs, by the chapter's own sections.",
+  "items": [
+    {
+      "id": "G1",
+      "label": "solve b^x = c",
+      "material": [
+        {
+          "path": "Materials/chapter-4-logarithms.md",
+          "where": "4.4 Solving exponential equations"
+        }
+      ],
+      "terms": [
+        "exponential equations"
+      ],
+      "plan_refs": [
+        "4.27",
+        "4.4"
+      ],
+      "record_tags": [
+        "solve b^x = c"
+      ],
+      "taught_before_test": false,
+      "evidence": "Nothing taught yet."
+    },
+    {
+      "id": "G2",
+      "label": "unknown in two exponents",
+      "material": [
+        {
+          "path": "Materials/chapter-4-logarithms.md",
+          "where": "4.28"
+        }
+      ],
+      "terms": [
+        "two exponents"
+      ],
+      "plan_refs": [
+        "4.28"
+      ],
+      "record_tags": [
+        "unknown in two exponents"
+      ],
+      "taught_before_test": false,
+      "evidence": "Nothing taught yet."
+    },
+    {
+      "id": "G3",
+      "label": "doubling time",
+      "material": [
+        {
+          "path": "Materials/chapter-4-logarithms.md",
+          "where": "4.5 Growth and halving"
+        }
+      ],
+      "terms": [
+        "double"
+      ],
+      "plan_refs": [
+        "4.30",
+        "4.5"
+      ],
+      "record_tags": [
+        "doubling time"
+      ],
+      "taught_before_test": false,
+      "evidence": "Nothing taught yet."
+    },
+    {
+      "id": "G4",
+      "label": "half-life",
+      "material": [
+        {
+          "path": "Materials/chapter-4-logarithms.md",
+          "where": "half-life"
+        }
+      ],
+      "terms": [
+        "half-life"
+      ],
+      "plan_refs": [
+        "4.31"
+      ],
+      "record_tags": [
+        "half-life"
+      ],
+      "taught_before_test": false,
+      "evidence": "Nothing taught yet."
+    }
+  ]
+}
