@@ -1012,6 +1012,104 @@ fn assignment_secret_markers_are_excluded_without_matching_harmless_words() {
     assert!(documentation[0].body.contains("without an assignment"));
 }
 
+#[test]
+fn a_secret_in_the_text_a_reader_extracts_excludes_the_file() {
+    let fixture = Fixture::new("sensitive-extracted-formats");
+    let notebook = |code: &str| {
+        let cell = serde_json::to_string(code).unwrap();
+        format!(
+            "{{\n \"cells\": [\n  {{\n   \"cell_type\": \"markdown\",\n   \"metadata\": {{}},\n   \"source\": [\n    \"# Lab\\n\"\n   ]\n  }},\n  {{\n   \"cell_type\": \"code\",\n   \"metadata\": {{}},\n   \"outputs\": [],\n   \"source\": [\n    \"import openai\\n\",\n    {cell}\n   ]\n  }}\n ]\n}}\n"
+        )
+    };
+    let secret_notebook = notebook("api_key = \"sk-fixture-notebook-secret\"");
+    fixture.write("lab-a.ipynb", secret_notebook.as_bytes());
+    fixture.write(
+        "lab-b-minified.ipynb",
+        secret_notebook.replace('\n', "").as_bytes(),
+    );
+    fixture.write(
+        "lab-c-output.ipynb",
+        br#"{"cells": [{"cell_type": "code", "metadata": {}, "source": "print(env)", "outputs": [{"name": "stdout", "output_type": "stream", "text": ["HOME=/home/me\n", "password = fixture-output-secret\n"]}]}]}"#,
+    );
+    fixture.write(
+        "page.html",
+        b"<h2>Calling the API</h2>\n<pre><code><span class=\"va\">api_key</span> <span class=\"op\">=</span> <span class=\"st\">&quot;sk-fixture-page-secret&quot;</span></code></pre>\n",
+    );
+    fixture.write(
+        "notes.tex",
+        b"\\section{Setup}\n\\subsection{password: fixture-latex-secret}\nbody\n",
+    );
+    fixture.write(
+        "slides.qmd",
+        b"# Setup\n\n```{python}\ntoken = \"fixture-slide-secret\"\n```\n",
+    );
+    fixture.write("lab-ordinary.ipynb", notebook("x = 1").as_bytes());
+    let index = fixture.index();
+    reconcile_manifest(&fixture.root, &index).expect("reconcile extracted-secret fixtures");
+
+    let state = |path: &str| -> (String, Option<String>, i64) {
+        Connection::open(&index)
+            .unwrap()
+            .query_row(
+                "SELECT index_status, sensitivity_class,
+                        (SELECT count(*) FROM source_candidates candidate
+                         WHERE candidate.manifest_id = source_manifest.manifest_id)
+                 FROM source_manifest WHERE display_path = ?1",
+                [path],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+    };
+    let excluded = ("excluded".to_owned(), Some("credential".to_owned()), 0);
+    for path in [
+        "lab-a.ipynb",
+        "lab-b-minified.ipynb",
+        "lab-c-output.ipynb",
+        "page.html",
+        "notes.tex",
+        "slides.qmd",
+    ] {
+        if state(path).0 == "pending" {
+            let extracted = extract_source(&fixture.root, &index, Path::new(path))
+                .unwrap_or_else(|error| panic!("{path}: {error}"));
+            assert!(extracted.is_empty(), "{path} was indexed");
+        }
+        assert_eq!(state(path), excluded, "{path}");
+        assert!(
+            crate::retrieval::text_sensitivity(
+                Path::new(path),
+                &fs::read(fixture.root.join(path)).unwrap()
+            )
+            .is_some(),
+            "{path}: searchable and export disagree with the index"
+        );
+    }
+    let ordinary = extract_source(&fixture.root, &index, Path::new("lab-ordinary.ipynb"))
+        .expect("an ordinary notebook is indexed");
+    assert!(ordinary.iter().any(|chunk| chunk.body.contains("x = 1")));
+    for entry in fs::read_dir(index.parent().unwrap()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            let bytes = fs::read(&path).unwrap();
+            for secret in [
+                "fixture-notebook-secret",
+                "fixture-output-secret",
+                "fixture-page-secret",
+                "fixture-latex-secret",
+                "fixture-slide-secret",
+            ] {
+                assert!(
+                    !bytes
+                        .windows(secret.len())
+                        .any(|window| window == secret.as_bytes()),
+                    "{} holds {secret}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn reconciliation_and_extraction_reject_symlink_swaps_after_open() {

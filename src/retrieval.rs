@@ -19,7 +19,7 @@ pub(crate) use coordinator::CoordinatorBudget;
 pub(crate) use coordinator::OperationCancellation;
 pub(crate) use manifest::ManifestError;
 pub(crate) use manifest::convert::worker_status as conversion_worker_status;
-pub(crate) use manifest::extract::sensitive_content;
+pub(crate) use manifest::extract::{sensitive_content, text_sensitivity};
 pub(crate) use manifest::run_pdf_extractor;
 pub(crate) use manifest::schema::{
     INDEX_DIAGNOSTIC_BUDGET, INDEX_INITIALIZATION_BUDGET, initialize_index,

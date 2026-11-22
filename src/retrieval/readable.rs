@@ -9,7 +9,7 @@ use super::manifest::convert::worker_config_from_env;
 use super::manifest::pdf::extract_pdf_from_file;
 use super::{
     ExclusionReason, MAX_PDF_SOURCE_BYTES, MAX_SOURCE_BYTES, SensitivityClass, SourceKind,
-    credential_word_in_name, sensitive_content, source_exclusion, source_kind,
+    credential_word_in_name, sensitive_content, source_exclusion, source_kind, text_sensitivity,
 };
 use crate::workspace::Workspace;
 
@@ -191,7 +191,7 @@ fn check_text(shown: &str, full: &Path, size: u64) -> Verdict {
         return Verdict::no(shown, "too_large", "It is too large for search.");
     }
     match read_all(full, MAX_SOURCE_BYTES as u64) {
-        Ok(bytes) if sensitive_content(&bytes).is_some() => Verdict::no(
+        Ok(bytes) if text_sensitivity(full, &bytes).is_some() => Verdict::no(
             shown,
             "secret_content",
             "Search leaves it out, because its text looks like it holds a password or key.",

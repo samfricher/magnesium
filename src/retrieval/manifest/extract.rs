@@ -14,7 +14,7 @@ use super::{
     AnchorKind, CurrentSource, ManifestError, SourceCandidate, hex_digest, io_error, json_column,
     sha256_hex, sqlite,
 };
-use crate::retrieval::chunking::{ChunkDraft, ChunkKind, chunk_text, page_chunk};
+use crate::retrieval::chunking::{ChunkDraft, ChunkKind, chunk_text, page_chunk, plain_text};
 use crate::retrieval::{MAX_PDF_SOURCE_BYTES, MAX_SOURCE_BYTES, SensitivityClass};
 use crate::workspace::native_path_key;
 
@@ -273,15 +273,20 @@ fn prepare_source_content(
             if let Some(sensitivity) = sensitive_content(&bytes) {
                 return Ok((PdfOutcome::Sensitive(sensitivity), None));
             }
-            String::from_utf8(bytes)
-                .map(|text| chunk_text(relative_path, &text))
-                .map_err(|_| {
-                    ManifestError::Invalid(format!(
-                        "{} is not valid UTF-8 text",
-                        relative_path.display()
-                    ))
-                })
-                .map(|drafts| (PdfOutcome::Drafts(drafts), None))
+            let text = String::from_utf8(bytes).map_err(|_| {
+                ManifestError::Invalid(format!(
+                    "{} is not valid UTF-8 text",
+                    relative_path.display()
+                ))
+            })?;
+            let drafts = chunk_text(relative_path, &text);
+            Ok((
+                match extracted_sensitivity(relative_path, &text, &drafts) {
+                    Some(sensitivity) => PdfOutcome::Sensitive(sensitivity),
+                    None => PdfOutcome::Drafts(drafts),
+                },
+                None,
+            ))
         }
         "pdf" => {
             if let Some(custom) = custom_pdf_extractor {
@@ -411,16 +416,43 @@ fn native_pages_to_drafts(
         return Ok(PdfOutcome::Sensitive(sensitivity));
     }
     let titles = layout.map_or_else(Vec::new, |layout| page_titles(layout, pages.len()));
-    Ok(PdfOutcome::Drafts(
-        pages
-            .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                let page = u32::try_from(index + 1).expect("PDF page limit fits u32");
-                page_chunk(page, text, titles.get(index).cloned().flatten())
-            })
-            .collect(),
-    ))
+    let drafts = pages
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let page = u32::try_from(index + 1).expect("PDF page limit fits u32");
+            page_chunk(page, text, titles.get(index).cloned().flatten())
+        })
+        .collect::<Vec<_>>();
+    Ok(match drafts_sensitivity(&drafts) {
+        Some(sensitivity) => PdfOutcome::Sensitive(sensitivity),
+        None => PdfOutcome::Drafts(drafts),
+    })
+}
+
+fn drafts_sensitivity(drafts: &[ChunkDraft]) -> Option<SensitivityClass> {
+    drafts.iter().find_map(|draft| {
+        sensitive_content(draft.body.as_bytes()).or_else(|| {
+            let titles = draft.structural_path.as_deref()?.replace(" > ", "\n");
+            sensitive_content(titles.as_bytes())
+        })
+    })
+}
+
+fn extracted_sensitivity(
+    path: &Path,
+    text: &str,
+    drafts: &[ChunkDraft],
+) -> Option<SensitivityClass> {
+    drafts_sensitivity(drafts)
+        .or_else(|| plain_text(path, text).and_then(|plain| sensitive_content(plain.as_bytes())))
+}
+
+pub(crate) fn text_sensitivity(path: &Path, bytes: &[u8]) -> Option<SensitivityClass> {
+    sensitive_content(bytes).or_else(|| {
+        let text = std::str::from_utf8(bytes).ok()?;
+        extracted_sensitivity(path, text, &chunk_text(path, text))
+    })
 }
 
 pub(super) fn try_worker_for_blank_pdf(

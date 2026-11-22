@@ -92,6 +92,61 @@ pub(super) fn chunk_text(path: &Path, text: &str) -> Vec<ChunkDraft> {
     }
 }
 
+pub(super) fn plain_text(path: &Path, text: &str) -> Option<String> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase);
+    match extension.as_deref() {
+        Some("html" | "htm") => Some(decode_entities(&strip_tags_by_line(text))),
+        Some("ipynb") => {
+            let notebook: serde_json::Value = serde_json::from_str(text).ok()?;
+            let mut strings = Vec::new();
+            json_strings(&notebook, &mut strings);
+            Some(strings.join("\n"))
+        }
+        _ => None,
+    }
+}
+
+fn strip_tags_by_line(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for character in html.chars() {
+        match character {
+            '\n' => text.push('\n'),
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(character),
+            _ => {}
+        }
+    }
+    text
+}
+
+fn json_strings(value: &serde_json::Value, strings: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(text) => strings.push(text.clone()),
+        serde_json::Value::Array(items) if items.iter().all(serde_json::Value::is_string) => {
+            strings.push(items.iter().filter_map(serde_json::Value::as_str).collect());
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                json_strings(item, strings);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for item in fields.values() {
+                json_strings(item, strings);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn page_chunk(page: u32, body: String, title: Option<String>) -> ChunkDraft {
     ChunkDraft {
         kind: ChunkKind::Page,
