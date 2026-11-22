@@ -251,6 +251,15 @@ fn an_item_is_asked_by_the_plan_only_through_a_task_or_a_carrier() {
         json!({"action": "write", "target": "midterm-2", "blocks": [{"title": "x", "tasks": ["task.d9"]}]}),
     );
     assert!(bad.unwrap_err().contains("task.d9"));
+    write(
+        &mut store,
+        &folder,
+        json!({"action": "write", "remove_items": ["task.d1"]}),
+    )
+    .unwrap();
+    let map = Map::load(&store.conn).unwrap();
+    assert!(map.blocks["midterm-2"][0].tasks.is_empty());
+    assert!(!map.carried.contains_key("midterm-2"));
 }
 
 #[test]

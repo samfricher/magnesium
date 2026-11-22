@@ -215,15 +215,15 @@ pub(crate) fn map_page(
         .filter(|r| r.state == "in")
         .filter_map(|r| map.file(&r.reference).map(|f| f.code.clone()))
         .collect::<Vec<_>>();
+    let scoped_files = scoped
+        .items
+        .iter()
+        .filter_map(|id| map.item(id).and_then(|i| i.file.clone()))
+        .collect::<std::collections::BTreeSet<_>>();
     let other = map
         .files
         .iter()
-        .filter(|f| {
-            !in_scope_files.contains(&f.code)
-                && !map.items.iter().any(|i| {
-                    i.file.as_deref() == Some(f.code.as_str()) && scoped.items.contains(&i.id)
-                })
-        })
+        .filter(|f| !in_scope_files.contains(&f.code) && !scoped_files.contains(&f.code))
         .collect::<Vec<_>>();
     if !other.is_empty() {
         let _ = writeln!(text, "\n## On the map, not in this scope\n");

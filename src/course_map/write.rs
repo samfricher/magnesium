@@ -1053,6 +1053,43 @@ fn add_trace(tx: &Transaction<'_>, trace: &TraceWrite) -> Result<(), String> {
     Ok(())
 }
 
+fn drop_missing_from_blocks(tx: &Transaction<'_>) -> Result<(), String> {
+    let rows = {
+        let mut statement = tx
+            .prepare("SELECT target, n, sections, tasks FROM blocks")
+            .map_err(fail)?;
+        statement
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(fail)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(fail)?
+    };
+    for (target, n, sections, tasks) in rows {
+        let keep = |text: &str| -> Result<String, String> {
+            let mut kept = Vec::new();
+            for id in serde_json::from_str::<Vec<String>>(text).unwrap_or_default() {
+                if item_exists(tx, &id)? {
+                    kept.push(id);
+                }
+            }
+            Ok(json!(kept).to_string())
+        };
+        tx.execute(
+            "UPDATE blocks SET sections = ?3, tasks = ?4 WHERE target = ?1 AND n = ?2",
+            params![target, n, keep(&sections)?, keep(&tasks)?],
+        )
+        .map_err(fail)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn apply(
     tx: &Transaction<'_>,
     source: &Source<'_>,
@@ -1091,6 +1128,9 @@ pub(crate) fn apply(
         report.items_removed += tx
             .execute("DELETE FROM items WHERE id = ?1", [&id])
             .map_err(fail)?;
+    }
+    if !request.remove_items.is_empty() {
+        drop_missing_from_blocks(tx)?;
     }
     for (n, write) in request.links.iter().enumerate() {
         link(tx, write, true, &mut report).map_err(|e| format!("links[{n}]: {e}"))?;
