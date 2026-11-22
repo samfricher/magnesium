@@ -177,6 +177,101 @@ fn web_pages_use_their_heading_tags_and_skip_scripts() {
 }
 
 #[test]
+fn a_web_page_heading_with_an_ampersand_before_wide_characters_is_read() {
+    let titles = [
+        "Q&A: “Bayes” rule",
+        "R&D — what changed",
+        "& “Quoted” — text",
+        "Notes & 日本語の見出し",
+        "AT&T’s “network”",
+        "Tom & Jerry’s “café”",
+        "&#x2014;&#8212;—&amp;“é”",
+    ];
+    for title in titles {
+        for pad in 0..4 {
+            let heading = format!("{}{title}", "x".repeat(pad));
+            let html = format!("<h2>{heading}</h2>\n<p>body</p>\n");
+            let found = headings("page.html", &html);
+            let expected = heading
+                .replace("&#x2014;", "—")
+                .replace("&#8212;", "—")
+                .replace("&amp;", "&");
+            assert_eq!(found[0].2.as_deref(), Some(expected.as_str()), "{heading}");
+        }
+    }
+}
+
+#[test]
+fn every_section_reader_survives_mixed_markup_and_wide_characters() {
+    let pieces = [
+        "&",
+        ";",
+        "&amp;",
+        "&#x",
+        "&#",
+        "<h2>",
+        "</h2>",
+        "<h1 id=\"a\">",
+        "<div",
+        ">",
+        "<",
+        "“",
+        "”",
+        "—",
+        "é",
+        "日本",
+        "🙂",
+        "#",
+        "## ",
+        " ",
+        "\n",
+        "{",
+        "}",
+        "\\section",
+        "\\begin{frame}",
+        "\\frametitle",
+        "[",
+        "]",
+        "%",
+        "*",
+        "<script",
+        "</script",
+        "<!--",
+        "-->",
+        "```",
+        "~~~",
+        "\"",
+        "\\",
+        "\\n",
+        " {.smaller}",
+        "\r",
+    ];
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: usize| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(state >> 33).unwrap() % bound
+    };
+    for _ in 0..4_000 {
+        let length = next(40);
+        let text = (0..length)
+            .map(|_| pieces[next(pieces.len())])
+            .collect::<String>();
+        let cell = serde_json::to_string(&text).unwrap();
+        let notebook = format!(
+            "{{\n \"cells\": [\n  {{\n   \"cell_type\": \"markdown\",\n   \"source\": [\n    {cell}\n   ]\n  }}\n ]\n}}\n"
+        );
+        for name in ["a.md", "a.qmd", "a.html", "a.tex", "a.ipynb"] {
+            let result = std::panic::catch_unwind(|| chunk_text(Path::new(name), &text));
+            assert!(result.is_ok(), "{name}: {text:?}");
+        }
+        let result = std::panic::catch_unwind(|| chunk_text(Path::new("a.ipynb"), &notebook));
+        assert!(result.is_ok(), "notebook: {notebook:?}");
+    }
+}
+
+#[test]
 fn latex_uses_sectioning_commands_and_frame_titles() {
     let tex = "\\documentclass{beamer}\n\\section{Estimation}\n% \\section{commented out}\n\\begin{frame}[t]{Pivotal \\textbf{quantity}}\nbody\n\\end{frame}\n\\begin{frame}\n\\frametitle{Exercise 8.59}\n\\end{frame}\n\\subsection*{Bias~and MSE\\label{sec:bias}}\n\\sectionmark{not a section}\n";
     let found = headings("chap8.tex", tex);

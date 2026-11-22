@@ -160,14 +160,22 @@ pub(crate) fn extract_source_with_hooks(
     let cancellation = cancellation.unwrap_or(&fallback_cancellation);
     let source_file = open_workspace_source(workspace_root, relative_path, after_open)?;
     cancellation.check()?;
-    let extracted = prepare_source_content(
-        workspace_root,
-        relative_path,
-        &source,
-        source_file,
-        custom_pdf_extractor,
-        Some(cancellation),
-    );
+    let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        prepare_source_content(
+            workspace_root,
+            relative_path,
+            &source,
+            source_file,
+            custom_pdf_extractor,
+            Some(cancellation),
+        )
+    }))
+    .unwrap_or_else(|_| {
+        Err(ManifestError::Invalid(format!(
+            "{} could not be read: the reader for this kind of file failed on it",
+            relative_path.display()
+        )))
+    });
     let (outcome, converter) = match extracted {
         Ok(extracted) => extracted,
         Err(

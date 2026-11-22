@@ -483,6 +483,68 @@ fn catch_up_reaches_a_file_after_a_full_window_of_newly_excluded_files() {
 }
 
 #[test]
+fn catch_up_reaches_the_files_after_one_whose_reader_fails_unexpectedly() {
+    let fixture = Fixture::new("catch-up-reader-panics");
+    fixture.write("a-lesson.md", b"first lesson\n");
+    fixture.write("b-slides.pdf", &pdf_fixture());
+    fixture.write("c-lesson.md", b"last lesson\n");
+    finish_metadata_scan(&fixture, budget(8));
+    assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "pending");
+    let panics = |root: &Path, index: &Path, relative: &Path, token: &OperationCancellation| {
+        if relative != Path::new("b-slides.pdf") {
+            return super::extract_for_search(root, index, relative, token).map(drop);
+        }
+        super::super::manifest::extract::extract_source_with_pdf(root, index, relative, |_| {
+            panic!("a reader bug")
+        })
+        .map(drop)
+    };
+
+    catch_up_with(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut Skipped::new(),
+        false,
+        panics,
+    )
+    .expect("catch up");
+    assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "indexed");
+    assert_eq!(source_status(&fixture.index(), "b-slides.pdf"), "failed");
+}
+
+#[test]
+fn catch_up_indexes_a_web_page_whose_heading_mixes_an_ampersand_and_curly_quotes() {
+    let fixture = Fixture::new("catch-up-ampersand-heading");
+    fixture.write(
+        "a-page.html",
+        "<h2>& “Quoted” — text</h2>\n<p>body</p>\n".as_bytes(),
+    );
+    fixture.write("b-lesson.md", b"lesson\n");
+    finish_metadata_scan(&fixture, budget(8));
+
+    catch_up(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut Skipped::new(),
+        false,
+    )
+    .expect("catch up");
+    assert_eq!(source_status(&fixture.index(), "a-page.html"), "indexed");
+    assert_eq!(source_status(&fixture.index(), "b-lesson.md"), "indexed");
+    let title: String = Connection::open(fixture.index())
+        .unwrap()
+        .query_row(
+            "SELECT structural_path FROM source_candidates candidate
+             JOIN source_manifest manifest USING (manifest_id)
+             WHERE manifest.display_path = 'a-page.html' AND candidate.status = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(title, "& “Quoted” — text");
+}
+
+#[test]
 fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
     let fixture = Fixture::new("catch-up-timeout");
     fixture.write("a-slow.pdf", &pdf_fixture());
