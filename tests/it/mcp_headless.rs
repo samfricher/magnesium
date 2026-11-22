@@ -53,7 +53,10 @@ fn mcp_advertises_five_headless_tools_and_serves_no_resources() {
         if tool["name"] == "sources" {
             let mut actions = BTreeSet::new();
             source_actions(&tool["inputSchema"], &mut actions);
-            assert_eq!(actions, BTreeSet::from(["inspect".into(), "status".into()]));
+            assert_eq!(
+                actions,
+                BTreeSet::from(["inspect".into(), "sections".into(), "status".into()])
+            );
         }
     }
     write_message(

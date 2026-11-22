@@ -10,6 +10,8 @@ use crate::support::snapshot::DatabaseSnapshot;
 mod exact;
 #[path = "sources_view/pdf.rs"]
 mod pdf;
+#[path = "sources_view/sections.rs"]
+mod sections;
 
 const CURRENT_CANONICAL_TABLES: &[&str] = &[
     "learning_sessions",

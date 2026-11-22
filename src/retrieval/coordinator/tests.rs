@@ -545,10 +545,11 @@ fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
 }
 
 #[test]
-fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
+fn catch_up_finishes_a_recheck_in_progress_and_starts_one_only_when_a_lesson_starts() {
     let idle = Fixture::new("catch-up-no-recheck");
     let rechecking = Fixture::new("catch-up-recheck-in-progress");
-    for fixture in [&idle, &rechecking] {
+    let lesson_start = Fixture::new("catch-up-lesson-start");
+    for fixture in [&idle, &rechecking, &lesson_start] {
         for index in 0..6 {
             fixture.write(
                 &format!("lesson-{index}.md"),
@@ -565,14 +566,19 @@ fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
         budget(1),
     )
     .expect("a search starts a recheck");
-    let recheck = persisted_cursor(&rechecking.index());
+    assert_eq!(scan_active(&rechecking.index()), 1);
+    let generation = |fixture: &Fixture| {
+        crate::retrieval::manifest::current_generation(&fixture.index()).unwrap()
+    };
+    let before = generation(&lesson_start);
+    lesson_start.write("lesson-6.md", b"added after the first scan\n");
 
-    for fixture in [&idle, &rechecking] {
+    for (fixture, rescan) in [(&idle, false), (&rechecking, false), (&lesson_start, true)] {
         catch_up(
             &fixture.root,
             &OperationCancellation::none(),
             &mut Skipped::new(),
-            false,
+            rescan,
         )
         .expect("catch up");
         for index in 0..6 {
@@ -581,12 +587,17 @@ fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
                 "indexed"
             );
         }
+        assert_eq!(scan_active(&fixture.index()), 0, "a recheck was left open");
     }
-    assert_eq!(scan_active(&idle.index()), 0, "catch-up started a recheck");
     assert_eq!(
-        persisted_cursor(&rechecking.index()),
-        recheck,
-        "catch-up moved the recheck in progress"
+        generation(&idle),
+        before,
+        "catch-up started a recheck nobody asked for"
+    );
+    assert_eq!(generation(&lesson_start), before + 1);
+    assert_eq!(
+        source_status(&lesson_start.index(), "lesson-6.md"),
+        "indexed"
     );
 }
 

@@ -62,8 +62,12 @@ pub(crate) fn run_index() -> std::process::ExitCode {
     }
 }
 
+pub(crate) fn background_indexing_on() -> bool {
+    std::env::var_os(BACKGROUND_INDEX_OFF).is_none_or(|value| value != "1")
+}
+
 pub(crate) fn start_background_index(root: &Path) -> &'static str {
-    if std::env::var_os(BACKGROUND_INDEX_OFF).is_some() {
+    if !background_indexing_on() {
         return "off";
     }
     let Ok(executable) = std::env::current_exe() else {
@@ -88,8 +92,8 @@ pub(crate) use search::{MAX_RESULTS as MAX_SEARCH_RESULTS, SourceSearchRequest};
 #[cfg(test)]
 pub(crate) use manifest::status::SpanFact;
 pub(crate) use manifest::status::{
-    CandidateFacts, FactsInterest, Interval, ManifestRow, PreparationDisposition,
-    SOURCES_EXCERPT_CHAR_CAP, read_sections,
+    CandidateFacts, FactsInterest, FolderFiles, Interval, ManifestRow, PreparationDisposition,
+    SOURCES_EXCERPT_CHAR_CAP, folder_files, read_sections,
 };
 #[cfg(test)]
 pub(crate) mod manifest_test_facts {

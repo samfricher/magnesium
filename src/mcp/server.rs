@@ -165,7 +165,9 @@ where
             Ok(value) => tool_success(value),
             Err((action, error)) => tool_error(&action, &error),
         };
-        if let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&cwd) {
+        if work.name == "search_sources"
+            && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&cwd)
+        {
             crate::retrieval::catch_up::schedule(workspace.root(), false);
         }
         #[cfg(test)]
@@ -372,10 +374,11 @@ pub(crate) fn run(
         plugin_version,
         protocol_version,
     });
-    if let Some(root) = server
-        .bound_root
-        .clone()
-        .or_else(|| std::env::current_dir().ok())
+    if crate::retrieval::background_indexing_on()
+        && let Some(root) = server
+            .bound_root
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
         && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&root)
     {
         crate::retrieval::catch_up::schedule(workspace.root(), true);

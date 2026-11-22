@@ -94,17 +94,19 @@ fn sources_resolved(
         }));
     }
     let cancellation = OperationCancellation::none();
-    let prepared = prepare_explicit_source(
-        &root,
-        &anchor.relative,
-        FactsInterest::Range {
-            start: anchor.start,
-            end: anchor.end,
-            include_excerpt: action.includes_content(),
-        },
-        &cancellation,
-    )
-    .map_err(|error| error.to_string())?;
+    let interest = || FactsInterest::Range {
+        start: anchor.start,
+        end: anchor.end,
+        include_excerpt: action.includes_content(),
+    };
+    let prepared =
+        match prepare_explicit_source(&root, &anchor.relative, interest(), &cancellation) {
+            Err(ManifestError::SourceSuperseded) => {
+                prepare_explicit_source(&root, &anchor.relative, interest(), &cancellation)
+            }
+            other => other,
+        }
+        .map_err(|error| error.to_string())?;
     let preparation = prepared.preparation;
     let row = prepared.row;
     let facts = prepared.candidates;

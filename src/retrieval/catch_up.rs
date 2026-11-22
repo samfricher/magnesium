@@ -80,7 +80,8 @@ pub(super) fn catch_up_with(
         let progress = indexing_progress(&index_path, EXTRACT_WINDOW, |source| {
             !skipped.contains(source)
         })?;
-        let step = if std::mem::take(&mut rescan) && progress.pending.is_empty() {
+        let step = if rescan && progress.pending.is_empty() {
+            rescan = false;
             CatchUpStep::Discover {
                 cursor: progress.scan_cursor,
             }
