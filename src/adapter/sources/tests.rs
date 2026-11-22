@@ -567,6 +567,89 @@ fn pending_pdf_inspection_keeps_empty_text_and_exact_hashed_physical_page() {
 }
 
 #[test]
+fn sections_of_a_file_not_indexed_yet_say_so_and_how_far_the_folder_is() {
+    let environment = initialized_source_environment();
+    let root = &environment.workspace;
+    fs::create_dir_all(root.join("slides")).unwrap();
+    fs::write(
+        root.join("slides/lec08.qmd"),
+        "# Recurrent Networks\n\n## Parity\n\nbody\n",
+    )
+    .unwrap();
+    let index = crate::workspace::source_index_path(root);
+    retrieve_workspace_sources(
+        root,
+        &index,
+        Path::new(""),
+        &RetrievalRequest {
+            active_workspace_id: "source-fixture".into(),
+            lexical: SourceSearchRequest {
+                query: "lesson".into(),
+                path_prefix: None,
+                limit: 10,
+            },
+        },
+        CoordinatorBudget {
+            max_on_demand: 0,
+            max_duration: std::time::Duration::from_secs(5),
+            ..CoordinatorBudget::default()
+        },
+    )
+    .unwrap();
+    prepare_explicit_source(
+        root,
+        Path::new("lesson.md"),
+        FactsInterest::IdentityOnly,
+        &OperationCancellation::none(),
+    )
+    .unwrap();
+    let status = |path: &str| {
+        read_manifest_row(&index, Path::new(path))
+            .unwrap()
+            .unwrap()
+            .index_status
+    };
+    assert_eq!(status("lesson.md"), "indexed");
+    assert_eq!(status("slides/lec08.qmd"), "pending");
+    let resolved = resolve_workspace(root).unwrap().unwrap();
+    let reference = SourcesRequest {
+        action: SourceAction::Sections,
+        schema_version: None,
+        path: Some("slides/lec08.qmd".into()),
+        content_sha256: None,
+        anchor_kind: None,
+        anchor_start: None,
+        anchor_end: None,
+    };
+    let writer = Connection::open(&index).unwrap();
+    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let waiting = sources_resolved(&resolved, SourceAction::Sections, &reference).unwrap();
+    writer.execute_batch("ROLLBACK").unwrap();
+
+    assert_eq!(waiting["indexed"], false, "{waiting}");
+    assert_eq!(waiting["sections"], json!([]), "{waiting}");
+    assert_eq!(waiting["folder"]["indexed"], 1, "{waiting}");
+    assert_eq!(waiting["folder"]["readable"], 2, "{waiting}");
+    let note = waiting["note"].as_str().unwrap();
+    assert!(note.contains("not indexed yet"), "{waiting}");
+    assert!(note.contains("1 of 2 readable files"), "{waiting}");
+    assert!(!note.contains("by eye"), "{waiting}");
+
+    let listed = sources_resolved(&resolved, SourceAction::Sections, &reference).unwrap();
+    assert_eq!(listed["indexed"], true, "{listed}");
+    assert_eq!(
+        listed["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|section| section["heading"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["Recurrent Networks", "Recurrent Networks > Parity"],
+        "{listed}"
+    );
+}
+
+#[test]
 fn display_labels_name_physical_indices_not_printed_numbers() {
     assert_eq!(display_label("page", 3, Some(3), None), "physical page 3");
     assert_eq!(

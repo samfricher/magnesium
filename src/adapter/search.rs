@@ -86,13 +86,7 @@ fn kind_words(kind: &str) -> &'static str {
     }
 }
 
-fn files_view(files: &FolderFiles) -> Value {
-    let cannot = files
-        .unreadable
-        .iter()
-        .filter(|group| !matches!(group.kind, "no_titles"))
-        .map(|group| group.count)
-        .sum::<usize>();
+pub(super) fn indexed_summary(files: &FolderFiles) -> String {
     let mut summary = if files.first_scan_done {
         format!(
             "{} of {} are indexed",
@@ -113,6 +107,17 @@ fn files_view(files: &FolderFiles) -> Value {
         summary.push_str("; the folder is being rechecked for changes");
     }
     summary.push('.');
+    summary
+}
+
+fn files_view(files: &FolderFiles) -> Value {
+    let cannot = files
+        .unreadable
+        .iter()
+        .filter(|group| !matches!(group.kind, "no_titles"))
+        .map(|group| group.count)
+        .sum::<usize>();
+    let mut summary = indexed_summary(files);
     if cannot > 0 {
         summary.push_str(&format!(
             " {} cannot be read as text.",

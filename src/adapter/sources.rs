@@ -236,12 +236,40 @@ fn sections_view(
     row: &ManifestRow,
 ) -> Result<Value, String> {
     let index = crate::workspace::source_index_path(root);
-    let listed = read_sections(&index, row).map_err(|error| error.to_string())?;
     let kind = if row.source_kind == "pdf" {
         "page"
     } else {
         "line"
     };
+    if row.index_status != "indexed" {
+        let folder = crate::retrieval::folder_files(&index).ok();
+        let mut note =
+            "This file is not indexed yet, so its section titles are not known yet.".to_owned();
+        if let Some(folder) = &folder {
+            note.push(' ');
+            note.push_str(&super::search::indexed_summary(folder));
+        }
+        note.push_str(" Ask again in a moment.");
+        return Ok(json!({
+            "schema_version": 1,
+            "action": SourceAction::Sections,
+            "active": true,
+            "file": {"path": anchor.path, "content_sha256": row.content_sha256},
+            "authority": {"workspace_id": workspace_id, "type": "original_source"},
+            "anchor_kind": kind,
+            "indexed": false,
+            "sections": [],
+            "count": 0,
+            "folder": folder.map(|folder| json!({
+                "indexed": folder.indexed,
+                "readable": folder.readable,
+                "waiting": folder.waiting,
+                "first_scan_done": folder.first_scan_done,
+            })),
+            "note": note,
+        }));
+    }
+    let listed = read_sections(&index, row).map_err(|error| error.to_string())?;
     let note = if listed.sections.is_empty() {
         "The runtime found no section titles in this file. Read it by eye to name its sections."
     } else if listed.untitled_anchors > 0 {
@@ -256,6 +284,7 @@ fn sections_view(
         "file": {"path": anchor.path, "content_sha256": row.content_sha256},
         "authority": {"workspace_id": workspace_id, "type": "original_source"},
         "anchor_kind": kind,
+        "indexed": true,
         "sections": listed.sections.iter().map(|section| json!({
             "heading": section.heading,
             "anchor_start": section.start,
