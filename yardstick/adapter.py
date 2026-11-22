@@ -513,7 +513,7 @@ class Channel:
         self.revisions: dict[str, int] = {}
 
     async def __aenter__(self):
-        env = self.place.env(CLAUDE_CODE_SESSION_ID=self.conversation)
+        env = self.place.env(CLAUDE_CODE_SESSION_ID=self.conversation, MAGNESIUM_SESSION="on")
         self.client = NativeMcpClient([str(self.adapter.binary), "_internal", "mcp-server", *HOST], cwd=str(self.place.folder), env=env,
                                       limits=TransportLimits(request_timeout=60.0, max_frame_bytes=8 * 1024 * 1024))
         await self.client.__aenter__()
