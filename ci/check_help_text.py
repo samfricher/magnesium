@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "claude-plugin/skills/help/SKILL.md"
-TOPICS = ("overview", "papers", "recording", "setup", "trouble")
+TOPICS = ("overview", "papers", "privacy", "setup", "trouble")
 WORD_LIMITS = {"Topic: overview": 180}
 TOPIC_WORDS = 250
 SCREEN_WORDS = 180

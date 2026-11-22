@@ -8,16 +8,16 @@ In a new conversation reload active instructions and prepare current memory; mem
 
 Check pending_evidence even when memory revisions are unchanged: captured work may await interpretation. Page session_choices and inspect relevant pending events before treating a saved diagnosis as latest. Reading a session does not resume, bind, assess, or process it. Qualify context you cannot inspect. Before independent review withhold answer-bearing recap. Unknown delivery is not learner failure; do not repeat teaching solely because a checkpoint is older.
 
-Honor pause/stop immediately, even if persistence fails: control (below; an action, not an update field) stops this conversation; session.pause then stops the lesson in every conversation. “One more check then pause” permits that check and feedback, not another test. Resume and recording_on are distinct. Declining review creates no failure observation or debt. Disclose a save limit once; promise no restart durability.
+When the learner is done for now, send end_sitting once and close in a line; the lesson stays open, and their next message in this conversation goes on with it, with no resume. “One more check then I'm done” permits that check and feedback, not another test. Declining review creates no failure observation or debt. Disclose a save limit once.
 
-<!-- executable-recipe: control_pause -->
+<!-- executable-recipe: end_sitting -->
 ```json
-{"schema":"learner-model/v2","action":"control","request_id":"pause-1","control":"pause","turn_ref":"$CURRENT_EVENT_ID"}
+{"schema":"learner-model/v2","action":"end_sitting"}
 ```
 
 ## Pending raw chronology
 
-pending_evidence counts are not assessments. Use pending_work for concise metadata, including earlier unbound input; follow the returned next_call unchanged. Read only relevant originals and retain origin, help, and uncertainty. Retrieval alone never processes work. Current controls take priority.
+pending_evidence counts are not assessments. Use pending_work for concise metadata, including earlier unbound input; follow the returned next_call unchanged. Read only relevant originals and retain origin, help, and uncertainty. Retrieval alone never processes work.
 
 <!-- executable-recipe: pending_session_choices -->
 ```json
@@ -35,10 +35,6 @@ Read selected originals through memory(read); follow next_call for remaining ref
 ```json
 {"schema":"learner-model/v2","action":"read","refs":[{"kind":"event","id":"$PENDING_EVENT_ID"}]}
 ```
-
-## Complete captured work after pause
-
-With recording on, mode:complete_captured may finish the existing learner turn_ref using ordinary observation/memory shapes and a guarded session revision. No new capture, start/resume, goal change, task creation/change, or review creation. Keep the host stopped. An updated diagnosis may preserve the identical pending_task or clear it with null. Omit checkpoint to preserve it entirely. Failure leaves work pending. recording_off forbids completion.
 
 ## Assign unbound work deliberately
 

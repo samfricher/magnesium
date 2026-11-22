@@ -71,7 +71,7 @@ fn lesson_started_in_original() -> (TestEnvironment, String) {
 }
 
 #[test]
-fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original() {
+fn rejected_fork_resume_names_the_retry_and_completing_in_the_fork_stops_the_original() {
     let (e, session) = lesson_started_in_original();
     let text = "wider, because 99% needs a bigger multiplier";
     let ticket = ticket(&v2::prompt(&e, "claude", FORK, Some("f-1"), text));
@@ -115,28 +115,28 @@ fn rejected_fork_resume_names_the_retry_and_pausing_the_fork_stops_the_original(
     assert_eq!(retried["update_status"], "committed", "{retried}");
     assert_eq!(active(&e), [(FORK.into(), true), (ORIGINAL.into(), true)]);
 
-    let paused = call(
+    let completed = call(
         &e,
         FORK,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"fork-pause","session":{"operation":"pause","session_id":session,"expected_revision":2}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"fork-complete","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
     );
-    assert_eq!(paused["update_status"], "committed", "{paused}");
+    assert_eq!(completed["update_status"], "committed", "{completed}");
     assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), false)]);
     let again = call(
         &e,
         ORIGINAL,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"original-pause","session":{"operation":"pause","session_id":session,"expected_revision":3}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"original-complete","session":{"operation":"complete","session_id":session,"expected_revision":3}}),
     );
     assert_eq!(again["error"]["code"], "learning_inactive", "{again}");
     assert_eq!(
-        again["error"]["recovery"]["session_status"], "paused",
+        again["error"]["recovery"]["session_status"], "completed",
         "{again}"
     );
     assert!(
         again["error"]["recovery"]["instruction"]
             .as_str()
             .unwrap()
-            .contains("already paused, possibly from another conversation")
+            .contains("already completed, possibly from another conversation")
     );
     let events = v2::count(&e, "learning_events");
     let back = v2::prompt(&e, "claude", ORIGINAL, Some("o-2"), "back in the original");
@@ -173,7 +173,7 @@ fn completing_a_shared_lesson_stops_capture_in_every_conversation() {
 }
 
 #[test]
-fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
+fn a_later_conversation_can_complete_a_lesson_it_never_joined() {
     let (e, session) = lesson_started_in_original();
     const LATER: &str = "later";
     let other = v2::start(&e, "claude", LATER);
@@ -196,23 +196,17 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
     let mixed = call(
         &e,
         LATER,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"mixed","session":{"operation":"pause","session_id":session,"expected_revision":1},"observations":observation(&event)}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"mixed","session":{"operation":"complete","session_id":session,"expected_revision":1},"observations":observation(&event)}),
     );
     assert_eq!(mixed["error"]["code"], "event_scope_conflict", "{mixed}");
 
-    let paused = call(
-        &e,
-        LATER,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"pause-old","session":{"operation":"pause","session_id":session,"expected_revision":1}}),
-    );
-    assert_eq!(paused["update_status"], "committed", "{paused}");
-    assert_eq!(active(&e), [(LATER.into(), true), (ORIGINAL.into(), false)]);
     let completed = call(
         &e,
         LATER,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"complete-old","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete-old","session":{"operation":"complete","session_id":session,"expected_revision":1}}),
     );
     assert_eq!(completed["update_status"], "committed", "{completed}");
+    assert_eq!(active(&e), [(LATER.into(), true), (ORIGINAL.into(), false)]);
     let statuses: Vec<(String, String)> = db(&e)
         .prepare("SELECT session_id, status FROM learning_sessions ORDER BY session_id = ?1 DESC")
         .unwrap()
@@ -230,7 +224,7 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
     let reopened = call(
         &e,
         LATER,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"pause-completed","session":{"operation":"pause","session_id":session,"expected_revision":3}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete-completed","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
     );
     assert_eq!(
         reopened["error"]["code"], "event_scope_conflict",
@@ -248,7 +242,7 @@ fn a_later_conversation_can_pause_then_complete_a_lesson_it_never_joined() {
 }
 
 #[test]
-fn served_pause_control_recipe_pauses_the_current_conversation() {
+fn served_end_sitting_recipe_keeps_the_lesson_open_in_the_current_conversation() {
     let (e, _) = lesson_started_in_original();
     let served = v2::tool(
         &e,
@@ -258,29 +252,20 @@ fn served_pause_control_recipe_pauses_the_current_conversation() {
         json!({"action":"instructions","host":"claude","stage":"consolidate_and_resume"}),
     );
     let text = served["text"].as_str().unwrap();
-    let body = text
-        .split_once("<!-- executable-recipe: control_pause -->\n```json\n")
-        .expect("pause control recipe is served")
-        .1;
-    let current: String = db(&e)
-        .query_row(
-            "SELECT event_id FROM learning_events ORDER BY event_no DESC LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let recipe = body
+    let recipe = text
+        .split_once("<!-- executable-recipe: end_sitting -->\n```json\n")
+        .expect("end_sitting recipe is served")
+        .1
         .split_once("\n```")
         .unwrap()
-        .0
-        .replace("$CURRENT_EVENT_ID", &current);
-    let result = call(&e, ORIGINAL, serde_json::from_str(&recipe).unwrap());
-    assert_eq!(result["durable"], true, "{result}");
-    assert_eq!(active(&e), [(ORIGINAL.into(), false)]);
+        .0;
+    let result = call(&e, ORIGINAL, serde_json::from_str(recipe).unwrap());
+    assert_eq!(result["action"], "end_sitting", "{result}");
+    assert_eq!(active(&e), [(ORIGINAL.into(), true)]);
 }
 
 #[test]
-fn a_control_field_on_an_update_names_the_control_action() {
+fn a_control_field_on_an_update_names_end_sitting() {
     let (e, _) = lesson_started_in_original();
     let rejected = call(
         &e,
@@ -293,14 +278,14 @@ fn a_control_field_on_an_update_names_the_control_action() {
     assert_eq!(recovery["arguments"]["stage"], "consolidate_and_resume");
     let instruction = recovery["instruction"].as_str().unwrap();
     assert!(
-        instruction.contains("\"action\":\"control\""),
+        instruction.contains("\"action\":\"end_sitting\""),
         "{instruction}"
     );
-    assert!(instruction.contains("session.pause"), "{instruction}");
+    assert!(!instruction.contains("session.pause"), "{instruction}");
 }
 
 #[test]
-fn admission_errors_name_the_complete_control_and_session_shapes() {
+fn admission_errors_name_end_sitting_for_a_control_and_the_session_shapes() {
     let (e, _) = lesson_started_in_original();
     let stderr = |request: Value| {
         let output = v2::tool_output(&e, "claude", ORIGINAL, "learning_step", request);
@@ -311,10 +296,9 @@ fn admission_errors_name_the_complete_control_and_session_shapes() {
         json!({"schema":"learner-model/v2","action":"control","request_id":"p","control":"pause"}),
     );
     for required in [
-        "\"action\":\"control\"",
-        "\"turn_ref\"",
-        "\"reported_event\":{\"external_event_key\"",
-        "\"speaker\":\"learner\",\"kind\":\"message\"",
+        "control_removed",
+        "\"action\":\"end_sitting\"",
+        "session.complete",
     ] {
         assert!(control.contains(required), "{required}: {control}");
     }
@@ -328,53 +312,6 @@ fn admission_errors_name_the_complete_control_and_session_shapes() {
 }
 
 #[test]
-fn a_pause_control_in_a_fork_names_the_lesson_wide_pause_for_the_original() {
-    let (e, session) = lesson_started_in_original();
-    let resumed = call(
-        &e,
-        FORK,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"fork-resume","session":{"operation":"resume","session_id":session,"expected_revision":1}}),
-    );
-    assert_eq!(resumed["update_status"], "committed", "{resumed}");
-    let current = v2::context(&v2::prompt(&e, "claude", FORK, Some("f-1"), "pause please"))
-        .split_once("current event ")
-        .unwrap()
-        .1
-        .split('.')
-        .next()
-        .unwrap()
-        .to_owned();
-    let paused = call(
-        &e,
-        FORK,
-        json!({"schema":"learner-model/v2","action":"control","request_id":"pause","control":"pause","turn_ref":current}),
-    );
-    assert_eq!(paused["durable"], true, "{paused}");
-    assert_eq!(
-        paused["lesson_active_in_other_conversations"], 1,
-        "{paused}"
-    );
-    assert!(
-        paused["next_step"]
-            .as_str()
-            .unwrap()
-            .contains("session.pause")
-    );
-    assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), true)]);
-
-    let lesson_paused = call(
-        &e,
-        FORK,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"lesson-pause","session":{"operation":"pause","session_id":session,"expected_revision":2}}),
-    );
-    assert_eq!(
-        lesson_paused["update_status"], "committed",
-        "{lesson_paused}"
-    );
-    assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), false)]);
-}
-
-#[test]
 fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
     let (e, session) = lesson_started_in_original();
     let bound: String = db(&e)
@@ -384,12 +321,12 @@ fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
             |r| r.get(0),
         )
         .unwrap();
-    let paused = call(
+    let completed = call(
         &e,
         ORIGINAL,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"pause","session":{"operation":"pause","session_id":session,"expected_revision":1}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete","session":{"operation":"complete","session_id":session,"expected_revision":1}}),
     );
-    assert_eq!(paused["update_status"], "committed", "{paused}");
+    assert_eq!(completed["update_status"], "committed", "{completed}");
     let rejected = call(
         &e,
         ORIGINAL,
@@ -411,7 +348,7 @@ fn rejected_resume_with_a_bound_turn_ref_prescribes_a_retry_that_commits() {
 }
 
 #[test]
-fn work_captured_before_a_cross_conversation_pause_can_still_be_completed() {
+fn work_captured_before_a_cross_conversation_completion_is_named_and_finished_after_resume() {
     let (e, session) = lesson_started_in_original();
     let pending: String = db(&e)
         .query_row(
@@ -420,7 +357,10 @@ fn work_captured_before_a_cross_conversation_pause_can_still_be_completed() {
             |r| r.get(0),
         )
         .unwrap();
-    for (key, operation, revision) in [("fork-resume", "resume", 1), ("fork-pause", "pause", 2)] {
+    for (key, operation, revision) in [
+        ("fork-resume", "resume", 1),
+        ("fork-complete", "complete", 2),
+    ] {
         let result = call(
             &e,
             FORK,
@@ -437,14 +377,17 @@ fn work_captured_before_a_cross_conversation_pause_can_still_be_completed() {
     let recovery = &refused["error"]["recovery"];
     assert_eq!(recovery["pending_learner_events"], 1, "{refused}");
     let instruction = recovery["instruction"].as_str().unwrap();
-    assert!(instruction.contains("complete_captured"), "{instruction}");
-    assert!(!instruction.contains("nothing is left"), "{instruction}");
+    assert!(instruction.contains("completed"), "{instruction}");
+    assert!(
+        instruction.contains("only in an open lesson"),
+        "{instruction}"
+    );
 
-    let completed = call(
+    let finished = call(
         &e,
         ORIGINAL,
-        json!({"schema":"learner-model/v2","action":"update","mode":"complete_captured","request_id":"complete","turn_ref":pending,"session":{"operation":"use","session_id":session,"expected_revision":recovery["session_revision"]},"observations":observation(&pending),"event_dispositions":[{"event_id":pending,"outcome":"processed"}]}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"resume-and-interpret","turn_ref":pending,"session":{"operation":"resume","session_id":session,"expected_revision":recovery["session_revision"]},"observations":observation(&pending),"event_dispositions":[{"event_id":pending,"outcome":"processed"}]}),
     );
-    assert_eq!(completed["update_status"], "committed", "{completed}");
-    assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), false)]);
+    assert_eq!(finished["update_status"], "committed", "{finished}");
+    assert_eq!(active(&e), [(FORK.into(), false), (ORIGINAL.into(), true)]);
 }

@@ -1201,7 +1201,9 @@ impl InitReport {
                 "instructions: upgraded to this version's teaching instructions (earlier bundle {previous} kept unchanged)"
             );
         }
-        println!("tracking: enabled by default");
+        println!(
+            "sessions: off until you type /magnesium:learn, /magnesium:papers or /magnesium:checks"
+        );
         match self.learner_state {
             LearnerState::Empty => println!("learner state: empty"),
             LearnerState::Preserved => println!("learner state: preserved"),
@@ -1221,7 +1223,7 @@ impl InitReport {
             "created": strings(&self.created),
             "modified": strings(&self.modified),
             "verified": strings(&self.verified),
-            "tracking": "enabled_by_default",
+            "sessions": "off_until_a_study_command",
             "learner_state": match self.learner_state {
                 LearnerState::Empty => "empty",
                 LearnerState::Preserved => "preserved",

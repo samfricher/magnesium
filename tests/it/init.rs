@@ -75,7 +75,9 @@ fn fresh_init_is_private_empty_non_destructive_and_idempotent() {
             path.display()
         );
     }
-    assert!(stdout.contains("tracking: enabled by default"));
+    assert!(stdout.contains(
+        "sessions: off until you type /magnesium:learn, /magnesium:papers or /magnesium:checks"
+    ));
     assert!(stdout.contains("learner state: empty"));
 
     #[cfg(unix)]
@@ -517,7 +519,7 @@ fn init_bundled_plugin_materialization_and_status() {
     );
     let (_, after_opening) = skill.split_once("---\n").unwrap();
     let (frontmatter, body) = after_opening.split_once("\n---\n").unwrap();
-    assert!(frontmatter.contains("Ordinary coding or repository work does not start a lesson"));
+    assert!(frontmatter.contains("disable-model-invocation: true"));
     assert!(body.contains("learner-model/v2"));
     assert!(
         body.contains("Repository work")

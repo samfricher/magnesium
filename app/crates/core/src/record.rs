@@ -145,26 +145,6 @@ pub struct Step {
     pub status: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Control {
-    Pause,
-    Stop,
-    RecordingOff,
-    RecordingOn,
-}
-
-impl Control {
-    pub fn word(self) -> &'static str {
-        match self {
-            Self::Pause => "pause",
-            Self::Stop => "stop",
-            Self::RecordingOff => "recording_off",
-            Self::RecordingOn => "recording_on",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryNote {
     #[serde(default)]
@@ -188,7 +168,6 @@ pub struct Record {
     pub steps: Option<Vec<Step>>,
     pub memory: Option<MemoryNote>,
     pub cold: bool,
-    pub control: Option<Control>,
     pub slow: bool,
     pub next: Option<Next>,
     pub repair: Option<RepairNote>,
@@ -322,18 +301,6 @@ pub fn parse(block: &str) -> Result<Record, String> {
         }
         Some(_) => return Err("memory is not an object".into()),
     };
-    let control = match text_of("control")?.as_deref() {
-        None => None,
-        Some("pause") => Some(Control::Pause),
-        Some("stop") => Some(Control::Stop),
-        Some("recording_off") => Some(Control::RecordingOff),
-        Some("recording_on") => Some(Control::RecordingOn),
-        Some(other) => {
-            return Err(format!(
-                "control {other:?} is not pause, stop, recording_off, recording_on or null"
-            ))
-        }
-    };
     let next = object.get("next").and_then(next_of);
     let (repair, repair_unreadable) = match object.get("repair") {
         None | Some(Value::Null) => (None, false),
@@ -370,7 +337,6 @@ pub fn parse(block: &str) -> Result<Record, String> {
         steps,
         memory,
         cold: flag("cold")?,
-        control,
         slow: flag("slow")?,
         next,
         repair,
@@ -1602,12 +1568,14 @@ mod tests {
     }
 
     #[test]
-    fn a_control_is_read_from_the_block() {
-        let record = parse(r#"{"answer": null, "control": "recording_off"}"#).unwrap();
-        assert_eq!(record.control, Some(Control::RecordingOff));
-        assert!(parse(r#"{"answer": null, "control": "forget me"}"#)
-            .unwrap_err()
-            .contains("control"));
+    fn a_control_left_by_older_instructions_is_ignored() {
+        for control in ["pause", "stop", "forget me"] {
+            let block =
+                format!(r#"{{"answer": "right", "skill": "sign of b", "control": "{control}"}}"#);
+            let record = parse(&block).unwrap();
+            assert_eq!(record.answer, Some(Mark::Right));
+            assert_eq!(record.skill, "sign of b");
+        }
     }
 
     #[test]

@@ -370,8 +370,8 @@ fn valid_delivery_origin_unknown_task_and_other_context_roles() {
             .unwrap();
         assert_eq!(packet["records"][0]["origin"], origin);
         assert_eq!(packet["records"][0]["metadata"]["delivery"], "observed");
-        let pause = f.update(json!({"request_id":"pause","session":{"operation":"pause","session_id":f.session,"expected_revision":2}})).unwrap();
-        f.update(json!({"request_id":"resume","session":{"operation":"resume","session_id":f.session,"expected_revision":pause.revisions[&f.session]}})).unwrap();
+        let complete = f.update(json!({"request_id":"complete","session":{"operation":"complete","session_id":f.session,"expected_revision":2}})).unwrap();
+        f.update(json!({"request_id":"resume","session":{"operation":"resume","session_id":f.session,"expected_revision":complete.revisions[&f.session]}})).unwrap();
         assert_eq!(
             f.read(json!({"action":"status","session_id":f.session}))
                 .unwrap()["session"]["checkpoint"]["pending_task"],

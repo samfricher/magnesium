@@ -1,5 +1,5 @@
 use super::*;
-use crate::learner::records::{StoredCheckpoint, event_facts};
+use crate::learner::records::event_facts;
 
 #[derive(Clone, Copy)]
 pub(super) enum SessionTransition<'a> {
@@ -7,7 +7,6 @@ pub(super) enum SessionTransition<'a> {
     Create(&'a StartSessionEdit),
     Resume(&'a ResumeSessionEdit),
     CheckpointOnly(&'a UseSessionEdit),
-    Pause(&'a PauseSessionEdit),
     Complete(&'a CompleteSessionEdit),
 }
 impl<'a> SessionTransition<'a> {
@@ -17,7 +16,6 @@ impl<'a> SessionTransition<'a> {
             Some(SessionEdit::Start(edit)) => Self::Create(edit),
             Some(SessionEdit::Resume(edit)) => Self::Resume(edit),
             Some(SessionEdit::Use(edit)) => Self::CheckpointOnly(edit),
-            Some(SessionEdit::Pause(edit)) => Self::Pause(edit),
             Some(SessionEdit::Complete(edit)) => Self::Complete(edit),
         }
     }
@@ -27,30 +25,25 @@ impl<'a> SessionTransition<'a> {
 struct HostBinding {
     session: Option<String>,
     active: bool,
-    recording: bool,
 }
 impl HostBinding {
     fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             session: row.get(0)?,
             active: row.get(1)?,
-            recording: row.get(2)?,
         })
     }
     fn load(conn: &Connection, host: &HostContext) -> Result<Self> {
         Ok(conn
             .query_row(
-                "SELECT session_id, learning_active, recording_enabled
+                "SELECT session_id, learning_active
              FROM host_bindings
              WHERE host_kind = ?1 AND host_thread_id = ?2",
                 params![host.host_kind, host.host_thread_id],
                 Self::decode,
             )
             .optional()?
-            .unwrap_or(Self {
-                recording: true,
-                ..Self::default()
-            }))
+            .unwrap_or_default())
     }
 }
 
@@ -72,10 +65,8 @@ fn bare_close_of_open_lesson(
     r: &UpdateRequest,
     transition: SessionTransition<'_>,
 ) -> Result<bool> {
-    let target = match transition {
-        SessionTransition::Pause(PauseSessionEdit { session_id, .. })
-        | SessionTransition::Complete(CompleteSessionEdit { session_id, .. }) => session_id,
-        _ => return Ok(false),
+    let SessionTransition::Complete(CompleteSessionEdit { session_id, .. }) = transition else {
+        return Ok(false);
     };
     if !bare_close(r) {
         return Ok(false);
@@ -83,15 +74,11 @@ fn bare_close_of_open_lesson(
     let status: Option<String> = conn
         .query_row(
             "SELECT status FROM learning_sessions WHERE session_id = ?1",
-            [target],
+            [session_id],
             |row| row.get(0),
         )
         .optional()?;
-    Ok(match status.as_deref() {
-        Some("active") => true,
-        Some("paused") => matches!(transition, SessionTransition::Complete(_)),
-        _ => false,
-    })
+    Ok(status.as_deref() == Some("active"))
 }
 
 pub(super) fn admit_semantic_update(
@@ -103,216 +90,53 @@ pub(super) fn admit_semantic_update(
     let HostBinding {
         session: bound,
         active,
-        recording,
     } = HostBinding::load(conn, host)?;
-    if !recording {
-        return Err(LearnerError::new(
-            "recording_disabled",
-            "Recording changed before semantic update",
-        ));
-    }
-    if r.mode == UpdateMode::Normal {
-        if !active
-            && !SessionEdit::accepts_capture_operation(
-                r.session.as_ref().map(SessionEdit::operation),
-            )
-            && !bare_close_of_open_lesson(conn, r, transition)?
-        {
-            let mut error = LearnerError::new(
-                "learning_inactive",
-                "Start or resume explicitly, or complete already captured work with mode:complete_captured",
-            );
-            let state: Option<(String, i64)> = match &bound {
-                Some(id) => conn
-                    .query_row(
-                        "SELECT status, revision FROM learning_sessions WHERE session_id = ?1",
-                        [id],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    )
-                    .optional()?,
-                None => None,
-            };
-            if let (Some(id), Some((status, revision))) = (&bound, state)
-                && matches!(status.as_str(), "paused" | "completed")
-            {
-                let pending: i64 = conn.query_row(
-                    "SELECT count(*) FROM learning_events
-                     WHERE session_id = ?1 AND speaker = 'learner' AND processing = 'pending'",
-                    [id],
-                    |row| row.get(0),
-                )?;
-                let redundant_pause = matches!(transition, SessionTransition::Pause(_));
-                let opening = if redundant_pause {
-                    format!(
-                        "This lesson is already {status}, possibly from another conversation; no further pause is needed."
-                    )
-                } else {
-                    format!(
-                        "This conversation's lesson is already {status}, possibly from another conversation, so learning is inactive here."
-                    )
-                };
-                let completion = if pending > 0 {
-                    format!(
-                        " {pending} captured learner turn(s) still await interpretation: read them with next_call, then finish them with mode \"complete_captured\" at session revision {revision} with their event dispositions before saying they are saved."
-                    )
-                } else {
-                    " No captured learner turns await interpretation in this lesson.".to_owned()
-                };
-                error.recovery = Some(json!({
-                    "session_id": id,
-                    "session_status": status,
-                    "session_revision": revision,
-                    "pending_learner_events": pending,
-                    "next_call": read::NextCall::pending_events(id),
-                    "instruction": format!("{opening} Do not resume it unless the learner asks to continue.{completion}"),
-                }));
-            }
-            return Err(error);
-        }
+    if active
+        || SessionEdit::accepts_capture_operation(r.session.as_ref().map(SessionEdit::operation))
+        || bare_close_of_open_lesson(conn, r, transition)?
+    {
         return Ok(());
     }
-    if !r.reported_events.is_empty() || r.native_capture.is_some() {
-        return Err(LearnerError::new(
-            "invalid_variant",
-            "Complete-captured cannot record raw input",
-        ));
-    }
-    let session_id = match transition {
-        SessionTransition::None => None,
-        SessionTransition::CheckpointOnly(edit) if edit.goal.is_none() => Some(&edit.session_id),
-        SessionTransition::Pause(edit) => Some(&edit.session_id),
-        SessionTransition::Complete(edit) => Some(&edit.session_id),
-        _ => {
-            return Err(LearnerError::new(
-                "invalid_variant",
-                "Complete-captured cannot start, resume, or change a lesson goal",
-            ));
-        }
+    let mut error = LearnerError::new("learning_inactive", "Start or resume explicitly");
+    let state: Option<(String, i64)> = match &bound {
+        Some(id) => conn
+            .query_row(
+                "SELECT status, revision FROM learning_sessions WHERE session_id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?,
+        None => None,
     };
-    if session_id.is_some_and(|id| bound.as_ref() != Some(id)) {
-        return Err(LearnerError::new(
-            "event_scope_conflict",
-            "Completion must preserve the current host session association",
-        ));
-    }
-    if let Some(task) = r
-        .checkpoint
-        .as_ref()
-        .and_then(|checkpoint| checkpoint.pending_task.as_ref())
-    {
-        let stored = bound
-            .as_ref()
-            .map(|id| {
-                let text: String = conn.query_row(
-                    "SELECT checkpoint_json FROM learning_sessions WHERE session_id = ?1",
-                    [id],
-                    |row| row.get(0),
-                )?;
-                StoredCheckpoint::decode(&text, id)
-            })
-            .transpose()?;
-        if stored.as_ref().and_then(StoredCheckpoint::pending_task) != Some(task) {
-            return Err(field_error(
-                "checkpoint.pending_task",
-                "Complete-captured can preserve the existing task or clear it, but cannot issue or change a task",
-                host,
-            ));
-        }
-    }
-    if r.review_updates
-        .iter()
-        .any(|edit| matches!(edit, ReviewEdit::Create(_)))
-    {
-        return Err(field_error(
-            "review_updates",
-            "Complete-captured cannot create a review suggestion",
-            host,
-        ));
-    }
-    let turn = r.turn_ref.as_ref().ok_or_else(|| {
-        LearnerError::new(
-            "invalid_variant",
-            "Complete-captured requires a pending captured learner turn_ref",
-        )
-    })?;
-    let learner_turn: bool = conn.query_row(
-        "SELECT EXISTS(
-            SELECT 1 FROM learning_events
-            WHERE event_id = ?1 AND speaker = 'learner' AND processing = 'pending'
-              AND ((host_kind = ?2 AND host_thread_id = ?3)
-                   OR (?4 IS NOT NULL AND session_id = ?4))
-        )",
-        params![turn, host.host_kind, host.host_thread_id, bound],
-        |row| row.get(0),
-    )?;
-    if !learner_turn {
-        return Err(LearnerError::new(
-            "event_scope_conflict",
-            "Completion turn_ref must identify pending learner work owned by this host or its bound session",
-        ));
-    }
-    if !r
-        .event_dispositions
-        .iter()
-        .any(|disposition| &disposition.event_id == turn)
-    {
-        return Err(LearnerError::new(
-            "invalid_variant",
-            "Complete-captured requires an explicit semantic disposition for turn_ref",
-        ));
-    }
-    let scoped = |id: &str| -> Result<()> {
-        let valid: bool = conn.query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM learning_events WHERE event_id = ?1
-                  AND ((host_kind = ?2 AND host_thread_id = ?3)
-                       OR (?4 IS NOT NULL AND session_id = ?4))
-            )",
-            params![id, host.host_kind, host.host_thread_id, bound],
+    if let (Some(id), Some((status, revision))) = (&bound, state) {
+        let pending: i64 = conn.query_row(
+            "SELECT count(*) FROM learning_events
+             WHERE session_id = ?1 AND speaker = 'learner' AND processing = 'pending'",
+            [id],
             |row| row.get(0),
         )?;
-        if valid {
-            Ok(())
+        let opening = if status == "completed" {
+            "This conversation's lesson is already completed, possibly from another conversation, so no lesson is open here."
         } else {
-            Err(LearnerError::new(
-                "event_scope_conflict",
-                format!("Completion event {id} is outside the current host/session"),
-            ))
-        }
-    };
-    for observation in &r.observations {
-        for event in &observation.events {
-            scoped(&event.event_id)?;
-        }
-    }
-    for disposition in &r.event_dispositions {
-        scoped(&disposition.event_id)?;
-    }
-    for edit in &r.memory_edits {
-        let basis = match edit {
-            MemoryEdit::Create(edit) => &edit.change_basis,
-            MemoryEdit::Revise(edit) => &edit.change_basis,
-            MemoryEdit::Flag(edit) => &edit.change_basis,
-            MemoryEdit::Retire(edit) => &edit.change_basis,
+            "No lesson is open in this conversation, though its last lesson is still open."
         };
-        for reference in basis {
-            if let ChangeBasisRef::Event(event) = reference {
-                scoped(event)?;
-            }
-        }
+        let waiting = if pending > 0 {
+            format!(
+                " {pending} captured learner turn(s) in it still await interpretation; they are finished only in an open lesson."
+            )
+        } else {
+            String::new()
+        };
+        error.recovery = Some(json!({
+            "session_id": id,
+            "session_status": status,
+            "session_revision": revision,
+            "pending_learner_events": pending,
+            "next_call": read::NextCall::pending_events(id),
+            "instruction": format!("{opening} Resume it only if the learner asks to go on with it.{waiting}"),
+        }));
     }
-    for edit in &r.review_updates {
-        if let ReviewEdit::Update(edit) = edit {
-            if edit.activity_event_id.as_ref() != Some(turn) {
-                return Err(LearnerError::new(
-                    "invalid_variant",
-                    "Completion review updates require the selected closing learner turn as activity_event_id",
-                ));
-            }
-            scoped(turn)?;
-        }
-    }
-    Ok(())
+    Err(error)
 }
 
 pub(super) fn apply_session(
@@ -359,7 +183,7 @@ pub(super) fn apply_session(
                 )
                 .optional()?
                 .ok_or_else(|| unknown(session_id))?;
-            if status != "active" && r.mode == UpdateMode::Normal {
+            if status != "active" {
                 return Err(LearnerError::new(
                     "invalid_variant",
                     "Use requires an active session; resume explicitly",
@@ -394,10 +218,6 @@ pub(super) fn apply_session(
             expected_revision,
             ..
         })
-        | SessionTransition::Pause(PauseSessionEdit {
-            session_id,
-            expected_revision,
-        })
         | SessionTransition::Complete(CompleteSessionEdit {
             session_id,
             expected_revision,
@@ -408,7 +228,7 @@ pub(super) fn apply_session(
             {
                 return Err(LearnerError::new(
                     "event_scope_conflict",
-                    "Pausing or completing a lesson from another conversation must be its own request, with no observations, memory edits, events, checkpoint, practice changes or attempt corrections, and the lesson must still be active or paused",
+                    "Completing a lesson from another conversation must be its own request, with no observations, memory edits, events, checkpoint, practice changes or attempt corrections, and the lesson must still be open",
                 ));
             }
             let next = cas(
@@ -419,7 +239,6 @@ pub(super) fn apply_session(
                 *expected_revision,
             )?;
             let status = match transition {
-                SessionTransition::Pause(PauseSessionEdit { .. }) => "paused",
                 SessionTransition::Complete(CompleteSessionEdit { .. }) => "completed",
                 _ => "active",
             };
@@ -432,10 +251,8 @@ pub(super) fn apply_session(
             (session_id.clone(), status == "active")
         }
     };
-    let closes_unbound_lesson = matches!(
-        transition,
-        SessionTransition::Pause(_) | SessionTransition::Complete(_)
-    ) && existing.as_ref() != Some(&id);
+    let closes_unbound_lesson =
+        matches!(transition, SessionTransition::Complete(_)) && existing.as_ref() != Some(&id);
     if !closes_unbound_lesson {
         conn.execute(
             "INSERT INTO host_bindings(host_kind, host_thread_id, session_id, learning_active)
@@ -445,10 +262,7 @@ pub(super) fn apply_session(
             params![host.host_kind, host.host_thread_id, id, active],
         )?;
     }
-    if matches!(
-        transition,
-        SessionTransition::Pause(_) | SessionTransition::Complete(_)
-    ) {
+    if matches!(transition, SessionTransition::Complete(_)) {
         conn.execute(
             "UPDATE host_bindings SET learning_active = 0
              WHERE session_id = ?1 AND learning_active = 1
@@ -650,15 +464,13 @@ pub(super) fn require_checkpoint_guard(
                 SessionState::decode,
             )
             .map(|state| {
-                (state.status == "active" || request.mode == UpdateMode::CompleteCaptured).then(
-                    || {
-                        SessionEdit::Use(UseSessionEdit {
-                            session_id: id.into(),
-                            expected_revision: state.revision,
-                            goal: None,
-                        })
-                    },
-                )
+                (state.status == "active").then(|| {
+                    SessionEdit::Use(UseSessionEdit {
+                        session_id: id.into(),
+                        expected_revision: state.revision,
+                        goal: None,
+                    })
+                })
             })
         })
         .transpose()?

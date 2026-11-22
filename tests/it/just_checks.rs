@@ -301,22 +301,6 @@ fn a_second_conversation_in_the_folder_goes_on_as_in_any_sitting() {
     assert!(notice.contains("quick checks alone: 3 left"), "{notice}");
 }
 
-#[test]
-fn recording_off_part_way_makes_it_an_ordinary_sitting() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    three_checks_due(&e);
-    prompt(&e, "p-1", "/magnesium:checks");
-    let event = event_of(&prompt(&e, "p-2", "turn recording off"));
-    let off = step(
-        &e,
-        json!({"schema":"learner-model/v2","action":"control","request_id":"off-1","control":"recording_off","turn_ref":event}),
-    );
-    assert_eq!(off["durable"], true, "{off}");
-    assert_eq!(alone_rows(&e), 0);
-    let loaded = load(&e, "teach_and_practice");
-    assert!(loaded.get("error").is_none(), "{loaded}");
-}
-
 fn step_with_checks(e: &TestEnvironment, conversation: &str, request: Value) -> Value {
     use std::io::Write;
     let mut child = e

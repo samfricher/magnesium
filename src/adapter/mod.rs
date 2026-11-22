@@ -1,11 +1,5 @@
-pub(crate) mod control_admission;
-pub(crate) mod control_safety;
 pub(crate) mod core_rules;
 use crate::workspace::Workspace;
-#[cfg(test)]
-use control_admission::{
-    LocalSuppression, control_event, control_storage_failure, recording_suppressed,
-};
 use std::borrow::Cow;
 use std::path::Path;
 pub(crate) mod cli;
@@ -155,22 +149,8 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 #[serde(untagged)]
 pub(crate) enum LearningStepRequest {
     Update(Box<crate::learner::UpdateRequest>),
-    Control(Box<ControlRequest>),
     EndSitting(crate::closing::EndSittingRequest),
     JustChecks(crate::just_checks::JustChecksRequest),
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ControlRequest {
-    pub schema: crate::learner::SchemaVersion,
-    pub action: control_admission::ControlTag,
-    #[schemars(
-        description = "Required. An ID you make up for this request, new to this study folder:\nevery conversation here shares its IDs, so end it with something only\nthis turn has, such as the last characters of its ticket or event ID.\nSend an ID again only to replay the identical request after an unknown\noutcome."
-    )]
-    pub request_id: String,
-    pub control: control_admission::ControlAction,
-    pub turn_ref: Option<String>,
-    pub reported_event: Option<crate::learner::RawEvent>,
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) enum InstructionAction {
@@ -272,13 +252,10 @@ pub(crate) fn dispatch_with_host(
     if operation == "learning_step" && crate::just_checks::is_request(&request) {
         let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
         let asker = |workspace: &Workspace| crate::just_checks::Asker {
-            records: caller
-                .as_ref()
-                .is_none_or(|host| records_here(workspace, host)),
             lesson_active: caller.as_ref().is_some_and(|host| {
                 open_store(workspace)
                     .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
-                    .is_ok_and(|(_, active, _)| active)
+                    .is_ok_and(|(_, active)| active)
             }),
         };
         let start = || {
@@ -301,7 +278,7 @@ pub(crate) fn dispatch_with_host(
         &request,
         caller.as_ref().map(|host| host.host_thread_id.as_str()),
     );
-    if let Some(refusal) = due_checks_first(cwd, operation, &request, caller.as_ref()) {
+    if let Some(refusal) = due_checks_first(cwd, operation, &request) {
         return Ok(refusal);
     }
     if operation == "learning_step" {
@@ -315,29 +292,9 @@ pub(crate) fn dispatch_with_host(
         );
     let status = operation == "context"
         && request.get("action").and_then(serde_json::Value::as_str) == Some("status");
-    let ends = (operation == "learning_step").then(|| request.clone());
     let mut result = dispatch_inner(cwd, operation, request, native_host.clone())?;
     if lifted && result.is_object() {
         result["sitting_note"] = crate::just_checks::LIFTED_NOTE.into();
-    }
-    if ends
-        .as_ref()
-        .is_some_and(|request| crate::just_checks::lifts_on_control(request, &result))
-    {
-        crate::just_checks::lift(
-            cwd,
-            caller.as_ref().map(|host| host.host_thread_id.as_str()),
-        );
-    }
-    if ends.is_some_and(|request| crate::closing::ends_on_control(&request, &result))
-        && let Ok(Some(workspace)) = Workspace::discover(cwd)
-    {
-        let by = caller.as_ref().map(|host| host.host_thread_id.as_str());
-        if let Ok((Some(_), _)) =
-            crate::closing::end_sitting(&workspace, by, crate::sittings::now_ms())
-        {
-            result["sitting_ended"] = true.into();
-        }
     }
     open_sitting(
         cwd,
@@ -420,6 +377,28 @@ fn add_goal_context(
         result["context"] = context;
     }
 }
+pub(crate) fn session_gate(
+    cwd: &Path,
+    host: Option<&crate::learner::HostContext>,
+) -> Result<Option<bool>, String> {
+    let Some(workspace) = Workspace::discover(cwd).ok().flatten() else {
+        return Ok(None);
+    };
+    if host::started_on() {
+        return Ok(Some(true));
+    }
+    let host = match host {
+        Some(host) => host.clone(),
+        None => match host::process_host_identity() {
+            Some(identity) => host_context(&identity),
+            None => return Ok(Some(false)),
+        },
+    };
+    refuse_changed_conversation(&workspace, &host)?;
+    Ok(Some(
+        host::session_on(&workspace, &host.host_thread_id).unwrap_or(false),
+    ))
+}
 pub(crate) fn refuse_changed_conversation(
     workspace: &Workspace,
     host: &crate::learner::HostContext,
@@ -462,9 +441,8 @@ fn open_sitting(
     let today = crate::sittings::local_day(now);
     let committed = update.filter(|_| result["update_status"] == "committed");
     let practice_change = committed.is_some_and(touches_practice);
-    let records = caller.is_none_or(|host| records_here(&workspace, host));
     let mut report = crate::practice::GapLogReport::default();
-    if records && (paper_stage || practice_change) {
+    if paper_stage || practice_change {
         report = crate::practice::sync_gap_logs(&workspace, today);
     }
     let mut outcomes = Vec::new();
@@ -516,15 +494,11 @@ fn open_sitting(
             result["sitting_ended"] = true.into();
             result["sitting_note"] = crate::just_checks::ENDED_NOTE.into();
         }
-        let alone = records
-            .then(|| {
-                sittings
-                    .take_checks_only_opener(&workspace, by, now)
-                    .ok()
-                    .flatten()
-            })
+        let alone = sittings
+            .take_checks_only_opener(&workspace, by, now)
+            .ok()
             .flatten();
-        if records && (alone.is_some() || workspace.opener() != crate::workspace::OpenerMode::Off) {
+        if alone.is_some() || workspace.opener() != crate::workspace::OpenerMode::Off {
             let mut synced = crate::practice::GapLogReport::default();
             let opener = match alone {
                 Some(alone) => Some(alone),
@@ -547,15 +521,6 @@ fn open_sitting(
         result["gap_logs"] = gap_logs;
     }
     crate::readings::add_to_result(&workspace, committed, practice_change, paper_stage, result);
-}
-fn records_here(workspace: &Workspace, host: &crate::learner::HostContext) -> bool {
-    let allowed = control_admission::Admission::new(workspace, host)
-        .capture_guard()
-        .is_ok_and(|guard| guard.blocked.is_none());
-    allowed
-        && open_store(workspace)
-            .and_then(|store| store.binding(host).map_err(|e| e.to_string()))
-            .is_ok_and(|(_, _, recording)| recording)
 }
 fn touches_practice(request: &serde_json::Value) -> bool {
     let nonempty = |field: &str| {
@@ -589,7 +554,6 @@ fn due_checks_first(
     cwd: &Path,
     operation: &str,
     request: &serde_json::Value,
-    caller: Option<&crate::learner::HostContext>,
 ) -> Option<serde_json::Value> {
     let stage = request.get("stage")?.as_str()?;
     if operation != "context"
@@ -610,15 +574,10 @@ fn due_checks_first(
     let counts = sittings.open_counts().ok()??;
     let now = crate::sittings::now_ms();
     let mut synced = crate::practice::GapLogReport::default();
-    let records = caller.is_none_or(|host| records_here(&workspace, host));
-    let claimed = if records {
-        sittings
-            .take_opener(&workspace, now, &mut synced)
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
+    let claimed = sittings
+        .take_opener(&workspace, now, &mut synced)
+        .ok()
+        .flatten();
     let opener = claimed.or_else(|| sittings.opener_now(&workspace, now).ok().flatten());
     let mut refusal = serde_json::json!({
         "status": "unavailable",
@@ -716,22 +675,11 @@ fn dispatch_inner(
         return Err(format!("unknown tool: {operation}"));
     }
     let host = native_host.unwrap_or_else(tool_host);
-    let resolved = match resolve_workspace(cwd) {
-        Ok(value) => value,
-        Err(error) => {
-            return control_admission::storage_failure(cwd, &host, operation, &request, error);
-        }
-    };
-    let Some(resolved) = resolved else {
+    let Some(resolved) = resolve_workspace(cwd)? else {
         return Ok(json!({"schema":crate::learner::SCHEMA,"active":false,"outcome":"inactive"}));
     };
     refuse_changed_conversation(resolved.workspace(), &host)?;
-    let store = match open_store(resolved.workspace()) {
-        Ok(store) => store,
-        Err(error) => {
-            return control_admission::storage_failure(cwd, &host, operation, &request, error);
-        }
-    };
+    let store = open_store(resolved.workspace())?;
     match operation {
         "context" | "memory" => {
             use crate::learner::read::Tool;
@@ -752,19 +700,62 @@ fn dispatch_inner(
                 "context" => format!("{error}. {CONTEXT_SHAPES}"),
                 _ => format!("{error}. {MEMORY_SHAPES}"),
             })?;
-            control_admission::Admission::new(resolved.workspace(), &host)
-                .trace(&store, |allowed| {
-                    crate::learner::read::finish_trace(&store.conn, prepared, allowed)
-                })
+            let allowed = store.binding(&host).is_ok_and(|(_, active)| active);
+            crate::learner::read::finish_trace(&store.conn, prepared, allowed)
         }
-        _ => {
-            let admission = control_admission::Admission::new(resolved.workspace(), &host);
-            if request["action"] == "control" {
-                admission.control(&store, request)
-            } else {
-                admission.update(&store, request)
+        _ if request["action"] == "control" => Err(CONTROL_REMOVED.into()),
+        _ => update(resolved.workspace(), &host, &store, request),
+    }
+}
+const CONTROL_REMOVED: &str = "control_removed: learning_step has no control action. Pause, stop and recording on or off no longer exist: a session that is on keeps everything typed in its lesson until the session ends, and a session that is off keeps nothing. When the learner is done for now, send {\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"}; the next message here goes on with the same lesson. When they have finished the lesson for good, send an update with session.complete.";
+const NATIVE_SESSION_SHAPE: &str = r#""session":{"operation":"start","client_ref":"<name>","goal":"<goal>"} or "session":{"operation":"resume","session_id":"<id>","expected_revision":<revision>}"#;
+fn update(
+    workspace: &Workspace,
+    host: &crate::learner::HostContext,
+    store: &crate::learner::LearnerStore,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    match store.replay(host, &request) {
+        Ok(Some(receipt)) => return serde_json::to_value(receipt).map_err(|e| e.to_string()),
+        Err(error) => return Ok(json!({"schema":crate::learner::SCHEMA,"error":error})),
+        Ok(None) => {}
+    }
+    let native = match request.get("native_capture").filter(|v| !v.is_null()) {
+        Some(proof) => {
+            if request["schema"] != crate::learner::SCHEMA
+                || request["action"] != "update"
+                || !crate::learner::SessionEdit::accepts_capture_operation(
+                    request
+                        .pointer("/session/operation")
+                        .and_then(serde_json::Value::as_str),
+                )
+            {
+                return Err(format!(
+                    "invalid_variant: native_capture requires explicit session.{}: {NATIVE_SESSION_SHAPE}",
+                    crate::learner::SessionEdit::CAPTURE_OPERATIONS.join(" or session.")
+                ));
             }
+            let proof: crate::learner::NativeCaptureRequest =
+                serde_json::from_value(proof.clone()).map_err(|e| e.to_string())?;
+            Some(native_capture::verify(
+                workspace,
+                host,
+                &proof.ticket,
+                &proof.text,
+                crate::learner::store::now_ms(),
+            )?)
         }
+        None => None,
+    };
+    match store.update_with_native_capture(host, request, native.as_ref()) {
+        Ok(value) => {
+            if native.is_some() {
+                let _ = native_capture::invalidate(workspace, host);
+            }
+            serde_json::to_value(value).map_err(|e| e.to_string())
+        }
+        Err(error) => Ok(json!({"schema":crate::learner::SCHEMA,"error":error})),
     }
 }
 pub(crate) fn host_session_start(
@@ -885,25 +876,23 @@ fn hook_notice(
     sitting: Option<&str>,
     closing: Option<&'static str>,
 ) -> Result<String, String> {
-    let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
+    let (_, active) = store.binding(host).map_err(|e| e.to_string())?;
     let (generation,pending,unbound):(i64,i64,i64)=store.conn.query_row("SELECT memory_generation,(SELECT count(*) FROM learning_events WHERE host_kind=?1 AND host_thread_id=?2 AND processing='pending'),(SELECT count(*) FROM learning_events WHERE session_id IS NULL AND processing='pending') FROM workspace_meta",rusqlite::params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
     let state = format!(
-        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; recording {recording}; current event {}.",
+        "Magnesium learner-model/v2; generation {generation}; pending {pending}; unbound {unbound}; learning {active}; current event {}.",
         event.unwrap_or("unavailable (use labeled reported events)")
     );
     let mut clauses: Vec<(Clause, Cow<'static, str>)> = Vec::new();
-    match (active, recording) {
-        (true, true) => {
-            clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
-            if hook == (NoticeHook::SessionStart { core_rules: false }) {
-                clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
-            }
-            if matches!(hook, NoticeHook::SessionStart { .. }) {
-                clauses.push((Clause::Required, crate::closing::END_GUIDANCE.into()));
-            }
+    if active {
+        clauses.push((Clause::Required, CLAUDE_LESSON_GUIDANCE.into()));
+        if hook == (NoticeHook::SessionStart { core_rules: false }) {
+            clauses.push((Clause::Required, CLAUDE_RELOAD_GUIDANCE.into()));
         }
-        (false, true) => clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into())),
-        _ => {}
+        if matches!(hook, NoticeHook::SessionStart { .. }) {
+            clauses.push((Clause::Required, crate::closing::END_GUIDANCE.into()));
+        }
+    } else {
+        clauses.push((Clause::Required, CLAUDE_START_GUIDANCE.into()));
     }
     if active && hook == (NoticeHook::SessionStart { core_rules: true }) {
         clauses.push((
@@ -958,9 +947,8 @@ fn fit(mut state: String, mut clauses: Vec<(Clause, Cow<'static, str>)>, limit: 
 }
 const CLAUDE_LESSON_GUIDANCE: &str =
     " A lesson is active: interpret this learner turn with learning_step.";
-const CLAUDE_RELOAD_GUIDANCE: &str =
-    " After a new conversation or compaction, load the learn skill and its instructions first.";
-const CLAUDE_START_GUIDANCE: &str = " Magnesium is set up in this folder: when the learner asks to learn, be taught, practise, be quizzed, review, plan their study or catch up, load the learn skill and start or resume a session; when they name an exam, midterm or final to prepare for, load the papers skill instead.";
+const CLAUDE_RELOAD_GUIDANCE: &str = " After a new conversation or compaction, Read .magnesium/INSTRUCTIONS.md and load the current stage's instructions first.";
+const CLAUDE_START_GUIDANCE: &str = " Magnesium is on in this session and no lesson is open here: when the learner wants to study, start or resume one as the instructions say. For practice papers for an exam, the learner types /magnesium:papers.";
 const NATIVE_TICKET_FALLBACK: &str =
     " Native ticket unavailable; use labeled model-reported fallback.";
 const CLAUDE_WINDOW_REPLY_GUIDANCE: &str = " This conversation is in the Magnesium study window: record the answer's observation and attempt, then send the reply as the text of Magnesium's reply tool, then send any memory edit or checkpoint due in one learning_step (set save_after on the reply). Write no other text. Teach exactly as you would in a terminal.";
@@ -977,16 +965,7 @@ pub(crate) fn host_user_prompt_submit(
     };
     check_workspace_binding(&workspace)?;
     let context = host_context(host);
-    let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
     let store = open_store(&workspace)?;
-    if safety.blocked.is_some() {
-        let _ = native_capture::invalidate(&workspace, &context);
-        return Ok(Some(if safety.blocked == Some(control_admission::CaptureBlock::SharedDeny) {
-            "Magnesium learner-model/v2: capture denied by a shared control safety latch. Explicit recording_on or learning resume, as appropriate, is required."
-        } else {
-            "Magnesium learner-model/v2: capture locally suppressed after control storage failed; cross-process protection is unavailable. After storage recovers, explicitly use recording_on or session.start/session.resume in this same live tool connection."
-        }.into()));
-    }
     let key = match (turn, ordinal) {
         (Some(t), None) => host.stored_turn_id(t)?,
         (None, Some(n)) => host.stored_ordinal_turn_id(n),
@@ -1003,22 +982,15 @@ pub(crate) fn host_user_prompt_submit(
         }),
         occurred_at_ms: None,
     };
-    let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
-    let sittings = if recording {
-        crate::sittings::Sittings::open(&workspace).map(Some)
-    } else {
-        crate::sittings::Sittings::open_existing(&workspace)
-    };
+    let (_, active) = store.binding(&context).map_err(|e| e.to_string())?;
     let mut sitting_begins = false;
-    if let Ok(Some(mut sittings)) = sittings {
+    if let Ok(mut sittings) = crate::sittings::Sittings::open(&workspace) {
         let now = crate::sittings::now_ms();
-        if recording {
-            sitting_begins = sittings
-                .note_learner_message(&workspace, now)
-                .unwrap_or(false);
-        }
+        sitting_begins = sittings
+            .note_learner_message(&workspace, now)
+            .unwrap_or(false);
         let _ = sittings.reopen();
-        if recording && crate::just_checks::asked_in_words(text) {
+        if crate::just_checks::asked_in_words(text) {
             let _ = sittings.ask_checks_only(&workspace, Some(&context.host_thread_id), now);
         }
     }
@@ -1026,7 +998,7 @@ pub(crate) fn host_user_prompt_submit(
     if sitting_begins && let Some(map) = crate::course_map::notice_clause(&workspace) {
         sitting = Some(sitting.unwrap_or_default() + &map);
     }
-    if !active && recording {
+    if !active {
         match native_capture::issue(
             &workspace,
             &context,
@@ -1059,7 +1031,7 @@ pub(crate) fn host_user_prompt_submit(
         }
     }
     native_capture::invalidate(&workspace, &context)?;
-    let ids = if active && recording {
+    let ids = if active {
         store
             .capture(&context, &[event], "host_observed", false)
             .map_err(|e| e.to_string())?
@@ -1191,16 +1163,12 @@ pub(crate) fn host_reply(
         return Ok(None);
     };
     check_workspace_binding(&workspace)?;
-    let safety = control_admission::Admission::new(&workspace, host).capture_guard()?;
-    if safety.blocked.is_some() {
-        return Ok(None);
-    }
     if let Ok(Some(mut sittings)) = crate::sittings::Sittings::open_existing(&workspace) {
         let _ = sittings.note_reply(text);
     }
     let store = open_store(&workspace)?;
-    let (_, active, recording) = store.binding(host).map_err(|e| e.to_string())?;
-    if !(active && recording) {
+    let (_, active) = store.binding(host).map_err(|e| e.to_string())?;
+    if !active {
         return Ok(None);
     }
     let learner_key = latest_learner_key(&store, host)?;
@@ -1246,10 +1214,6 @@ pub(crate) fn host_response_stop_with_delivery(
     };
     check_workspace_binding(&workspace)?;
     let context = host_context(host);
-    let safety = control_admission::Admission::new(&workspace, &context).capture_guard()?;
-    if safety.blocked.is_some() {
-        return Ok(());
-    }
     {
         let store = open_store(&workspace)?;
         let sent = tool_replies(&store, &context, &native_capture::event_key(turn))?;
@@ -1273,8 +1237,8 @@ pub(crate) fn host_response_stop_with_delivery(
         }),
         occurred_at_ms: None,
     };
-    let (_, active, recording) = store.binding(&context).map_err(|e| e.to_string())?;
-    if active && recording {
+    let (_, active) = store.binding(&context).map_err(|e| e.to_string())?;
+    if active {
         store
             .capture(&context, &[event], "host_observed", false)
             .map_err(|e| e.to_string())?;
@@ -1286,9 +1250,6 @@ pub(crate) fn host_response_stop_with_delivery(
 mod native_capture_tests;
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod control_admission_tests;
 
 #[cfg(test)]
 mod reply_check_tests;

@@ -349,6 +349,7 @@ fn a_direct_lesson_streams_its_reply_and_code_keeps_the_record() {
     assert_eq!(start["env"]["CLAUDE_CODE_DISABLE_CLAUDE_MDS"], "1");
     assert_eq!(start["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"], "false");
     assert!(start["env"]["MAGNESIUM_SURFACE"].is_null());
+    assert_eq!(start["env"]["MAGNESIUM_SESSION"], "on");
     let first = &bench.logged("message")[0];
     assert_eq!(first["learner"], "TEACH me quadratics");
     let state = first["state"].as_str().unwrap();
@@ -1557,97 +1558,28 @@ fn a_cold_answer_is_kept_cold_and_one_the_runtime_refuses_keeps_its_mark() {
 }
 
 #[test]
-fn after_recording_off_nothing_reaches_the_record_until_recording_on_in_any_conversation() {
+fn after_the_sitting_ends_the_next_message_in_the_chat_goes_on_with_the_lesson_and_is_recorded() {
     let bench = Bench::new(None, &[]);
     let (manager, mut events) = bench.manager();
     manager.open_session(false).unwrap();
     manager.send_new_lesson("TEACH me").unwrap();
-    done(&manager, &mut events);
-    manager.send("b = 5").unwrap();
-    done(&manager, &mut events);
-    manager.send("RECORDING OFF please").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    let off = record_size(&bench);
-    let binding: bool = bench
-        .store()
-        .query_row(
-            "SELECT min(recording_enabled) FROM host_bindings",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert!(!binding, "the runtime turned recording off");
-    events.seen.clear();
-    manager.send("b = -5").unwrap();
+    manager.send_with("b = 5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    assert!(
-        !events
-            .seen
-            .iter()
-            .any(|e| matches!(e, AgentEvent::Notice { .. })),
-        "no 'no mark' notice while recording is off: {:#?}",
-        events.seen
-    );
-    assert_eq!(record_size(&bench), off, "no words, answer or reply kept");
-    let state = bench.logged("message").pop().unwrap()["state"].clone();
-    assert!(
-        state.as_str().unwrap().contains("Recording is off"),
-        "{state}"
-    );
-
-    manager.stop(None).unwrap();
-    drop(manager);
-    let (manager, mut events) = bench.manager();
-    manager.open_session(false).unwrap();
     manager
-        .send_new_lesson("I'm back. Let's continue.")
+        .send_with("That's me done for today", Some(Intent::Talk))
         .unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("b = -5").unwrap();
+    next_event(&mut events, "closing", |e| {
+        matches!(e, AgentEvent::Closing { .. })
+    });
+    let ended = record_size(&bench);
+    manager.send_with("b = -5", Some(Intent::Answer)).unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    assert_eq!(
-        record_size(&bench),
-        off,
-        "nothing kept in a new conversation"
-    );
-
-    manager.send("RECORDING ON please").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("b = 5").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    let (events_now, attempts_now) = record_size(&bench);
-    assert!(events_now > off.0, "the words are kept again");
-    let _ = attempts_now;
-    manager.shut_down();
-}
-
-#[test]
-fn a_paused_lesson_records_nothing_until_the_window_opens_it_again() {
-    let bench = Bench::new(None, &[]);
-    let (manager, mut events) = bench.manager();
-    manager.open_session(false).unwrap();
-    manager.send_new_lesson("TEACH me").unwrap();
-    done(&manager, &mut events);
-    manager.send("PAUSE for now").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    let paused = record_size(&bench);
-    manager.send("b = 5").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    assert_eq!(record_size(&bench), paused);
-    let state = bench.logged("message").pop().unwrap()["state"].clone();
-    assert!(
-        state.as_str().unwrap().contains("paused the lesson"),
-        "{state}"
-    );
-    manager.open_session(true).unwrap();
-    manager
-        .send_new_lesson("I'm back. Let's continue.")
-        .unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("b = -5").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    assert!(record_size(&bench).0 > paused.0);
-    assert_eq!(bench.sessions(), 1);
+    let (words, attempts) = record_size(&bench);
+    assert!(words > ended.0, "the words are kept");
+    assert_eq!(attempts, ended.1 + 1, "the answer is marked");
+    assert_eq!(bench.sessions(), 1, "the same lesson goes on");
     manager.shut_down();
 }
 
@@ -1873,6 +1805,7 @@ fn plugin_memory(bench: &Bench, state_text: &str) -> String {
         let mut child = Command::new(&bench.runtime)
             .current_dir(&bench.root)
             .env("CLAUDE_CODE_SESSION_ID", "plugin-lesson")
+            .env("MAGNESIUM_SESSION", "on")
             .args([
                 "adapter",
                 "call",
@@ -2176,6 +2109,7 @@ fn plugin_calls(bench: &Bench, requests: &[Value]) -> Vec<Value> {
             let mut child = Command::new(&bench.runtime)
                 .current_dir(&bench.root)
                 .env("CLAUDE_CODE_SESSION_ID", "plugin-repair")
+                .env("MAGNESIUM_SESSION", "on")
                 .args([
                     "adapter",
                     "call",
@@ -2247,18 +2181,6 @@ fn a_repair_whose_record_cannot_be_read_records_nothing_and_the_learner_is_told(
         "{:#?}",
         events.seen
     );
-    manager.shut_down();
-}
-
-#[test]
-fn with_recording_off_no_repair_is_recorded() {
-    let (bench, manager, mut events) = with_a_row_waiting();
-    manager.send("RECORDING OFF please").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("REPAIRED").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    assert_eq!(repairs_recorded(&bench), 0);
-    assert_eq!(gap_rows(&bench)[0].next_redo, "", "it still waits");
     manager.shut_down();
 }
 
@@ -2491,19 +2413,18 @@ fn a_finished_repair_that_names_no_listed_repair_tells_the_learner() {
 }
 
 #[test]
-fn a_block_with_both_a_control_and_a_repair_tells_the_learner_the_repair_was_not_saved() {
+fn a_repair_finished_in_the_reply_that_ends_the_sitting_is_recorded() {
     let (bench, manager, mut events) = with_a_row_waiting();
     events.seen.clear();
-    manager.send("CONTROLREPAIR").unwrap();
+    manager.send("ENDREPAIR").unwrap();
     assert!(ended_well(&done(&manager, &mut events)));
-    assert_eq!(repairs_recorded(&bench), 0);
+    assert_eq!(repairs_recorded(&bench), 1);
+    assert_eq!(gap_rows(&bench)[0].next_redo, tomorrow(&bench));
     assert!(
-        all_notices(&mut events)
-            .iter()
-            .any(|text| text.contains("it was not saved")),
-        "{:#?}",
-        events.seen
+        bench.cli(&["closing", "--json"])["sitting"]["ended_ms"].is_i64(),
+        "the sitting ended"
     );
+    assert!(all_notices(&mut events).is_empty(), "{:#?}", events.seen);
     manager.shut_down();
 }
 
@@ -2526,32 +2447,6 @@ fn a_repair_whose_save_times_out_twice_is_read_back_and_kept_once() {
     assert_eq!(repairs_recorded(&bench), 1);
     assert_eq!(gap_rows(&bench)[0].next_redo, tomorrow(&bench));
     assert!(all_notices(&mut events2).is_empty(), "{:#?}", events2.seen);
-    manager.shut_down();
-}
-
-#[test]
-fn an_answer_after_recording_is_turned_back_on_is_not_saved_against_the_old_task() {
-    let bench = Bench::new(None, &[]);
-    let (manager, mut events) = bench.manager();
-    manager.open_session(false).unwrap();
-    manager.send_new_lesson("TEACH me").unwrap();
-    done(&manager, &mut events);
-    manager.send("RECORDING OFF please").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("b = 5").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("RECORDING ON please").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    manager.send("b = -5").unwrap();
-    assert!(ended_well(&done(&manager, &mut events)));
-    assert!(
-        bench
-            .attempts()
-            .iter()
-            .all(|a| a["question"] != "What is b in x² − 5x + 6 = 0?"),
-        "{:#?}",
-        bench.attempts()
-    );
     manager.shut_down();
 }
 

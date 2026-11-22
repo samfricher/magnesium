@@ -1,9 +1,12 @@
 ---
 name: papers
-description: Study plans built from the course's own files, and the practice papers and marking that run on them, in a folder set up with Magnesium (it has a .magnesium directory). Use for /magnesium:papers, when the learner names an assessment or a chapter set to study for ("I have a midterm Monday", "build me practice papers for chapters 6 and 7"), returns a paper for marking ("mark my Paper 1"), or uses a plan verb (teach me a section, repair an item, cold redo, new mock, re-time today, re-plan, fix my plan files, rebuild). Ordinary coding or repository work does not start it.
+description: Build or continue a study plan for a test from the course's own files, with its practice papers and marking, and turn Magnesium on for this session.
+disable-model-invocation: true
 ---
 
 # Magnesium papers
+
+The learner turned Magnesium on for this session by typing `/magnesium:papers`. Any words after it are their request, such as a test to plan for or a loop verb.
 
 Open the nearest initialized workspace `.magnesium/INSTRUCTIONS.md` with the Read tool, not a shell command. Load `context(action:"instructions",host:"claude",stage:"papers")` in build mode and for the verbs new mock, re-plan and rebuild, and `stage:"papers_loop"` for every other verb. Follow that stage; it holds the policy. Load the same call with `operation:"tool_recipes"`. Then, before you read materials or templates, start or resume the Magnesium session for the target, because native capture expires within minutes. Reload after context loss or a bundle change.
 

@@ -32,8 +32,6 @@ pub struct FolderState {
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<Engine>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub recording_off: bool,
     #[serde(default)]
     pub stopped_at: Option<String>,
     #[serde(default)]
@@ -769,6 +767,33 @@ mod tests {
         again.received_models(None);
         let kept = again.models();
         assert!(kept.failed && kept.models.len() == 1);
+    }
+
+    #[test]
+    fn a_folder_kept_with_recording_off_by_an_older_window_still_loads() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let state = serde_json::json!({
+            "recent": [key(folder.path())],
+            "folders": {key(folder.path()): {"session_id": "abc", "recording_off": true}},
+        });
+        fs::write(home.path().join("state.json"), state.to_string()).unwrap();
+        let store = Store::at(home.path().to_path_buf());
+        assert_eq!(
+            store.folder(folder.path()).session_id.as_deref(),
+            Some("abc")
+        );
+        store.update(folder.path(), |state| {
+            state.stopped_at = Some("step 2".into())
+        });
+        let again = Store::at(home.path().to_path_buf());
+        let kept = again.folder(folder.path());
+        assert_eq!(kept.session_id.as_deref(), Some("abc"));
+        assert_eq!(kept.stopped_at.as_deref(), Some("step 2"));
+        assert_eq!(
+            kept.other.get("recording_off"),
+            Some(&serde_json::json!(true))
+        );
     }
 
     #[test]

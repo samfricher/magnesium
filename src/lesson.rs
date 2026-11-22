@@ -66,18 +66,15 @@ fn read(
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
     let checkpoint: Value = serde_json::from_str(&checkpoint).unwrap_or(Value::Null);
-    let threads: Vec<(String, bool, bool)> = {
+    let threads: Vec<(String, bool)> = {
         let mut statement = conn.prepare(
-            "SELECT host_thread_id,learning_active,recording_enabled FROM host_bindings WHERE session_id=?1 AND (?2 IS NULL OR host_thread_id=?2) ORDER BY host_thread_id",
+            "SELECT host_thread_id,learning_active FROM host_bindings WHERE session_id=?1 AND (?2 IS NULL OR host_thread_id=?2) ORDER BY host_thread_id",
         )?;
         statement
-            .query_map(params![session, thread], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })?
+            .query_map(params![session, thread], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?
     };
-    let learning = threads.iter().any(|(_, on, _)| *on);
-    let recording = !threads.is_empty() && threads.iter().all(|(_, _, on)| *on);
+    let learning = threads.iter().any(|(_, on)| *on);
     let steps: Vec<Value> = checkpoint["goal_steps"]
         .as_array()
         .map(|steps| {
@@ -115,7 +112,6 @@ fn read(
         "goal": goal,
         "status": status,
         "learning_on": learning,
-        "recording_on": recording,
         "updated_at": local_time(updated),
         "steps": steps,
         "open_task": open_task,
@@ -205,7 +201,7 @@ fn check_words(reply: &str, number: i64) -> Option<&str> {
 
 fn posed_check(
     conn: &Connection,
-    threads: &[(String, bool, bool)],
+    threads: &[(String, bool)],
     number: i64,
 ) -> rusqlite::Result<Option<Posed>> {
     let mut statement = conn.prepare(
@@ -252,15 +248,10 @@ fn render(lesson: Option<&Value>) -> String {
         return "No lesson yet.\n".into();
     };
     let mut text = format!(
-        "{}\n    {}, learning {}, recording {}. Last changed {}.\n",
+        "{}\n    {}, learning {}. Last changed {}.\n",
         lesson["goal"].as_str().unwrap_or(""),
         lesson["status"].as_str().unwrap_or(""),
         if lesson["learning_on"] == true {
-            "on"
-        } else {
-            "off"
-        },
-        if lesson["recording_on"] == true {
             "on"
         } else {
             "off"

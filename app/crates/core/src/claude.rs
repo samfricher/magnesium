@@ -254,6 +254,7 @@ impl Harness for ClaudeCode {
             .current_dir(&options.folder)
             .env("PWD", &options.folder)
             .env(SURFACE_ENV, SURFACE)
+            .env(crate::runtime::SESSION_ON_ENV, crate::runtime::SESSION_ON)
             .env(CONNECTORS_ENV, "false")
             .args([
                 "-p",

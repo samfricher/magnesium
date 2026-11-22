@@ -23,7 +23,7 @@ fn canonical_snapshot(e: &TestEnvironment) -> Value {
         ),
         (
             "host_bindings",
-            "'host_kind',host_kind,'host_thread_id',host_thread_id,'session_id',session_id,'learning_active',learning_active,'recording_enabled',recording_enabled",
+            "'host_kind',host_kind,'host_thread_id',host_thread_id,'session_id',session_id,'learning_active',learning_active",
         ),
         (
             "learning_sessions",
@@ -61,7 +61,7 @@ fn canonical_snapshot(e: &TestEnvironment) -> Value {
     Value::Object(state)
 }
 
-fn paused_store() -> (TestEnvironment, String, String, String) {
+fn store_with_pending_correction() -> (TestEnvironment, String, String, String) {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let start = v2::tool(
@@ -96,14 +96,6 @@ fn paused_store() -> (TestEnvironment, String, String, String) {
             |r| r.get(0),
         )
         .unwrap();
-    let paused = v2::tool(
-        &e,
-        "claude",
-        "tuesday",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"control","request_id":"pause","control":"pause","turn_ref":correction}),
-    );
-    assert_eq!(paused["durable"], true);
     (e, session, memory, correction)
 }
 
@@ -122,7 +114,7 @@ fn recipe(text: &str, name: &str) -> Value {
 
 #[test]
 fn fresh_cli_and_mcp_recover_raw_correction_without_resuming_or_assessing() {
-    let (e, session, memory, correction) = paused_store();
+    let (e, session, memory, correction) = store_with_pending_correction();
     let before = canonical_snapshot(&e);
     let instructions = v2::tool(
         &e,
@@ -191,14 +183,14 @@ fn fresh_cli_and_mcp_recover_raw_correction_without_resuming_or_assessing() {
 }
 
 #[test]
-fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
-    let (e, session, _, correction) = paused_store();
+fn an_ended_lessons_reads_do_not_write_traces_or_cross_workspace() {
+    let (e, session, _, correction) = store_with_pending_correction();
     v2::tool(
         &e,
         "claude",
         "tuesday",
         "learning_step",
-        json!({"schema":"learner-model/v2","action":"control","request_id":"privacy","control":"recording_off","reported_event":{"external_event_key":"privacy-control","speaker":"learner","kind":"message","text":"Turn recording off."}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"complete","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
     );
     let other = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&other);
@@ -257,73 +249,4 @@ fn stopped_recording_off_reads_do_not_write_traces_or_cross_workspace() {
     );
     assert!(ignored.status.success());
     assert_eq!(canonical_snapshot(&e), before);
-}
-
-#[test]
-fn pause_stop_and_recording_off_honor_a_non_null_pending_task() {
-    for control in ["pause", "stop", "recording_off"] {
-        let e = TestEnvironment::from_fixture("basic").unwrap();
-        v2::init(&e);
-        let start = v2::start(&e, "claude", "pending-task");
-        let session = start["references"]["session"].as_str().unwrap();
-        let proposal = v2::tool(
-            &e,
-            "claude",
-            "pending-task",
-            "learning_step",
-            json!({"schema":"learner-model/v2","action":"update","request_id":"proposal","reported_events":[{"external_event_key":"task-proposal","speaker":"tutor","kind":"task_proposal","text":"Identify a, b, and c in 5x² − 2x + 4 = 0.","metadata":{"delivery":"proposed"}}]}),
-        );
-        let proposed_event = &proposal["captured_event_ids"][0];
-        let pending_task = json!({"proposal_event_ref":proposed_event,"conditions":"A proposed coefficient check; delivery not established.","observed_delivery_refs":[],"help_refs":[],"reference_answer_ref":null});
-        v2::tool(
-            &e,
-            "claude",
-            "pending-task",
-            "learning_step",
-            json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint","session":{"operation":"use","session_id":session,"expected_revision":1},"checkpoint":{"current_problem":"Coefficient roles","working_diagnosis":"No answer supplied","next_action":"Await the requested operation or honor learner control","pending_task":pending_task},"event_dispositions":[{"event_id":proposed_event,"outcome":"no_change"}]}),
-        );
-        let before_control = canonical_snapshot(&e);
-        let controlled = v2::tool(
-            &e,
-            "claude",
-            "pending-task",
-            "learning_step",
-            json!({"schema":"learner-model/v2","action":"control","request_id":"control","control":control,"reported_event":{"external_event_key":"learner-control","speaker":"learner","kind":"message","text":format!("Please {control} now.")}}),
-        );
-        assert_eq!(controlled["durable"], true);
-        let after = canonical_snapshot(&e);
-        assert_eq!(
-            after["learning_sessions"],
-            before_control["learning_sessions"]
-        );
-        assert_eq!(after["learning_events"], before_control["learning_events"]);
-        assert_eq!(after["observations"], before_control["observations"]);
-        let status = v2::tool(
-            &e,
-            "claude",
-            "pending-task",
-            "context",
-            json!({"schema":"learner-model/v2","action":"status"}),
-        );
-        assert_eq!(
-            status["session"]["checkpoint"]["pending_task"],
-            pending_task
-        );
-        assert_eq!(status["trace_status"], "disabled");
-        let ignored = v2::prompt(
-            &e,
-            "claude",
-            "pending-task",
-            Some("after-control"),
-            "UNREQUESTED FOLLOW-UP MUST NOT BE CAPTURED",
-        );
-        assert!(ignored.status.success(), "{ignored:?}");
-        assert_eq!(canonical_snapshot(&e), after);
-        let binding = &after["host_bindings"][0];
-        if control == "recording_off" {
-            assert_eq!(binding["recording_enabled"], 0);
-        } else {
-            assert_eq!(binding["learning_active"], 0);
-        }
-    }
 }

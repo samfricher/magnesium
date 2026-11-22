@@ -122,7 +122,7 @@ fn stale_checkpoint_guard_exposes_a_valid_session_read_without_overwrite() {
 }
 
 #[test]
-fn missing_guard_does_not_suggest_using_a_session_paused_by_another_conversation() {
+fn missing_guard_does_not_suggest_using_a_session_completed_by_another_conversation() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let started = v2::start(&e, "claude", "checkpoint");
@@ -139,11 +139,11 @@ fn missing_guard_does_not_suggest_using_a_session_paused_by_another_conversation
         "claude",
         "other-conversation",
         "learning_step",
-        json!({"schema":"learner-model/v2","action":"update","request_id":"other-pause","session":{"operation":"pause","session_id":session,"expected_revision":2}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"other-complete","session":{"operation":"complete","session_id":session,"expected_revision":2}}),
     );
     let rejected = call(
         &e,
-        json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint-after-other-pause","checkpoint":{"current_problem":"Problem","working_diagnosis":"Uncertain","next_action":"Read current session state"}}),
+        json!({"schema":"learner-model/v2","action":"update","request_id":"checkpoint-after-other-complete","checkpoint":{"current_problem":"Problem","working_diagnosis":"Uncertain","next_action":"Read current session state"}}),
     );
     assert_eq!(rejected["error"]["code"], "learning_inactive", "{rejected}");
     assert!(rejected["error"]["recovery"]["suggested_session"].is_null());

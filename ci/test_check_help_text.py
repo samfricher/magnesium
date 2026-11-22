@@ -67,7 +67,7 @@ class HelpTextCheckTests(unittest.TestCase):
     def test_planted_defects_fail_with_one_line_each(self):
         planted = skill_text({
             "Topic: overview": topic("About", OVER_LIMIT),
-            "Topic: recording": topic("Recording", next_line=""),
+            "Topic: privacy": topic("Privacy", next_line=""),
             "Topic: setup": topic("Setup", f"{LONG_SENTENCE}\n\n{SEMICOLON_LINE}"),
             "Topic: trouble": topic("Trouble", LINK_LINE),
             "Example: course with a test ahead": example(DASH_LINE),
@@ -83,7 +83,7 @@ class HelpTextCheckTests(unittest.TestCase):
         self.assertEqual(
             lines[1:-1],
             [
-                "Topic: recording: needs exactly one Next: line, and it must close the text",
+                "Topic: privacy: needs exactly one Next: line, and it must close the text",
                 f"Topic: setup: sentence of 21 words: {LONG_SENTENCE!r}",
                 f"Topic: setup: semicolon: {SEMICOLON_LINE!r}",
                 f"Topic: setup: abbreviation: {SEMICOLON_LINE!r}",

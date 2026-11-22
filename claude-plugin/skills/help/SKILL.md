@@ -1,6 +1,7 @@
 ---
 name: help
-description: Help for a learner in a folder set up with Magnesium (it has a .magnesium directory). It looks at the folder and suggests next steps, or shows a fixed help topic. Use for /magnesium:help, for questions about Magnesium itself, such as "how do I use Magnesium", "what can Magnesium do", "what commands does Magnesium have" or "help with Magnesium", and for "what should I do next with Magnesium". Ordinary coding or repository work does not start it. It never starts a lesson or writes learner records.
+description: Show help and a next step for this study folder. It does not turn Magnesium on.
+disable-model-invocation: true
 ---
 
 # Magnesium help
@@ -13,14 +14,14 @@ Otherwise, choose from the words after `/magnesium:help`:
 |---|---|
 | none, or "what should I do next" in any phrasing | the next-steps screen below |
 | `papers`, or a close word such as paper, practice, exam, mock | Topic: papers |
-| `recording`, or a close word such as privacy, pause, export, memory | Topic: recording |
+| `privacy`, or a close word such as recording, record, keep, export, memory, off | Topic: privacy |
 | `setup`, or a close word such as install, init, upgrade | Topic: setup |
 | `trouble`, or a close word such as problem, error, broken | Topic: trouble |
 | `overview` | Topic: overview |
 
 The topics are at the end of this file. To show a topic, print the text inside its fence word for word. Leave out the fence lines, and add no preface or summary.
 
-When the learner asks a specific question instead, answer it in two to five plain sentences. Use facts from the topics first. If the topics do not answer it, Read `<base>/user-guide.md`, the full user guide, if that file exists. `<base>` is the path after "Base directory for this skill:", which Claude Code prints when it loads this skill. After the answer, name the `/magnesium:help <topic>` command that has more, if one does. When neither the topics nor the guide covers the question, say so in one sentence and suggest the learner ask the tutor directly.
+When the learner asks a specific question instead, answer it in two to five plain sentences. Use facts from the topics first. If the topics do not answer it, Read `<base>/user-guide.md`, the full user guide, if that file exists. `<base>` is the path after "Base directory for this skill:", which Claude Code prints when it loads this skill. After the answer, name the `/magnesium:help <topic>` command that has more, if one does. When neither the topics nor the guide covers the question, say so in one sentence and suggest the learner type `/magnesium:learn` and ask the tutor.
 
 Use only tools that read, and never cause a permission prompt:
 
@@ -31,11 +32,13 @@ Use only tools that read, and never cause a permission prompt:
 
 Run each shell command alone. Never use `find`, `cd`, pipes, `;`, `&&`, loops or any other command, because those ask the learner for permission.
 
-This skill only reads. Leave lessons, Magnesium sessions, Magnesium's tools and learner records as they are, and write no file.
+This skill only reads, and it does not turn Magnesium on. Leave lessons, Magnesium sessions, Magnesium's tools and learner records as they are, and write no file.
 
 ## Next-steps screen
 
 The learner wants one clear next step for this folder, and wants it fast. Many learners find long or changing text hard to follow. So the screen keeps one shape, says only what you saw, and ends with one action.
+
+Magnesium may be off in this session, and only typing `/magnesium:learn`, `/magnesium:papers` or `/magnesium:checks` turns it on. So every action is a command to type, never words to say.
 
 ### Look, in about a minute
 
@@ -65,18 +68,18 @@ Put a planned session first under In this folder, for a plan with times in `plan
 
 Put the most urgent first. When the record adds an action, drop the least urgent one, so the screen stays short. Base each one on what you saw:
 
-- A plan with items in `unreadable`: this action comes before every other. Name the `file` and the `line` of the first item, and its `reason` in a few words. Say how many items there are. Do not trust that plan's `unfixed_gaps`, `redos_due` or `planned_sessions_today`: say "at least" before a count. Say "fix my plan files".
-- A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes next. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more gaps are ready to redo." For a `more_due` of 1, say "1 more gap is ready to redo." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A gap is ready to redo." Say "cold redo".
-- A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Say "Continue my last lesson".
-- A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Say "Review <the same few words>".
+- A plan with items in `unreadable`: this action comes before every other. Name the `file` and the `line` of the first item, and its `reason` in a few words. Say how many items there are. Do not trust that plan's `unfixed_gaps`, `redos_due` or `planned_sessions_today`: say "at least" before a count. Offer `/magnesium:papers fix my plan files`.
+- A plan with `redos_due` above 0 and a `days_left` of 0 or more, or no date: this action comes next. With several such plans, use the one with the smallest `days_left`, and a plan with no date last. Name `first_due` by its paper and question, and give its `more_due` as printed. "Redo Diagnostic Q4 cold. 2 more gaps are ready to redo." For a `more_due` of 1, say "1 more gap is ready to redo." For 0, leave that sentence out. If `first_due` lacks its paper or its question, name it by the one it has. If it has neither, say "A gap is ready to redo." Offer `/magnesium:papers cold redo`.
+- A saved lesson in `record.sessions[0]` with a `next_action`, and no plan that uses it: "Last time you stopped at <next_action, as a short phrase about the learner>." Offer `/magnesium:learn Continue my last lesson`.
+- A review suggestion ready: lead with one of `ready_purposes`, not the count. "A review is ready: <the purpose in a few words>." Offer `/magnesium:learn Review <the same few words>`.
 - A plan with no `date`: name the plan, and say nothing about days left. Its next block follows the plan rule above.
-- A plan with a `days_left` of 0 or more: the next block's words, such as "mark my Diagnostic" or "re-time today". Offer "cold redo" only when `redos_due` is above 0. If the next block is unclear, offer `/magnesium:papers`, which continues the plan.
-- An assessment ahead with no plan: "I have <assessment> on <date>", or `/magnesium:papers`.
-- Course files by chapter or week: "Teach me <a chapter or week you saw> from the slides", or "Quiz me on <it>. One question at a time." When the syllabus gives the next assessment's coverage, pick a chapter or week inside it.
-- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between lessons, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also say "Teach me" and name a topic.
-- Code or other: "Help me understand <a file or folder you saw>", or "Quiz me on how <it> works".
+- A plan with a `days_left` of 0 or more: `/magnesium:papers` and the next block's words, such as `/magnesium:papers mark my Diagnostic` or `/magnesium:papers re-time today`. Offer `/magnesium:papers cold redo` only when `redos_due` is above 0. If the next block is unclear, offer `/magnesium:papers` alone, which continues the plan.
+- An assessment ahead with no plan: `/magnesium:papers I have <assessment> on <date>`.
+- Course files by chapter or week: `/magnesium:learn Teach me <a chapter or week you saw> from the slides`, or `/magnesium:learn Quiz me on <it>. One question at a time.` When the syllabus gives the next assessment's coverage, pick a chapter or week inside it.
+- An empty folder: the learner may not know what the folder is for. Under In this folder, say that a study folder is for their course files and their learning history. Add a `## What Magnesium does` section after In this folder. Its three bullets say that Magnesium teaches from their files, remembers their answers and weak points between lessons, and builds practice papers and marks them. Then offer two actions. They can copy course files into the study folder, such as a syllabus, slides, notes, assignments, old tests and photos of work, then type `/magnesium:help` again. They can also type `/magnesium:learn` and then what they want to learn.
+- Code or other: `/magnesium:learn Help me understand <a file or folder you saw>`, or `/magnesium:learn Quiz me on how <it> works`.
 
-End each action with the exact words to say in straight quotes, or the command to type in backticks.
+End each action with the command to type in backticks, with the words that follow it, such as `/magnesium:papers cold redo`. Never end one with words to say.
 
 ### Show the screen
 
@@ -93,17 +96,17 @@ Magnesium turns Claude into a tutor that remembers your work.
 
 ## What you can do now
 
-1. **<Short verb phrase>.** <One short sentence, if needed.> Say "<exact words>".
+1. **<Short verb phrase>.** <One short sentence, if needed.> Type `<command and its words>`.
 2. <2 to 4 actions in all>
 
 ## More help
 
 - `/magnesium:help papers` shows how practice papers work.
-- `/magnesium:help recording` shows what Magnesium keeps and how to stop it.
+- `/magnesium:help privacy` shows what Magnesium keeps and how to talk off the record.
 - `/magnesium:help setup` shows how to install Magnesium.
 - `/magnesium:help trouble` shows fixes for common problems.
 
-Next: <action 1, with its words or command>.
+Next: <action 1, with its command>.
 ```
 
 Write the screen by these rules:
@@ -139,7 +142,7 @@ The study folder holds only `.magnesium/` and `.claude/`.
 ## What you can do now
 
 1. **Add your course files.** Copy them into this folder. A syllabus, slides, notes and old tests all help. Then type `/magnesium:help` again.
-2. **Magnesium without files.** Say "Teach me" and name a topic.
+2. **Magnesium without files.** Type `/magnesium:learn` and then what you want to learn.
 
 Next: copy your course files into this folder, then type `/magnesium:help`.
 ```
@@ -156,11 +159,11 @@ The folder holds `BIO110-syllabus.pdf`, `Slides/Week01.pdf` to `Slides/Week06.pd
 
 ## What you can do now
 
-1. **Plan for Midterm 1.** The tutor writes a study plan and timed practice papers. Say "I have Midterm 1 on October 23", or type `/magnesium:papers`.
-2. **Learn one week.** Say "Teach me week 6 from the slides".
-3. **Check what you know.** Say "Quiz me on week 1. One question at a time."
+1. **Plan for Midterm 1.** The tutor writes a study plan and timed practice papers. Type `/magnesium:papers I have Midterm 1 on October 23`.
+2. **Learn one week.** Type `/magnesium:learn Teach me week 6 from the slides`.
+3. **Check what you know.** Type `/magnesium:learn Quiz me on week 1. One question at a time.`
 
-Next: say "I have Midterm 1 on October 23".
+Next: type `/magnesium:papers I have Midterm 1 on October 23`.
 ```
 
 #### Example: lesson history, no plan
@@ -176,11 +179,11 @@ The folder holds `BIO110-syllabus.pdf` and `Slides/Week01.pdf` to `Slides/Week05
 
 ## What you can do now
 
-1. **Pick up where you stopped.** Last time you stopped at reading Km and Vmax off a plot. Say "Continue my last lesson".
-2. **Try a review.** A review is ready: the meaning of Km. Say "Review the meaning of Km".
-3. **Plan for Midterm 1.** Say "I have Midterm 1 on October 23", or type `/magnesium:papers`.
+1. **Pick up where you stopped.** Last time you stopped at reading Km and Vmax off a plot. Type `/magnesium:learn Continue my last lesson`.
+2. **Try a review.** A review is ready: the meaning of Km. Type `/magnesium:learn Review the meaning of Km`.
+3. **Plan for Midterm 1.** Type `/magnesium:papers I have Midterm 1 on October 23`.
 
-Next: say "Continue my last lesson".
+Next: type `/magnesium:learn Continue my last lesson`.
 ```
 
 #### Example: plan in progress
@@ -196,11 +199,11 @@ The digest has a plan for `midterm-1` with the date 2026-10-23, a Diagnostic sco
 
 ## What you can do now
 
-1. **Redo Diagnostic Q4 cold.** 2 more gaps are ready to redo. You answer from a blank page. Say "cold redo".
-2. **Sit Paper1-Easy next.** Use a timer. Then send photos and say "mark my Paper1-Easy".
-3. **Fit today to your time.** Say "re-time today" and give your free hours.
+1. **Redo Diagnostic Q4 cold.** 2 more gaps are ready to redo. You answer from a blank page. Type `/magnesium:papers cold redo`.
+2. **Sit Paper1-Easy next.** Use a timer. Then type `/magnesium:papers mark my Paper1-Easy` and send photos of your answers.
+3. **Fit today to your time.** Type `/magnesium:papers re-time today` and give your free hours.
 
-Next: redo Diagnostic Q4 cold. 2 more gaps are ready to redo. Say "cold redo".
+Next: redo Diagnostic Q4 cold. 2 more gaps are ready to redo. Type `/magnesium:papers cold redo`.
 ```
 
 #### Example: a plan with rows the digest could not read
@@ -215,10 +218,10 @@ The digest has a plan for `midterm-1` with the date 2026-10-23, 1 unfixed gap an
 
 ## What you can do now
 
-1. **Fix your gap log.** Line 9 of `Study/midterm-1/gap-log.md` is a cell short. Line 11 has no date. Say "fix my plan files".
-2. **Redo Diagnostic Q4 cold.** At least 1 gap is ready to redo. Say "cold redo".
+1. **Fix your gap log.** Line 9 of `Study/midterm-1/gap-log.md` is a cell short. Line 11 has no date. Type `/magnesium:papers fix my plan files`.
+2. **Redo Diagnostic Q4 cold.** At least 1 gap is ready to redo. Type `/magnesium:papers cold redo`.
 
-Next: fix your gap log. Say "fix my plan files".
+Next: fix your gap log. Type `/magnesium:papers fix my plan files`.
 ```
 
 ## Topic: overview
@@ -237,23 +240,25 @@ Each study folder keeps its own learning history.
 
 ## How to start
 
-Tell the tutor what you want to learn. For example:
+Magnesium is off in each new Claude Code session.
+Type `/magnesium:learn` and then what you want. For example:
 
-- "Teach me confidence intervals from my notes."
-- "Quiz me on chapter 3. One question at a time."
-- "Review what we did last time."
+- `/magnesium:learn Teach me confidence intervals from my notes.`
+- `/magnesium:learn Quiz me on chapter 3. One question at a time.`
+- `/magnesium:learn Review what we did last time.`
 
-The tutor starts a lesson only when you ask to learn, practise or review.
+Magnesium then stays on until the session ends.
+The study window turns it on for you.
 
 ## Practice papers
 
-Say "I have a midterm Monday" to start.
+Type `/magnesium:papers I have a midterm Monday` to start.
 Type `/magnesium:help papers` to see the steps.
 
 ## Help topics
 
 - `/magnesium:help papers` shows how practice papers work.
-- `/magnesium:help recording` shows what Magnesium keeps and how to stop it.
+- `/magnesium:help privacy` shows what Magnesium keeps and how to talk off the record.
 - `/magnesium:help setup` shows how to install Magnesium.
 - `/magnesium:help trouble` shows fixes for common problems.
 
@@ -270,7 +275,7 @@ The tutor marks them and helps you fix each gap.
 
 ## Steps
 
-1. Tell the tutor about your test, like "I have a midterm Monday", or type `/magnesium:papers`.
+1. Type `/magnesium:papers` and your test, like `/magnesium:papers I have a midterm Monday`.
 2. Magnesium plans each section from your files. It asks before it cuts anything.
 3. **Work each section's problems** alone. On a paper, write `?` instead of looking up.
 4. **Send photos or a PDF** of a paper. Say "mark my <paper>".
@@ -290,56 +295,57 @@ The tutor marks them and helps you fix each gap.
 | "re-time today" | The tutor fits today's work to the hours you have. |
 | "rebuild" | The tutor starts the plan again. |
 
+In a new session, type these after `/magnesium:papers`.
 PAPER is a paper, like MockA. SECTION and ITEM are on your course map, `map.md`.
 
 ## Your files
 
 Your files are in `Study/<target>/`, like `Study/midterm-1/`.
-Each new session continues from `plan.md`. `map.md` lists everything your files hold.
+`/magnesium:papers` continues from `plan.md`. `map.md` lists everything your files hold.
 
 ## Rules
 
 - **Keep the KEY files closed** until you send your answers.
 - The tutor asks before it adds much time.
 
-Next: tell the tutor about your test.
+Next: type `/magnesium:papers` and your test.
 ````
 
-## Topic: recording
+## Topic: privacy
 
 ````markdown
-# What Magnesium records
+# What Magnesium keeps
 
-Magnesium keeps your learning history in `.magnesium/` inside your study folder.
-This history stays on your computer.
+## When Magnesium is on
+
+Magnesium is off in each new Claude Code session.
+Type `/magnesium:learn`, `/magnesium:papers` or `/magnesium:checks` to turn it on.
+The study window turns it on for you.
+Once it is on, it stays on until the session ends.
+`/magnesium:help` does not turn it on.
 
 ## What Magnesium keeps
+
+Everything you type in a session that is on is kept in `.magnesium/`.
+That folder is in your study folder, on your computer.
+Magnesium keeps:
 
 - Your answers and how you got to them.
 - Your strong points and weak points.
 - The help that the tutor gave you.
 - Where you stopped, so that you can continue later.
 
+## Talk off the record
+
+A session that is off keeps nothing in Magnesium.
+To talk to Claude off the record, start a new session.
+Then do not type a Magnesium command in it.
+Claude Code keeps its own chat history either way.
+
 ## What Claude sees
 
 Claude's model gets the memories and the parts of your files that a lesson needs.
 Magnesium uses your usual Claude connection. Your usual limits and charges apply.
-
-## How to control it
-
-| Say this | What happens |
-|---|---|
-| "pause" or "stop learning" | The lesson stops, and Magnesium stops recording it. |
-| "turn recording off" | Magnesium makes no new records of your words. |
-| "turn recording on" | Magnesium records your words again. |
-
-To continue a paused lesson, ask the tutor to continue it.
-"Turn recording on" alone does not continue a lesson.
-
-Turning recording off does not:
-- delete old Magnesium records or exports.
-- delete your Claude chat history.
-- stop Claude from answering you.
 
 ## Hide files from Magnesium
 
@@ -375,6 +381,7 @@ Keep the `magnesium` command on your PATH. Claude runs it by name.
 1. Open a terminal in your study folder.
 2. Run `magnesium init`.
 3. **Start a new Claude Code session** in that folder.
+4. Type `/magnesium:learn` to turn Magnesium on.
 
 Magnesium works only in folders where you ran `magnesium init`.
 Your study files stay where they are.
@@ -384,6 +391,7 @@ Subfolders share the learning history of the study folder.
 
 1. Run `magnesium init --upgrade-instructions` in each study folder.
 2. **Start a new Claude Code session.**
+3. Type `/magnesium:learn` to go on.
 
 Your learning history stays the same.
 
@@ -415,8 +423,9 @@ Find your problem below. Then do the steps under it.
 
 ## Magnesium does nothing in a folder
 
-1. Run `magnesium init --upgrade-instructions` in that folder.
-2. Start a new Claude Code session in that folder.
+1. Type `/magnesium:learn`. Each new session starts with Magnesium off.
+2. If it still does nothing, run `magnesium init --upgrade-instructions` in that folder.
+3. Start a new Claude Code session there, and type `/magnesium:learn` again.
 
 ## Claude cannot find the `magnesium` command
 
@@ -424,7 +433,7 @@ Ask your coding agent to put `magnesium` on your PATH. Step 4 of docs/install.md
 
 ## Magnesium stops working after `/clear`
 
-Start a new Claude Code session.
+Start a new Claude Code session, then type `/magnesium:learn`.
 During a lesson, start a new session instead of `/clear`.
 
 ## The paper build says "tectonic is not on PATH"
