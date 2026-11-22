@@ -15,7 +15,7 @@
           "rubric": "Judge only what the tutor wrote in reply to the learner's last message. He asked for an example scenario and a calculation, on two cases. Pass if the reply works a concrete scenario with actual numbers through to numeric results for both cases he named (for example a small table of values and its variance before and after the change), in that reply. Fail if it answers mainly in symbols or general statements, gives numbers for only one case, leaves the example for a later turn, or asks him to attempt or say what he thinks before giving it."
         }
       ],
-      "from": "A real lesson, message 53 of 157, with a task open: he asked for an example scenario and a calculation, got 270 words in symbols, and asked twice more before a numeric table landed. On the dummy course main gave the numbers each time, so the scene is a guard; the real request was about a harder idea.",
+      "from": "Real use: with a task open, he asked for an example scenario and a calculation, got an answer in symbols, and asked twice more before a numeric table landed. On the dummy course main gave the numbers each time, so the scene is a guard; the real request was about a harder idea.",
       "guard": true
     },
     {
@@ -65,7 +65,7 @@
           "rubric": "Judge the tutor's replies to the learner's third, fourth and fifth messages, after he said this is not a study session. Pass if each gives the answer with its working and none sets a task or a practice question, or asks what he wrote, what he got or to try one. A closing offer such as 'say if you want another' is not a task. Fail if any of the three does."
         }
       ],
-      "from": "A real debrief, message 8 of 22: the tutor had twice set 'tell me what you wrote' as a task; the next day, in another course, a practice task followed the same request and was skipped."
+      "from": "Real use: in a debrief the tutor twice set 'tell me what you wrote' as a task before he said this; in another debrief a practice task followed the same request and was skipped."
     },
     {
       "id": "side-question",
@@ -91,7 +91,7 @@
         }
       ],
       "guard": true,
-      "from": "A real lesson, message 28 of 157: a side question about a look-alike before answering. Nothing went wrong; the one real failure, on a test day, was a new task replacing the open one."
+      "from": "Real use: a side question about a look-alike before answering went well; the one failure seen was a new task replacing the open one."
     },
     {
       "id": "due-checks",
@@ -170,7 +170,7 @@
       ],
       "new_sitting": true,
       "guard": true,
-      "from": "Every real sitting start, Nov 17 to 20: the checks were posed, because the opener told the tutor to begin with 'Quick check 1:'. A guard for when that order is removed."
+      "from": "Real use: the checks were posed at every sitting start, because the opener told the tutor to begin with 'Quick check 1:'. A guard for when that order is removed."
     },
     {
       "id": "not-landed",
@@ -195,7 +195,7 @@
           "rubric": "Compare the tutor's replies to the learner's second to fifth messages. After two explanations that did not land, the tutor may ask one question to find the cause. Pass if, by its reply to the fifth message at the latest, the tutor gives an explanation in a form it has not used before in this exchange: a worked numeric case, a smaller example, or a contrast with a look-alike, not the same argument reworded. Fail if neither the fourth nor the fifth reply explains in a new form, for example when both ask questions or the explanation repeats an earlier form."
         }
       ],
-      "from": "A real lesson, message 33 of 157: five explanations of one idea, each a new form, one of them a question that found the cause; it landed 25 minutes in."
+      "from": "Real use: several explanations of one idea, each in a new form, one of them a question that found the cause; it landed after about 25 minutes."
     },
     {
       "id": "day-before",
@@ -641,7 +641,7 @@
         }
       ],
       "new_sitting": true,
-      "from": "A real sitting opener the day before a test, with 3 quick checks and 24 redos due: no minutes, no cuts named; planned for 20 minutes, it ran 83 before new material."
+      "from": "Real use: a sitting opener the day before a test, with about 30 items due, named no minutes and no cuts, and ran four times its planned length before new material."
     },
     {
       "id": "pickup",
@@ -723,7 +723,7 @@
           "most": 0
         }
       ],
-      "from": "A real new chat on a phone: 8 tool calls and about 84,000 characters before its first words, 15 calls before the exercise, and the open task was not in the record."
+      "from": "Real use: a new chat took 8 tool calls and about 84,000 characters before its first words, and the open task was not in the record."
     }
   ]
 }
