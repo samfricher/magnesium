@@ -350,6 +350,19 @@ fn a_hand_edit_of_a_page_is_kept_as_a_backup_before_it_is_replaced() {
 }
 
 #[test]
+fn file_codes_keep_the_first_and_last_words_of_a_long_name() {
+    for (path, code) in [
+        ("Materials/Week09/Exercises/optional-exercises-w08.html", "optional-w08"),
+        ("Materials/lecture-08.html", "lecture-08"),
+        ("Materials/Week09/Readings/exploding-vanishing-gradients-L07b.pdf", "exploding-l07b"),
+        ("Materials/Lecture Slides/week1-suggested.png", "week1-suggested"),
+        ("Materials/course101w18-test2-lec0101-V2.pdf", "course101w18-v2"),
+    ] {
+        assert_eq!(super::write::code_from_path(path), code, "{path}");
+    }
+}
+
+#[test]
 fn a_symlinked_store_is_refused() {
     let folder = Folder::new(&[]);
     std::fs::create_dir_all(folder.root.join(".magnesium")).unwrap();

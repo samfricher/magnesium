@@ -122,25 +122,27 @@ fn valid_ref(text: &str) -> Result<String, String> {
     Ok(cleaned)
 }
 
-fn code_from_path(path: &str) -> String {
+pub(crate) fn code_from_path(path: &str) -> String {
     let stem = Path::new(path)
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    let mut code = String::new();
-    let mut last_hyphen = true;
-    for c in stem.chars() {
-        if c.is_ascii_alphanumeric() {
-            code.push(c);
-            last_hyphen = false;
-        } else if !last_hyphen {
-            code.push('-');
-            last_hyphen = true;
-        }
-        if code.len() >= 14 {
-            break;
-        }
-    }
+    let words = stem
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>();
+    let joined = words.join("-");
+    let code = if joined.len() <= 16 || words.len() < 2 {
+        joined.chars().take(16).collect::<String>()
+    } else {
+        let last = words[words.len() - 1];
+        let first = words[0];
+        let room = 16usize.saturating_sub(last.len() + 1).max(3);
+        format!("{}-{last}", first.chars().take(room).collect::<String>())
+            .chars()
+            .take(16)
+            .collect()
+    };
     let code = code.trim_matches('-').to_owned();
     if code.is_empty() || valid_code(&code).is_none() {
         "file".to_owned()
@@ -230,6 +232,50 @@ fn heading_parts(heading: &str) -> Vec<String> {
         .collect()
 }
 
+fn refresh_file(
+    tx: &Transaction<'_>,
+    source: &Source<'_>,
+    code: &str,
+    path: &str,
+    report: &mut Report,
+) -> Result<(), String> {
+    let (readable, sha, items): (bool, Option<String>, i64) = tx
+        .query_row(
+            "SELECT readable = 1, content_sha256, (SELECT count(*) FROM items WHERE file = ?1)
+             FROM files WHERE code = ?1",
+            [code],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(fail)?;
+    if (readable && sha.is_some()) || items > 0 || !source.index.is_file() {
+        return Ok(());
+    }
+    let Some(relative) = relative_path(path) else {
+        return Ok(());
+    };
+    let Some((row, sections)) = crate::retrieval::sections_at(source.index, &relative).map_err(fail)? else {
+        return Ok(());
+    };
+    let now_readable = row.index_status == "indexed" && matches!(row.source_kind.as_str(), "text" | "pdf");
+    if !now_readable {
+        return Ok(());
+    }
+    let kind = if row.source_kind == "pdf" { "page" } else { "line" };
+    tx.execute(
+        "UPDATE files SET readable = 1, content_sha256 = ?2, anchor_kind = ?3 WHERE code = ?1",
+        params![code, row.content_sha256, kind],
+    )
+    .map_err(fail)?;
+    let count = insert_sections(tx, code, row.content_sha256.as_deref(), &sections.sections, source.now_ms)?;
+    report.files_added.push(json!({
+        "path": path,
+        "code": code,
+        "sections": count,
+        "note": "indexed since it was added: sections from the file's own headings",
+    }));
+    Ok(())
+}
+
 pub(crate) fn add_file(
     tx: &Transaction<'_>,
     source: &Source<'_>,
@@ -239,6 +285,7 @@ pub(crate) fn add_file(
 ) -> Result<String, String> {
     let path = path.trim().trim_start_matches("./").to_owned();
     if let Some(existing) = file_code(tx, &path)? {
+        refresh_file(tx, source, &existing, &path, report)?;
         return Ok(existing);
     }
     let relative = relative_path(&path)
