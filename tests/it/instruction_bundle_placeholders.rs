@@ -55,6 +55,7 @@ const FILES: &[(&str, &str, Option<&str>, Option<&str>)] = &[
         Some("papers-loop"),
         None,
     ),
+    ("workflows/planning.md", "workflow", Some("planning"), None),
     ("adapters/claude.md", "adapter", None, Some("claude")),
 ];
 

@@ -272,9 +272,9 @@ The tutor marks them and helps you fix each gap.
 
 1. Tell the tutor about your test, like "I have a midterm Monday", or type `/magnesium:papers`.
 2. Answer the tutor's questions.
-3. The tutor writes your plan and papers, starting with the Diagnostic.
-4. **Sit the Diagnostic** alone and timed. Write `?` where you would look something up. After each answer, write S (sure), U (unsure) or G (guess).
-5. **Send photos or a PDF** of your answers. Then say "mark my Diagnostic".
+3. Magnesium reads your course files and builds the plan from them: every section of the material in your instructor's order, each with its listed exercises. It asks you about anything it would cut.
+4. **Work each section's problems** alone. For a timed paper, write `?` where you would look something up, and S (sure), U (unsure) or G (guess) after each answer.
+5. **Send photos or a PDF** of a paper's answers. Then say "mark my <paper>".
 6. The tutor marks your answers. Magnesium logs each part that lost marks.
 7. **Repair** each gap with the tutor.
 8. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
@@ -284,19 +284,20 @@ The tutor marks them and helps you fix each gap.
 | Say this | What happens |
 |---|---|
 | "mark my PAPER" | The tutor marks that paper. |
-| "teach me TAG" | The tutor teaches that topic. |
-| "repair TAG" | The tutor does a short repair on that topic. |
+| "teach me SECTION" | The tutor teaches that section of the material. |
+| "repair ITEM" | The tutor does a short repair on that item. |
 | "cold redo" | You redo the gaps that are due. |
 | "new mock" | You get another paper at test level. |
 | "re-time today" | The tutor fits today's work to the hours you have. |
+| "re-plan" | Magnesium lays out the plan again from what is done. |
 | "rebuild" | The tutor starts the plan again. |
 
-PAPER is a paper, like Diagnostic. TAG is a topic from your gap log.
+PAPER is a paper, like MockA. SECTION and ITEM are on your course map, `map.md`.
 
 ## Your files
 
 Your files are in `Study/<target>/`, like `Study/midterm-1/`.
-Each new session continues from `plan.md`.
+Each new session continues from `plan.md`. Magnesium writes `plan.md` and `map.md` from the course map: `map.md` lists every item in your files and whether you have answered it.
 
 ## Rules
 

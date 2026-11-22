@@ -4,171 +4,8 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use crate::digest::read_small;
 use crate::learner::label_key;
 use crate::practice::Item;
-
-#[derive(Debug, Default)]
-pub(crate) struct Graph {
-    pub(crate) order: Vec<String>,
-    pub(crate) tags: BTreeMap<String, GraphTag>,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct GraphTag {
-    pub(crate) name: String,
-    pub(crate) needs: Vec<String>,
-    pub(crate) key_need: Vec<String>,
-    pub(crate) contains: Vec<String>,
-}
-
-const LIST_FIELDS: [&str; 4] = ["needs", "key_need", "contains", "touches"];
-
-pub(crate) fn parse_graph(text: &str) -> Result<Graph, String> {
-    let mut graph = Graph::default();
-    let mut in_tags = false;
-    let mut tag_indent: Option<usize> = None;
-    let mut current: Option<String> = None;
-    let mut block: Option<(String, usize)> = None;
-    for (index, raw) in text.lines().enumerate() {
-        let line_no = index + 1;
-        let line = strip_comment(raw);
-        if line.trim().is_empty() {
-            continue;
-        }
-        if line.starts_with('\t') {
-            return Err(format!("line {line_no}: indented with a tab"));
-        }
-        let indent = line.len() - line.trim_start().len();
-        let body = line.trim();
-        if indent == 0 {
-            in_tags = body == "tags:";
-            current = None;
-            block = None;
-            continue;
-        }
-        if !in_tags {
-            continue;
-        }
-        let tag_indent = *tag_indent.get_or_insert(indent);
-        if indent < tag_indent {
-            return Err(format!("line {line_no}: indented less than the tags"));
-        }
-        if indent == tag_indent {
-            let Some(name) = body.strip_suffix(':') else {
-                return Err(format!(
-                    "line {line_no}: a tag is its name and a colon, with its fields below"
-                ));
-            };
-            let name = unquote(name);
-            if name.is_empty() {
-                return Err(format!("line {line_no}: a tag with no name"));
-            }
-            let key = label_key(&name);
-            if graph.tags.contains_key(&key) {
-                return Err(format!("line {line_no}: the tag {name} is listed twice"));
-            }
-            graph.order.push(key.clone());
-            graph.tags.insert(
-                key.clone(),
-                GraphTag {
-                    name,
-                    ..GraphTag::default()
-                },
-            );
-            current = Some(key);
-            block = None;
-            continue;
-        }
-        let Some(tag) = current.as_ref().and_then(|key| graph.tags.get_mut(key)) else {
-            return Err(format!("line {line_no}: a field before any tag"));
-        };
-        if let Some(item) = body.strip_prefix("- ").or((body == "-").then_some("")) {
-            match &block {
-                Some((field, field_indent)) if indent >= *field_indent => {
-                    let item = unquote(item);
-                    if !item.is_empty()
-                        && let Some(list) = list(tag, field)
-                    {
-                        list.push(label_key(&item));
-                    }
-                    continue;
-                }
-                _ => return Err(format!("line {line_no}: a list item under no list field")),
-            }
-        }
-        let Some((field, value)) = body.split_once(':') else {
-            return Err(format!(
-                "line {line_no}: expected a field such as needs: [TAG]"
-            ));
-        };
-        let field = field.trim();
-        let value = value.trim();
-        block = None;
-        if value.is_empty() {
-            block = Some((field.to_owned(), indent));
-            continue;
-        }
-        if !LIST_FIELDS.contains(&field) {
-            continue;
-        }
-        let Some(inner) = value
-            .strip_prefix('[')
-            .and_then(|value| value.strip_suffix(']'))
-        else {
-            return Err(format!(
-                "line {line_no}: {field} is a list, such as [TAG] or [] for none"
-            ));
-        };
-        let items = inner
-            .split(',')
-            .map(unquote)
-            .filter(|item| !item.is_empty())
-            .map(|item| label_key(&item))
-            .collect::<Vec<_>>();
-        if let Some(list) = list(tag, field) {
-            list.extend(items);
-        }
-    }
-    if graph.tags.is_empty() {
-        return Err("no tags: section with a tag in it".into());
-    }
-    Ok(graph)
-}
-
-fn list<'a>(tag: &'a mut GraphTag, field: &str) -> Option<&'a mut Vec<String>> {
-    match field {
-        "needs" => Some(&mut tag.needs),
-        "key_need" => Some(&mut tag.key_need),
-        "contains" => Some(&mut tag.contains),
-        _ => None,
-    }
-}
-
-fn strip_comment(line: &str) -> &str {
-    let mut quote = None;
-    let mut previous = ' ';
-    for (at, c) in line.char_indices() {
-        match (quote, c) {
-            (None, '"' | '\'') => quote = Some(c),
-            (Some(open), _) if c == open => quote = None,
-            (None, '#') if previous.is_whitespace() => return &line[..at],
-            _ => {}
-        }
-        previous = c;
-    }
-    line
-}
-
-fn unquote(text: &str) -> String {
-    let text = text.trim();
-    text.strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .or_else(|| text.strip_prefix('\'').and_then(|t| t.strip_suffix('\'')))
-        .unwrap_or(text)
-        .trim()
-        .to_owned()
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Reading {
@@ -245,7 +82,7 @@ pub(crate) fn load_imported(
 
 pub(crate) struct PlanInputs<'a> {
     pub(crate) plan: &'a str,
-    pub(crate) graph: Option<&'a Graph>,
+    pub(crate) scoped: &'a BTreeSet<String>,
     pub(crate) items: &'a [Item],
     pub(crate) attempts: &'a [TagAttempt],
     pub(crate) imported: &'a BTreeMap<String, (String, String)>,
@@ -254,7 +91,7 @@ pub(crate) struct PlanInputs<'a> {
 pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
     let PlanInputs {
         plan,
-        graph,
+        scoped,
         items,
         attempts,
         imported,
@@ -263,15 +100,8 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
         .iter()
         .filter(|item| item.facts.plan.as_deref() == Some(plan))
         .collect();
-    let mut order: Vec<String> = graph.map(|g| g.order.clone()).unwrap_or_default();
-    let mut names: BTreeMap<String, String> = graph
-        .map(|g| {
-            g.tags
-                .iter()
-                .map(|(key, tag)| (key.clone(), tag.name.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut order: Vec<String> = Vec::new();
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
     for row in &rows {
         let key = label_key(&row.facts.label);
         if !names.contains_key(&key) {
@@ -279,12 +109,14 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
             order.push(key);
         }
     }
-    let edges = |key: &str, pick: fn(&GraphTag) -> &Vec<String>| -> Vec<String> {
-        graph
-            .and_then(|g| g.tags.get(key))
-            .map(|tag| pick(tag).clone())
-            .unwrap_or_default()
-    };
+    for key in scoped {
+        if !names.contains_key(key)
+            && (attempts.iter().any(|a| a.label_key == *key) || imported.contains_key(key))
+        {
+            names.insert(key.clone(), key.clone());
+            order.push(key.clone());
+        }
+    }
     let name = |key: &str| names.get(key).cloned().unwrap_or_else(|| key.to_owned());
     let open_row = |key: &str| -> Option<&Item> {
         rows.iter().copied().find(|row| {
@@ -304,31 +136,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
                 .map(|a| (key.clone(), a.place.clone()))
         })
         .collect();
-    let mut reached: BTreeMap<String, String> = BTreeMap::new();
-    for from in passed.keys() {
-        let mut seen = BTreeSet::new();
-        let mut frontier: Vec<(String, usize)> = edges(from, |t| &t.contains)
-            .into_iter()
-            .map(|k| (k, 1))
-            .collect();
-        while let Some((key, depth)) = frontier.pop() {
-            if !seen.insert(key.clone()) || key == *from {
-                continue;
-            }
-            if depth == 1 || own(&key).is_empty() {
-                reached.entry(key.clone()).or_insert_with(|| {
-                    if depth == 1 {
-                        format!("from {} via contains", name(from))
-                    } else {
-                        format!("inferred from {} via contains", name(from))
-                    }
-                });
-            }
-            for next in edges(&key, |t| &t.contains) {
-                frontier.push((next, depth + 1));
-            }
-        }
-    }
     order
         .iter()
         .map(|key| {
@@ -354,17 +161,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
                         format!("{} at {}", row.name(), row.state.status()),
                     );
                 }
-                let open_in = |field: fn(&GraphTag) -> &Vec<String>| {
-                    edges(key, field)
-                        .into_iter()
-                        .find(|need| open_row(need).is_some())
-                };
-                if let Some(need) = open_in(|t| &t.key_need) {
-                    return (
-                        Reading::Conditional,
-                        format!("needs {}, which is open", name(&need)),
-                    );
-                }
                 let closed = rows
                     .iter()
                     .find(|row| label_key(&row.facts.label) == *key && row.state.closed());
@@ -372,7 +168,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
                     .get(key)
                     .map(|place| format!("cold in {place}"))
                     .or_else(|| closed.map(|row| format!("{} closed", row.name())))
-                    .or_else(|| reached.get(key).cloned())
                     .or_else(|| {
                         imported
                             .get(key)
@@ -380,12 +175,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
                             .map(|(_, phrase)| format!("memory before the upgrade: {phrase}"))
                     });
                 if let Some(why) = sound {
-                    if let Some(need) = open_in(|t| &t.needs) {
-                        return (
-                            Reading::Conditional,
-                            format!("needs {}, which is open", name(&need)),
-                        );
-                    }
                     return (Reading::Sound, why);
                 }
                 let own = own(key);
@@ -425,7 +214,6 @@ pub(crate) fn read_plan(inputs: &PlanInputs<'_>) -> Vec<TagReading> {
 
 pub(crate) fn plan_json(
     plan: &str,
-    graph: &Result<Graph, String>,
     readings: &[TagReading],
     help: &BTreeMap<String, &'static str>,
 ) -> Value {
@@ -458,26 +246,7 @@ pub(crate) fn plan_json(
     if !levels.is_empty() {
         value["help_levels"] = Value::Object(levels);
     }
-    if let Err(problem) = graph {
-        value["graph"] = json!(format!(
-            "{}: {problem}. Readings use the gap log and attempts only, with no needs, key_need or contains, until it is fixed",
-            graph_file(plan)
-        ));
-    }
     value
-}
-
-pub(crate) fn graph_file(plan: &str) -> String {
-    format!("Study/{plan}/graph.yaml")
-}
-
-pub(crate) fn read_graph(root: &Path, plan: &str) -> Result<Graph, String> {
-    let path = root.join("Study").join(plan).join("graph.yaml");
-    if std::fs::symlink_metadata(&path).is_err() {
-        return Err("missing".into());
-    }
-    let text = read_small(&path).ok_or("too large, not text, or not a regular file")?;
-    parse_graph(&text)
 }
 
 pub(crate) fn readings_json(conn: &Connection, root: &Path, plans: &[String]) -> Option<Value> {
@@ -491,27 +260,25 @@ pub(crate) fn readings_json(conn: &Connection, root: &Path, plans: &[String]) ->
     let values = plans
         .iter()
         .map(|plan| {
-            let graph = read_graph(root, plan);
+            let scoped = crate::course_map::scoped_ids(root, plan);
             let readings = read_plan(&PlanInputs {
                 plan,
-                graph: graph.as_ref().ok(),
+                scoped: &scoped,
                 items: &items,
                 attempts: &attempts,
                 imported: &imported,
             });
-            plan_json(plan, &graph, &readings, &help)
+            plan_json(plan, &readings, &help)
         })
         .collect::<Vec<_>>();
     Some(json!({
         "plans": values,
-        "note": "Magnesium works out each tag's reading from the gap log, the stored attempts and graph.yaml each time, and keeps each tag's help level: the example step last given when the learner had no starting move. Use these; never write a reading or a step into a memory. A tag not listed has no row, attempt or graph entry yet: it is untested.",
+        "note": "Magnesium works out each label's reading from the gap log and the stored attempts each time, and keeps each kind's help level: the example step last given when the learner had no starting move. Use these; never write a reading or a step into a memory. What was never asked is on the course map: course_map read states it per item.",
     }))
 }
 
 pub(crate) fn plan_tag_keys(root: &Path, plan: &str, items: &[Item]) -> BTreeSet<String> {
-    let mut keys: BTreeSet<String> = read_graph(root, plan)
-        .map(|graph| graph.order.into_iter().collect())
-        .unwrap_or_default();
+    let mut keys: BTreeSet<String> = crate::course_map::scoped_ids(root, plan);
     keys.extend(
         items
             .iter()

@@ -199,7 +199,7 @@ pub(crate) fn host_context(host: &HostIdentity) -> crate::learner::HostContext {
         host_thread_id: host.stored_session_id(),
     }
 }
-const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
+const CONTEXT_SHAPES: &str = r#"context takes either an instruction load {"action":"instructions","host":"claude","stage":"orient_and_probe"|"plan_and_route"|"teach_and_practice"|"interpret_and_repair"|"review_and_transfer"|"consolidate_and_resume"|"papers"|"papers_loop"|"planning"} with optional "operation":"state_and_evidence"|"source_use"|"tool_recipes", or a learner-state read {"schema":"learner-model/v2","action":"status"|"prepare"|"session_choices"|"pending_events",...} without host or stage; with no action, a stage loads instructions and a goal prepares"#;
 const MEMORY_SHAPES: &str = r#"memory takes {"schema":"learner-model/v2","action":"search","goal":"<topic>","original_query":"<learner's words>"}, {"schema":"learner-model/v2","action":"read","refs":[{"kind":"current_memory"|"observation"|"event","id":"<id>"}]}, or {"schema":"learner-model/v2","action":"browse"} with optional "topic"; other actions are topics, history, reviews, observations and pending_work"#;
 fn tool_host() -> crate::learner::HostContext {
     if let Some(host) = host::process_host_identity() {
@@ -684,6 +684,11 @@ fn dispatch_inner(
             &serde_json::from_value(request).map_err(|e| e.to_string())?,
         );
     }
+    if operation == "course_map" {
+        let request: crate::course_map::CourseMapRequest = serde_json::from_value(request)
+            .map_err(|e| format!("{e}. course_map takes {{\"action\": \"inventory\" | \"add_files\" | \"write\" | \"read\" | \"reach\", ...}}"))?;
+        return crate::course_map::handle(cwd, request);
+    }
     if operation == "sources" {
         return handle_sources(
             cwd,
@@ -1004,17 +1009,23 @@ pub(crate) fn host_user_prompt_submit(
     } else {
         crate::sittings::Sittings::open_existing(&workspace)
     };
+    let mut sitting_begins = false;
     if let Ok(Some(mut sittings)) = sittings {
         let now = crate::sittings::now_ms();
         if recording {
-            let _ = sittings.note_learner_message(&workspace, now);
+            sitting_begins = sittings
+                .note_learner_message(&workspace, now)
+                .unwrap_or(false);
         }
         let _ = sittings.reopen();
         if recording && crate::just_checks::asked_in_words(text) {
             let _ = sittings.ask_checks_only(&workspace, Some(&context.host_thread_id), now);
         }
     }
-    let sitting = crate::sittings::notice_clause(&workspace, Some(&context.host_thread_id));
+    let mut sitting = crate::sittings::notice_clause(&workspace, Some(&context.host_thread_id));
+    if sitting_begins && let Some(map) = crate::course_map::notice_clause(&workspace) {
+        sitting = Some(sitting.unwrap_or_default() + &map);
+    }
     if !active && recording {
         match native_capture::issue(
             &workspace,

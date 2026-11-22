@@ -1,6 +1,6 @@
 # State and evidence
 
-Use one current learner model across conversations. A memory has a title, scope, summary, free-form state_text, optional topics/retrieval_cues/review_note, and current_basis observations. Original events, observations, and revision history preserve the inspectable basis; historical snapshots are not current guidance. Reading or paraphrasing old work creates no new performance or observation date. Magnesium keeps each kind's help level and each plan tag's reading, and its results state them; a memory never records either.
+Use one current learner model across conversations. A memory has a title, scope, summary, free-form state_text, optional topics/retrieval_cues/review_note, and current_basis observations. Original events, observations, and revision history preserve the inspectable basis; historical snapshots are not current guidance. Reading or paraphrasing old work creates no new performance or observation date. Magnesium keeps each kind's help level and each label's reading, and its results state them; a memory never records either.
 
 ## Authoring
 
@@ -8,7 +8,7 @@ Read neighboring current records first. Identity is the same operation and conte
 
 Example: earlier work correctly expands binomials; later work struggles to reverse the sum/product relationship. Preserve expansion strength and describe the narrower reverse-direction gap. Subsequent independent factor selection revises the current description rather than leaving that gap active forever. These are illustrations, not facts about this learner.
 
-Rewrite the affected record with relevant current_basis and a reason/change_basis. Previous associated support remains inspectable. Keep only a few useful learner terms, cues, and optional flat topic labels; cues cannot invent a weakness. An explicit preference can persist; one observed benefit is not a fixed learning-style diagnosis. An anchor is different. It is a skill or way of thinking the learner's own work has shown. Keep it as one state_text line in the memory for that skill, starting with a lowercase "anchor:", such as "anchor: applies the chain rule to single-variable functions (Week 3 tutorial, problem 2)". That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it. An anchor cites work the learner did, so it never names a format they learn best from.
+Rewrite the affected record with relevant current_basis and a reason/change_basis. Previous associated support remains inspectable. Keep only a few useful learner terms, cues, and optional flat topic labels; cues cannot invent a weakness. An explicit preference can persist; one observed benefit is not a fixed learning-style diagnosis. An anchor is different. It is a skill or way of thinking the learner's own work has shown. Keep it as one state_text line in the memory for that skill, starting with a lowercase "anchor:", such as "anchor: applies the chain rule to single-variable functions (Week 3 tutorial, problem 2)". That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. An anchor cites work the learner did, so it never names a format they learn best from.
 
 ## Contradictions and corrections
 
@@ -16,7 +16,7 @@ A learner challenge triggers inspection of the original task, answer, help, and 
 
 A correct procedure earlier and a misconception later may both be real: describe the conditions and the narrower changed interpretation. A single slip does not establish a durable misconception; repeated relevant errors can strengthen it. Repeated retrieval of an old suspicion adds no evidence. New evidence can disprove it.
 
-Atomic create/revise/retire operations can consolidate local duplicates while explicitly preserving support. No automatic graph-wide cleanup, model-invented score, fixed universal topic list, user annotation requirement, or hidden verifier veto is needed. A per-target course graph in the workspace is structure, not learner state.
+Atomic create/revise/retire operations can consolidate local duplicates while explicitly preserving support. No automatic graph-wide cleanup, model-invented score, fixed universal topic list, user annotation requirement, or hidden verifier veto is needed. The course map in the workspace is the course's structure, not learner state.
 
 ## Durable versus session context
 

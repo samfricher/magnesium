@@ -801,3 +801,72 @@ pub(crate) fn folder_files(index_path: &Path) -> Result<FolderFiles, ManifestErr
     files.page_code = page_code;
     Ok(files)
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct IndexedFile {
+    pub(crate) path: String,
+    pub(crate) source_kind: String,
+    pub(crate) index_status: String,
+    pub(crate) exclusion_reason: Option<String>,
+    pub(crate) content_sha256: Option<String>,
+    pub(crate) titled: usize,
+    pub(crate) has_text: bool,
+}
+
+pub(crate) fn indexed_files(index_path: &Path) -> Result<Vec<IndexedFile>, ManifestError> {
+    let connection = open_index(index_path)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT manifest.display_path, manifest.source_kind, manifest.index_status,
+                    manifest.exclusion_reason, manifest.content_sha256,
+                    (SELECT count(DISTINCT candidate.structural_path) FROM source_candidates candidate
+                     WHERE candidate.manifest_id = manifest.manifest_id
+                       AND candidate.status = 'current'
+                       AND candidate.structural_path IS NOT NULL
+                       AND candidate.structural_path NOT LIKE 'page %'),
+                    EXISTS(SELECT 1 FROM source_candidates candidate
+                     WHERE candidate.manifest_id = manifest.manifest_id
+                       AND candidate.status = 'current'
+                       AND length(trim(coalesce(candidate.body, ''))) > 0)
+             FROM source_manifest manifest
+             WHERE manifest.present = 1 AND manifest.file_size IS NOT NULL
+             ORDER BY manifest.display_path COLLATE BINARY",
+        )
+        .map_err(|error| sqlite(index_path, "read indexed files", error))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(IndexedFile {
+                path: row.get(0)?,
+                source_kind: row.get(1)?,
+                index_status: row.get(2)?,
+                exclusion_reason: row.get(3)?,
+                content_sha256: row.get(4)?,
+                titled: row.get::<_, i64>(5)?.max(0) as usize,
+                has_text: row.get(6)?,
+            })
+        })
+        .map_err(|error| sqlite(index_path, "read indexed files", error))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| sqlite(index_path, "read indexed files", error))
+}
+
+pub(crate) fn sections_at(
+    index_path: &Path,
+    relative: &Path,
+) -> Result<Option<(ManifestRow, FileSections)>, ManifestError> {
+    let connection = open_index(index_path)?;
+    let Some(row) = read_manifest_row_from(&connection, index_path, relative)? else {
+        return Ok(None);
+    };
+    if row.index_status != "indexed" || !row.present {
+        let empty = FileSections {
+            sections: Vec::new(),
+            untitled_anchors: 0,
+            truncated: false,
+        };
+        return Ok(Some((row, empty)));
+    }
+    drop(connection);
+    let sections = read_sections(index_path, &row)?;
+    Ok(Some((row, sections)))
+}

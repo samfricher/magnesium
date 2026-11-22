@@ -378,7 +378,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         "Help goes back as well as down: when the learner does not solve the changed version or the full problem alone, or later fails a cold redo or delayed check of that kind, move the step back one level, so \"partly worked\" becomes \"full\" and \"full\" is removed.",
         "A learner who can start gets no example step.",
         "Magnesium keeps each kind's step from your attempts, so never write it in a memory.",
-        "Name the kind on each attempt of it, its tag when a course graph has one.",
+        "Name the kind on each attempt of it, and label the attempt with its course map item id when the folder has a map.",
         "When the learner has no starting move on a new problem, record that attempt with no_start before you reply, and give the help its result's help_levels names.",
         "A requested full solution and a fails-twice rewrite are not no_start.",
         "rewrite the task with smaller steps or a worked example first, whatever the example step;",
@@ -421,8 +421,8 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
     }
     let papers = served("papers_loop");
     for required in [
-        "the help its readings name if they could not start (their attempt sends kind, the tag, and no_start), or under rule 6 a worked example,",
-        "Magnesium works each out from the gap log, the attempts and `graph.yaml`, and states them, with why and any tag's help level, in readings",
+        "the help its readings name if they could not start (their attempt sends kind, the item, and no_start), or under rule 4 a worked example,",
+        "Magnesium works each out from the gap log and the attempts, and states them, with why and any kind's help level, in readings",
         "Use those, and never write a reading into a memory.",
         "its state_text describes the work, never the reading or help level.",
     ] {
@@ -439,7 +439,7 @@ fn served_instructions_teach_a_new_kind_of_problem_with_a_similar_worked_problem
         .unwrap()
         .to_owned();
     assert!(
-        contract.contains("Magnesium keeps each kind's help level and each plan tag's reading, and its results state them; a memory never records either.")
+        contract.contains("Magnesium keeps each kind's help level and each label's reading, and its results state them; a memory never records either.")
             && !contract.contains("example step (KIND)"),
         "{host}"
     );
@@ -514,7 +514,7 @@ fn the_runtime_brings_in_an_old_gap_log_and_the_papers_skill_adds_only_the_templ
     let (_, section) = skill.split_once("## Upgrade an old gap log").unwrap();
     let section = section.split("\n## ").next().unwrap();
     assert!(
-        section.contains("papers_loop") && section.contains("`## Tags`"),
+        section.contains("papers_loop") && section.contains("`## Gaps`"),
         "{section}"
     );
     for served_step in [
@@ -547,10 +547,6 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
         (
             "papers skill",
             include_str!("../../claude-plugin/skills/papers/SKILL.md"),
-        ),
-        (
-            "plan template",
-            include_str!("../../claude-plugin/skills/papers/templates/plan.md"),
         ),
     ] {
         assert!(text.contains(verb), "{name} does not mention {verb:?}");
@@ -721,12 +717,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
         (
             "papers_loop",
             None,
-            "add an \"anchor:\" line to that skill's tag memory, unless an anchor there already covers it.",
-        ),
-        (
-            "papers",
-            None,
-            "At build, run a memory search with all_of [\"anchor\"] and any_of naming the course's tags and topics, and read each memory it returns. Copy into Anchors each \"anchor:\" line that names a skill this course uses.",
+            "add an \"anchor:\" line to that skill's memory, unless an anchor there already covers it.",
         ),
     ] {
         assert!(
@@ -734,7 +725,7 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             "{host}/{stage}: {required}"
         );
     }
-    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. A plan's Anchors section keeps a copy of the anchors its topics use, and where a copy and its memory differ, the memory wins. When you add, correct or retire an anchor, make the same change in the Anchors section of each plan that covers its topic or already holds a copy of it, in the same step, adding the section if the plan lacks it. A plan covers a topic when its `Study/<target>/graph.yaml` has a tag for it.";
+    let rule = "That line is the source. Before you add one, read the memory, and replace an anchor that the new one covers instead of adding a second, so the list stays short. An anchor cites work the learner did";
     for stage in [
         "teach_and_practice",
         "interpret_and_repair",
@@ -753,17 +744,6 @@ fn served_instructions_build_each_explanation_from_an_anchor() {
             .to_owned();
         assert!(text.contains(rule), "{host}/{stage}: {rule}");
     }
-    let template = include_str!("../../claude-plugin/skills/papers/templates/plan.md");
-    assert!(
-        template
-            .lines()
-            .any(|line| line.starts_with("## ") && line.ends_with(" Anchors")),
-        "the plan template has no Anchors section"
-    );
-    assert!(
-        template.lines().any(|line| line.starts_with("- anchor: <")),
-        "the plan template has no anchor line to fill in"
-    );
 }
 
 #[test]
@@ -868,7 +848,7 @@ fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
             .to_owned()
     };
     let line_form = "Each session is one line, \"If it is <days> at <HH:MM>, then I <what> <where>.\", with a 24-hour start time. Leave out \"<days> at\" for every day. Then add one backup line that starts \"If I miss\".";
-    let write = format!("Write the answer under a Sessions heading in `plan.md`. {line_form}");
+    let write = format!("Write the answer with course_map write facts sessions. {line_form}");
     let papers = served("papers");
     for required in [
         "Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question.",
@@ -877,7 +857,7 @@ fn served_papers_build_asks_when_and_where_the_learner_will_practise() {
         assert!(papers.contains(required), "{host}/papers: {required}");
     }
     let rule = format!(
-        "If the learner changes when or where they practise, rewrite Sessions, adding it if missing. {line_form}"
+        "If the learner changes when or where they practise, write them with course_map write facts sessions. {line_form}"
     );
     assert!(
         served("papers_loop").contains(&rule),
@@ -904,11 +884,11 @@ fn served_instructions_ask_how_sure_the_learner_is_of_each_answer() {
     };
     let papers_loop = served("papers_loop");
     for required in [
-        "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Log a decline under Changes and do not ask again.",
+        "In papers and cold redos, ask for S (sure), U (unsure) or G (guess) after each answer, or before marking a paper without letters. Note a decline in the learner's memory and do not ask again.",
         "One letter on a question covers its parts.",
         "Send each letter as its answer's confidence, or none, as for a lone `?`.",
         "show S, U and G against right (full marks) and wrong answers, per part and without stretch, in a table. Keep the counts in its Scores Notes.",
-        "Conf is not evidence and never passes or closes a row or changes a tag's reading.",
+        "Conf is not evidence and never passes or closes a row or changes an item's reading.",
         "Conf takes any letter the failing answer has",
     ] {
         assert!(
@@ -965,7 +945,7 @@ fn served_instructions_repair_sure_mistakes_first() {
     };
     assert!(
         served("papers_loop").contains(
-            "When you choose a repair, take Conf S rows first, after their unrepaired key_need tags (no Next redo). Rule 6 still orders a repair's steps after two fails."
+            "When you choose a repair, take Conf S rows first. Rule 4 still orders a repair's steps after two fails."
         ),
         "{host}/papers_loop"
     );
@@ -1138,14 +1118,6 @@ fn served_instructions_use_three_question_shapes_that_resist_pattern_matching() 
         for rule in rules {
             assert!(text.contains(rule), "{host}/{stage}: {rule}");
         }
-    }
-    let template = include_str!("../../claude-plugin/skills/papers/templates/plan.md");
-    for shape in [
-        "- Give the reason:",
-        "- Two look-alikes:",
-        "- Break one assumption:",
-    ] {
-        assert!(template.contains(shape), "plan template: {shape}");
     }
 }
 

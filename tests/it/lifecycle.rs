@@ -179,7 +179,8 @@ fn mcp_discards_oversized_frame_then_handles_queued_requests_and_shutdown() {
             "memory",
             "learning_step",
             "search_sources",
-            "sources"
+            "sources",
+            "course_map"
         ])
     );
     for id in 100..164 {

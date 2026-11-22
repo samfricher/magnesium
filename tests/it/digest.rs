@@ -239,43 +239,38 @@ fn digest_reports_a_gap_log_it_cannot_open() {
 }
 
 #[test]
-fn digest_reads_a_plan_filled_in_from_the_shipped_template() {
+fn digest_reads_the_plan_the_course_map_writes() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
-    let mut plan = include_str!("../../claude-plugin/skills/papers/templates/plan.md").to_owned();
-    for (prefix, row) in [
-        ("| Target |", "| Target | Final exam |"),
-        ("| When |", "| When | 2999-01-02 (Sat) 09:00 to 12:00 |"),
-        (
-            "| 1 | <name> |",
-            "| 1 | Diagnostic | find gaps | 90 min, stop at 100 | Diagnostic.pdf | 1.5 h |",
-        ),
-        (
-            "- anchor: <what the learner did",
-            "- anchor: applies the chain rule to single-variable functions (Diagnostic, Q3)",
-        ),
-        (
-            "- If it is <days> at <HH:MM>,",
-            "- If it is 07:30, then I do the due cold redos at my desk.",
-        ),
-    ] {
-        let line = plan
-            .lines()
-            .find(|line| line.starts_with(prefix))
-            .unwrap_or_else(|| panic!("template has no line starting {prefix:?}"))
-            .to_owned();
-        plan = plan.replacen(&line, row, 1);
-    }
-    let dir = e.workspace.join("Study/final");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("plan.md"), plan).unwrap();
+    let written = v2::tool(
+        &e,
+        "claude",
+        "plan",
+        "course_map",
+        json!({
+            "action": "write",
+            "target": "final",
+            "facts": {
+                "label": "Final exam",
+                "at": "2999-01-02 09:00",
+                "sessions": ["If it is 07:30, then I do the due cold redos at my desk."]
+            },
+            "items": [{"kind": "task", "title": "Section A test", "ref": "a1"}],
+            "blocks": [{"title": "Section A", "tasks": ["task.a1"], "minutes": 40, "opens_with": "test"}]
+        }),
+    );
+    assert_eq!(
+        written["pages"],
+        json!(["Study/final/map.md", "Study/final/plan.md"]),
+        "{written}"
+    );
 
     let value = digest(&e);
 
     let plan = &value["plans"][0];
     assert_eq!(plan["title"], "Final exam", "{value}");
     assert_eq!(plan["date"], "2999-01-02");
-    assert_eq!(plan["blocks"], json!(["Diagnostic"]));
+    assert_eq!(plan["blocks"], json!(["Section A"]));
     assert_eq!(plan["unreadable"], json!([]));
     assert_eq!(plan["planned_sessions_today"], json!(["07:30"]));
 }

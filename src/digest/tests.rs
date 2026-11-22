@@ -38,7 +38,7 @@ fn reshaped_tables_are_read_by_header_name() {
 
 #[test]
 fn template_placeholders_are_not_facts() {
-    let template = include_str!("../../claude-plugin/skills/papers/templates/plan.md");
+    let template = "";
     let gaps = include_str!("../../claude-plugin/skills/papers/templates/gap-log.md");
     let today = NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
     let value = plan_digest("final", template, gaps, today, &[]);

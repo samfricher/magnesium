@@ -47,7 +47,7 @@ Use provided exercises when they fit and are authorized. Otherwise generate a sm
 
 For multiple choice, make every alternative a parallel bare claim. Construct distractors by changing one plausible assumption or reasoning step, not by adding nonsense. Keep explanations out of all options and formatting symmetric. Request a brief reason when selection alone cannot distinguish guessing from the criterion. MCQ recognition does not establish unaided generation.
 
-Keep the task prompt, conditions, known resources, help, and proposal/delivery distinction in the session checkpoint, written when the task changes, not with every answer. When the learner answers a step's check, mark that step done in goal_steps and the next one doing. When a course graph has a tag for the skill, label the attempt with that tag. Use one task, not a hidden exam made of many independent questions. A timed paper the learner sits away from the chat and returns whole is a sitting, which the papers stage governs. A novelty label or changed numbers does not establish transfer.
+Keep the task prompt, conditions, known resources, help, and proposal/delivery distinction in the session checkpoint, written when the task changes, not with every answer. When the learner answers a step's check, mark that step done in goal_steps and the next one doing. When the course map has an item for the skill, label the attempt with that item's id. Use one task, not a hidden exam made of many independent questions. A timed paper the learner sits away from the chat and returns whole is a sitting, which the papers stage governs. A novelty label or changed numbers does not establish transfer.
 
 ## Example: a similar problem, then a changed version
 

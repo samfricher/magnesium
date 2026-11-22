@@ -19,7 +19,7 @@ fn source_actions(node: &Value, actions: &mut BTreeSet<String>) {
 }
 
 #[test]
-fn mcp_advertises_five_headless_tools_and_serves_no_resources() {
+fn mcp_advertises_six_headless_tools_and_serves_no_resources() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);
     let mut c = McpClient::spawn(&e, true);
@@ -40,14 +40,15 @@ fn mcp_advertises_five_headless_tools_and_serves_no_resources() {
             "memory",
             "learning_step",
             "search_sources",
-            "sources"
+            "sources",
+            "course_map"
         ]
     );
     for tool in tools {
         assert!(tool.get("_meta").is_none(), "{tool}");
         assert_eq!(
             tool["annotations"]["readOnlyHint"],
-            tool["name"] != "learning_step"
+            tool["name"] != "learning_step" && tool["name"] != "course_map"
         );
         assert_eq!(tool["annotations"]["destructiveHint"], false);
         if tool["name"] == "sources" {

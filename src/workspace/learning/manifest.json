@@ -78,6 +78,12 @@
       "stage": "papers-loop"
     },
     {
+      "path": "workflows/planning.md",
+      "role": "workflow",
+      "required_for_activation": true,
+      "stage": "planning"
+    },
+    {
       "path": "adapters/claude.md",
       "role": "adapter",
       "required_for_activation": true,
