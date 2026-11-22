@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -179,6 +180,38 @@ class Today:
         store = place.folder / ".magnesium" / "sittings.sqlite"
         with closing(sqlite3.connect(store)) as db, db:
             db.execute("UPDATE meta SET last_learner_ms = ?", (at_ms,))
+
+    def index_state(self, place: Place) -> dict | None:
+        store = place.folder / ".magnesium" / "index" / "source-search.sqlite"
+        if not store.is_file():
+            return None
+        try:
+            with closing(sqlite3.connect(f"file:{store}?mode=ro", uri=True, timeout=5)) as db:
+                row = db.execute(
+                    "SELECT (SELECT count(*) FROM source_manifest WHERE present = 1 AND index_status = 'indexed'),"
+                    " (SELECT count(*) FROM source_manifest WHERE present = 1 AND source_kind IN ('text', 'pdf')),"
+                    " (SELECT count(*) FROM source_manifest WHERE present = 1 AND index_status = 'failed'),"
+                    " EXISTS(SELECT 1 FROM source_reconciliation_state),"
+                    " (SELECT generation FROM source_index_metadata)").fetchone()
+        except sqlite3.Error as error:
+            return {"error": str(error)}
+        return dict(zip(["indexed", "readable", "failed", "scanning", "generation"], row))
+
+    def settle_index(self, place: Place, limit: float = 900) -> dict:
+        async def go():
+            started = time.monotonic()
+            async with self.channel(place, "settle-index") as channel:
+                await channel.call("search_sources", {"query": "test", "limit": 1})
+                state = None
+                while time.monotonic() - started < limit:
+                    state = self.index_state(place)
+                    if state and not state.get("error") and not state["scanning"] and state["generation"] \
+                            and state["indexed"] + state["failed"] >= state["readable"]:
+                        break
+                    await asyncio.sleep(1)
+                return {"seconds": round(time.monotonic() - started, 1), "state": state}
+
+        return asyncio.run(go())
 
     def lesson(self, place: Place, conversation: str | None = None) -> dict | None:
         args = ["lesson", "--json"] + (["--conversation", conversation] if conversation else [])
