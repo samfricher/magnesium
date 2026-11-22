@@ -274,7 +274,9 @@ class Today:
             path = ref.get("path")
             where = ref.get("where") or ""
             quoted = [q.lower() for q in re.findall(r"'([^']+)'", where)]
-            in_file = [i for i in items if i.get("file") == path]
+            stem = str(Path(path).with_suffix("")) if path else None
+            in_file = [i for i in items if i.get("file") == path
+                       or (stem and i.get("file") and str(Path(i["file"]).with_suffix("")) == stem)]
             if not in_file:
                 continue
             if not quoted or "whole" in where.lower():
