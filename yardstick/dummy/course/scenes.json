@@ -15,7 +15,8 @@
           "rubric": "Judge only what the tutor wrote in reply to the learner's last message. He asked for an example scenario and a calculation, on two cases. Pass if the reply works a concrete scenario with actual numbers through to numeric results for both cases he named (for example a small table of values and its variance before and after the change), in that reply. Fail if it answers mainly in symbols or general statements, gives numbers for only one case, leaves the example for a later turn, or asks him to attempt or say what he thinks before giving it."
         }
       ],
-      "from": "A real lesson, message 53 of 157, with a task open: he asked for an example scenario and a calculation, got 270 words in symbols, and asked twice more before a numeric table landed."
+      "from": "A real lesson, message 53 of 157, with a task open: he asked for an example scenario and a calculation, got 270 words in symbols, and asked twice more before a numeric table landed. On the dummy course main gave the numbers each time, so the scene is a guard; the real request was about a harder idea.",
+      "guard": true
     },
     {
       "id": "just-tell-me",

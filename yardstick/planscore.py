@@ -397,15 +397,23 @@ def majority(runs: list[list[dict]], plan_units: list[dict]) -> list[dict]:
     for n, unit in enumerate(plan_units):
         marks = [run[n] for run in runs]
         need = len(marks) // 2 + 1
-        sections = sorted({s for m in marks for s in m["sections"]}, key=lambda s: [x for m in marks for x in m["sections"]].index(s))
+        sections = sorted({s for m in marks for s in m["sections"]}, key=lambda s: (s != "all", [x for m in marks for x in m["sections"]].index(s)))
         listed = sorted({x for m in marks for x in m["listed"]}, key=lambda x: [y for m in marks for y in m["listed"]].index(x))
         kind = vote([m["kind"] for m in marks])
         out.append({"block": unit["block"], "done": vote([m["done"] for m in marks]), "kind": kind,
-                    "sections": [s for s in sections if sum(s in m["sections"] for m in marks) >= need],
-                    "listed": [x for x in listed if sum(x in m["listed"] for m in marks) >= need],
+                    "sections": sorted((s for s in sections if sum(s in m["sections"] for m in marks) >= need), key=lambda s: ids_order(s, marks)),
+                    "listed": sorted((x for x in listed if sum(x in m["listed"] for m in marks) >= need), key=lambda x: ids_order(x, marks)),
                     "unseen": vote([m["unseen"] for m in marks]) if kind in WORK else None,
                     "quote": next((m["quote"] for m in marks if m["kind"] == kind), "")})
     return out
+
+
+def ids_order(value: str, marks: list[dict]) -> tuple:
+    return (0, float(value)) if re.fullmatch(r"\d+(\.\d+)?", value) else (1, value)
+
+
+def same_set(a, b) -> bool:
+    return (set(a) == set(b)) if isinstance(a, list) and isinstance(b, list) else a == b
 
 
 def spread_of(runs: list[list[dict]], plan_units: list[dict]) -> dict:
@@ -413,7 +421,7 @@ def spread_of(runs: list[list[dict]], plan_units: list[dict]) -> dict:
     same = {f: 0 for f in fields}
     for n in range(len(plan_units)):
         for f in fields:
-            values = [json.dumps(run[n][f], sort_keys=True) for run in runs]
+            values = [json.dumps(sorted(run[n][f]) if isinstance(run[n][f], list) else run[n][f], sort_keys=True) for run in runs]
             same[f] += len(set(values)) == 1
     return {"runs": len(runs), "blocks": len(plan_units), "identical_across_runs": same}
 
@@ -457,15 +465,17 @@ def agree(key: list[dict], judged: list[dict]) -> dict:
         if j is not None:
             pairs.append((k, j))
     out = {"blocks_in_key": len(key), "blocks_matched": len(pairs)}
-    for field in ("done", "kind", "listed"):
-        out[field] = [sum(1 for k, j in pairs if k[field] == j[field]), len(pairs)]
-    work = [(k, j) for k, j in pairs if k["kind"] in WORK and not k["done"]]
+    planned = [(k, j) for k, j in pairs if not k["done"]]
+    out["done"] = [sum(1 for k, j in pairs if k["done"] == j["done"]), len(pairs)]
+    for field in ("kind", "listed"):
+        out[field] = [sum(1 for k, j in planned if same_set(k[field], j[field])), len(planned)]
+    work = [(k, j) for k, j in planned if k["kind"] in WORK]
     for field in ("sections", "unseen"):
-        out[field] = [sum(1 for k, j in work if k[field] == j[field]), len(work)]
+        out[field] = [sum(1 for k, j in work if same_set(k[field], j[field])), len(work)]
     out["differ"] = []
     for k, j in pairs:
-        fields = ("done", "kind", "listed") + (("sections", "unseen") if k["kind"] in WORK and not k["done"] else ())
-        diff = {f: [k[f], j[f]] for f in fields if k[f] != j[f]}
+        fields = ("done",) + (() if k["done"] else ("kind", "listed")) + (("sections", "unseen") if k["kind"] in WORK and not k["done"] else ())
+        diff = {f: [k[f], j[f]] for f in fields if not same_set(k[f], j[f])}
         if diff:
             out["differ"].append({"block": k["block"], **diff})
     return out

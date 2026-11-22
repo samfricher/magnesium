@@ -98,7 +98,7 @@ class Scenes(unittest.TestCase):
         self.assertEqual(len(spec["scenes"]), 7)
         for scene in spec["scenes"]:
             self.assertTrue(scene["messages"] and scene["decide"] and scene["from"], scene["id"])
-        self.assertEqual({s["id"] for s in spec["scenes"] if s.get("guard")}, {"side-question", "due-checks"})
+        self.assertEqual({s["id"] for s in spec["scenes"] if s.get("guard")}, {"explain-first", "side-question", "due-checks"})
 
 
 class SignIn(unittest.TestCase):
