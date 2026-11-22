@@ -777,20 +777,20 @@ fn the_first_state_names_the_course_graph_when_the_study_folder_has_one() {
     let bench = Bench::new(Some("stats/week1"), &[]);
     let plan = bench.root.join("Study/midterm-1");
     fs::create_dir_all(&plan).unwrap();
-    fs::write(plan.join("graph.yaml"), "tags:\n  KM:\n    needs: []\n").unwrap();
+    fs::write(plan.join("map.md"), "# Course map: Midterm 1\n").unwrap();
     let states = first_two_states(&bench);
     assert!(
         states[0]
             .lines()
-            .any(|line| line == "Course graph: Study/midterm-1/graph.yaml"),
+            .any(|line| line == "Course map: Study/midterm-1/map.md"),
         "{}",
         states[0]
     );
-    assert!(!states[1].contains("Course graph"), "{}", states[1]);
+    assert!(!states[1].contains("Course map"), "{}", states[1]);
 
     let bench = Bench::new(None, &[]);
     let states = first_two_states(&bench);
-    assert!(states.iter().all(|state| !state.contains("Course graph")));
+    assert!(states.iter().all(|state| !state.contains("Course map")));
 }
 
 #[test]
@@ -2921,8 +2921,6 @@ fn the_plugin_engine_writes_the_plan_files_without_asking_and_nothing_else() {
         vec![
             format!("Edit(/{root}/Study/*/plan.md)"),
             format!("Write(/{root}/Study/*/plan.md)"),
-            format!("Edit(/{root}/Study/*/graph.yaml)"),
-            format!("Write(/{root}/Study/*/graph.yaml)"),
         ]
     );
     assert!(rules("deny").contains(&format!("Edit(/{root}/.magnesium/**)")));

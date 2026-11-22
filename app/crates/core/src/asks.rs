@@ -111,7 +111,7 @@ fn plan_of(relative: &Path, folder: &Path) -> Option<String> {
     let [study, target, file] = parts.as_slice() else {
         return None;
     };
-    if study != "Study" || !(file == "plan.md" || file == "graph.yaml") {
+    if study != "Study" || file != "plan.md" {
         return None;
     }
     let titled = crate::runtime::digest(folder).ok().and_then(|digest| {
@@ -398,7 +398,7 @@ mod tests {
                 "Write",
                 json!({"file_path": at("Study/midterm-1/graph.yaml"), "content": ""})
             ),
-            words("The tutor asks to change your plan", "Midterm 1")
+            words("The tutor asks to add a file to this space", "graph.yaml")
         );
         assert_eq!(
             said(

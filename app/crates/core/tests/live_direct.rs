@@ -488,50 +488,18 @@ fn a_direct_lesson_reads_inside_the_study_root_only() {
     manager.shut_down();
 }
 
-const GRAPH: &str = "# Course graph: quiz-1\n\
-#\n\
-# Agent-owned. Course structure only.\n\
-\n\
-tags:\n\
-  EV:\n\
-    covers: expected value of a discrete random variable\n\
-    pages: notes.pdf pages 4-6\n\
-    kind: course\n\
-    needs: [PROBSUM, WAVG]\n\
-    key_need: [WAVG]\n\
-    contains: [WAVG]\n\
-    touches: [FRAC]\n\
-  WAVG:\n\
-    covers: weighted average of a list of numbers\n\
-    pages: notes.pdf pages 2-3\n\
-    kind: course\n\
-    needs: [FRAC]\n\
-    key_need: [FRAC]\n\
-    contains: [FRAC]\n\
-    touches: []\n\
-  PROBSUM:\n\
-    covers: the probabilities of all outcomes add up to 1\n\
-    pages: notes.pdf page 1\n\
-    kind: course\n\
-    needs: [FRAC]\n\
-    key_need: []\n\
-    contains: []\n\
-    touches: [FRAC]\n\
-  VAR:\n\
-    covers: variance of a discrete random variable\n\
-    pages: notes.pdf pages 7-9\n\
-    kind: course\n\
-    needs: [EV]\n\
-    key_need: [EV]\n\
-    contains: [EV]\n\
-    touches: []\n\
-  FRAC:\n\
-    covers: multiplying and adding fractions\n\
-    kind: foundation\n\
-    needs: []\n\
-    key_need: []\n\
-    contains: []\n\
-    touches: []\n";
+const MAP: &str = r#"{"action":"write","target":"quiz-1","facts":{"label":"Quiz 1"},
+  "items":[
+    {"kind":"idea","title":"expected value of a discrete random variable","ref":"ev"},
+    {"kind":"idea","title":"probabilities of all outcomes sum to one","ref":"probsum"},
+    {"kind":"idea","title":"a weighted average","ref":"wavg"},
+    {"kind":"foundation","title":"adding fractions","ref":"frac"},
+    {"kind":"idea","title":"variance of a discrete random variable","ref":"var"}],
+  "links":[
+    {"item":"outline.ev","uses":["outline.probsum","outline.wavg"]},
+    {"item":"outline.wavg","uses":["found.frac"]},
+    {"item":"outline.var","uses":["outline.ev"]}],
+  "scope":[{"ref":"outline.ev","state":"in"},{"ref":"outline.var","state":"in"}]}"#;
 
 #[derive(Debug, Default)]
 struct Seen {
@@ -646,11 +614,24 @@ fn traced(trace: &Path, from: usize) -> Traced {
 
 #[test]
 #[ignore = "starts a model on your own subscription"]
-fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
+fn a_direct_lesson_reads_the_course_map_when_it_sets_the_route() {
     let scratch = Scratch::new();
-    let plan = scratch.folder.join("Study/quiz-1");
-    fs::create_dir_all(&plan).unwrap();
-    fs::write(plan.join("graph.yaml"), GRAPH).unwrap();
+    let input = scratch.folder.parent().unwrap().join("map.json");
+    fs::write(&input, MAP).unwrap();
+    let written = Command::new(&scratch.runtime)
+        .current_dir(&scratch.folder)
+        .args([
+            "adapter",
+            "call",
+            "course_map",
+            "--protocol-version",
+            "2",
+            "--json-input",
+        ])
+        .arg(&input)
+        .status()
+        .unwrap();
+    assert!(written.success());
     let trace = scratch.folder.parent().unwrap().join("trace.log");
     std::env::set_var(mg_core::claude::TRACE_ENV, &trace);
     let (manager, events) = scratch.manager();
@@ -689,9 +670,7 @@ fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
             .map(|s| format!("{} ({})", s.step, s.status))
             .collect();
         let route_changed = steps != steps_before;
-        let graph_read = tools
-            .iter()
-            .any(|(tool, path)| tool == "Read" && path.ends_with("Study/quiz-1/graph.yaml"));
+        let graph_read = tools.iter().any(|(tool, _)| tool.ends_with("course_map"));
         println!(
             "turn {}: first word {:?} ms, whole {} ms, tool before first word: {:?}, tools: {tools:?}, route changed: {route_changed}, steps: {steps:?}",
             n + 1,
@@ -738,17 +717,17 @@ fn a_direct_lesson_reads_the_course_graph_when_it_sets_the_route() {
     for reply in &shown {
         assert_eq!(kept.iter().filter(|k| *k == reply).count(), 1, "{reply}");
     }
-    println!("graph: EV needs [PROBSUM, WAVG], key_need [WAVG]; WAVG needs [FRAC]; VAR needs [EV]");
-    println!("turns that read the graph: {read_turns:?}; turns that set or changed the route: {route_turns:?}");
+    println!("map: outline.ev uses outline.probsum and outline.wavg; outline.wavg uses found.frac; outline.var uses outline.ev");
+    println!("turns that read the map: {read_turns:?}; turns that set or changed the route: {route_turns:?}");
     manager.shut_down();
     println!("study folder: {}", scratch.folder.display());
     assert!(
         !read_turns.is_empty(),
-        "the tutor never read the course graph"
+        "the tutor never read the course map"
     );
     assert!(
         read_turns.iter().all(|n| route_turns.contains(n)),
-        "the graph was read at a turn that did not set the route"
+        "the map was read at a turn that did not set the route"
     );
     std::mem::forget(scratch);
 }

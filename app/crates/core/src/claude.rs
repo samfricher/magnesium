@@ -2241,8 +2241,6 @@ mod tests {
             vec![
                 "Edit(//study/stats/Study/*/plan.md)",
                 "Write(//study/stats/Study/*/plan.md)",
-                "Edit(//study/stats/Study/*/graph.yaml)",
-                "Write(//study/stats/Study/*/graph.yaml)",
             ]
         );
         assert!(!args.iter().any(|a| a == "--bare"));

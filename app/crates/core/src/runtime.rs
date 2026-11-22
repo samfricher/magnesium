@@ -30,6 +30,30 @@ pub fn digest(folder: &Path) -> Result<Value, String> {
     serde_json::from_str(&out).map_err(|e| format!("its digest was not readable ({e})"))
 }
 
+pub fn map_titles(folder: &Path, target: &str) -> std::collections::BTreeMap<String, String> {
+    let Ok(out) = run(
+        folder,
+        &["map", "--target", target, "--json"],
+        Duration::from_secs(10),
+    ) else {
+        return Default::default();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&out) else {
+        return Default::default();
+    };
+    value["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            Some((
+                item["id"].as_str()?.to_ascii_lowercase(),
+                item["title"].as_str()?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
 pub fn attempts(folder: &Path) -> Option<Vec<Value>> {
     let out = run(folder, &["attempts", "--json"], Duration::from_secs(10)).ok()?;
     let value: Value = serde_json::from_str(&out).ok()?;

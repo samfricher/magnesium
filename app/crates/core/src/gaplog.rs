@@ -322,39 +322,6 @@ pub fn read_plan(text: &str) -> PlanFacts {
     }
 }
 
-pub fn read_tags(text: &str) -> Vec<(String, String)> {
-    let mut tags: Vec<(String, String)> = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        if line.trim_start().starts_with('#') || line.trim().is_empty() {
-            continue;
-        }
-        let indent = line.len() - line.trim_start().len();
-        let trimmed = line.trim();
-        if indent == 0 {
-            inside = trimmed == "tags:";
-            continue;
-        }
-        if !inside {
-            continue;
-        }
-        if indent == 2 && trimmed.ends_with(':') {
-            let name = trimmed.trim_end_matches(':').trim_matches(['"', '\'']);
-            if !is_placeholder(name) {
-                tags.push((name.to_owned(), String::new()));
-            }
-        } else if indent > 2 {
-            if let (Some(last), Some(covers)) = (tags.last_mut(), trimmed.strip_prefix("covers:")) {
-                let covers = covers.trim().trim_matches(['"', '\'']);
-                if !is_placeholder(covers) {
-                    last.1 = covers.to_owned();
-                }
-            }
-        }
-    }
-    tags
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,17 +412,5 @@ mod tests {
         let facts = read_plan(plan);
         assert_eq!(facts.minutes, Some(50));
         assert_eq!(facts.paper_minutes, vec![("Paper B".to_owned(), 45)]);
-    }
-
-    #[test]
-    fn tags_are_read_from_the_graph() {
-        let graph = "# c\ntags:\n  KM:\n    covers: reading Km from a plot\n    kind: course\n  \"V MAX\":\n    covers: \"Vmax: the top speed\"\n  <TAG>:\n    covers: <x>\nother:\n  X:\n";
-        assert_eq!(
-            read_tags(graph),
-            vec![
-                ("KM".to_owned(), "reading Km from a plot".to_owned()),
-                ("V MAX".to_owned(), "Vmax: the top speed".to_owned()),
-            ]
-        );
     }
 }
