@@ -187,6 +187,7 @@ fn one_process_holds_a_lesson_across_several_turns() {
     assert_eq!(after("--model"), None);
     assert_eq!(after("--effort"), None);
     assert_eq!(starts[0]["surface"], "window");
+    assert_eq!(starts[0]["session"], "on");
     assert_eq!(starts[0]["connectors"], "false");
     assert_eq!(
         Path::new(starts[0]["cwd"].as_str().unwrap())

@@ -462,19 +462,17 @@ fn batch_keys_failed_raw_capture_is_once_pending_then_fresh_key_repairs_and_repl
         event_status(&f.store.conn, &known),
         ("processed".into(), Some("corrected-batch".into()))
     );
-    let control = RawEvent {
-        external_event_key: "control-turn".into(),
-        speaker: Speaker::Learner,
-        kind: "message".into(),
-        text: "Stop learning and recording.".into(),
-        metadata: None,
-        occurred_at_ms: None,
-    };
-    f.store
-        .control(&f.host, "later-stop", "stop", &control)
+    let revision: i64 = f
+        .store
+        .conn
+        .query_row(
+            "SELECT revision FROM learning_sessions WHERE session_id=?1",
+            [&f.session],
+            |r| r.get(0),
+        )
         .unwrap();
     f.store
-        .control(&f.host, "later-off", "recording_off", &control)
+        .update(&f.host, json!({"schema":SCHEMA,"action":"update","request_id":"later-complete","session":{"operation":"complete","session_id":f.session,"expected_revision":revision}}))
         .unwrap();
     let stopped = semantic_state(&f.store.conn);
     let generation = event_generation(&f.store.conn);
@@ -487,7 +485,7 @@ fn batch_keys_failed_raw_capture_is_once_pending_then_fresh_key_repairs_and_repl
     assert_eq!(event_generation(&f.store.conn), generation);
     assert_eq!(
         f.store.binding(&f.host).unwrap(),
-        (Some(f.session.clone()), false, false)
+        (Some(f.session.clone()), false)
     );
     assert_eq!(
         f.store

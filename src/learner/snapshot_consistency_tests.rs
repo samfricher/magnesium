@@ -57,11 +57,11 @@ fn support_preserves_roles_and_excerpts() {
     );
 }
 #[test]
-fn utf8_range_and_recording_off_do_not_change_state() {
+fn utf8_range_and_an_inactive_lesson_do_not_change_state() {
     let c = fixture();
     support(&c);
     c.execute(
-        "INSERT INTO host_bindings VALUES('test','thread',NULL,1,0)",
+        "INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('test','thread',0)",
         [],
     )
     .unwrap();
@@ -95,7 +95,7 @@ fn complete_directory_exact_budget() {
     );
 }
 #[test]
-fn recording_disabled_between_snapshot_and_trace_write() {
+fn lesson_ended_between_snapshot_and_trace_write() {
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
     use std::sync::{
         Arc,
@@ -107,7 +107,7 @@ fn recording_disabled_between_snapshot_and_trace_write() {
     store
         .conn
         .execute(
-            "INSERT INTO host_bindings VALUES('test','thread',NULL,1,1)",
+            "INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('test','thread',1)",
             [],
         )
         .unwrap();
@@ -121,7 +121,7 @@ fn recording_disabled_between_snapshot_and_trace_write() {
     let observed = changed.clone();
     store.conn.authorizer(Some(move |context:AuthContext<'_>| {
   if matches!(context.action,AuthAction::Insert{table_name:"context_receipts"}) {
-   observed.store(other.execute("UPDATE host_bindings SET recording_enabled=0 WHERE host_kind='test' AND host_thread_id='thread'",[]).is_ok(),Ordering::SeqCst);
+   observed.store(other.execute("UPDATE host_bindings SET learning_active=0 WHERE host_kind='test' AND host_thread_id='thread'",[]).is_ok(),Ordering::SeqCst);
   }
   Authorization::Allow
  })).unwrap();

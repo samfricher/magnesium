@@ -219,41 +219,6 @@ fn conflict_rolls_back_observations_and_keeps_capture() {
     );
 }
 #[test]
-fn recording_control_does_not_depend_on_semantic_success() {
-    let f = Fixture::new();
-    f.start();
-    let control = RawEvent {
-        external_event_key: "off".into(),
-        speaker: crate::learner::Speaker::Learner,
-        kind: "message".into(),
-        text: "Stop recording".into(),
-        metadata: Some(crate::learner::EventMetadata::default()),
-        occurred_at_ms: None,
-    };
-    f.store
-        .control(&f.host, "off", "recording_off", &control)
-        .unwrap();
-    assert_eq!(
-        f.store
-            .update(
-                &f.host,
-                json!({"schema":SCHEMA,"action":"update","request_id":"blocked"})
-            )
-            .unwrap_err()
-            .code,
-        "recording_disabled"
-    );
-    assert!(!f.store.binding(&f.host).unwrap().2);
-    assert_eq!(
-        f.store
-            .conn
-            .query_row("SELECT count(*) FROM learning_events", [], |r| r
-                .get::<_, i64>(0))
-            .unwrap(),
-        0
-    );
-}
-#[test]
 fn unknown_store_and_workspace_rejected_without_mutation() {
     let f = Fixture::new();
     assert_eq!(
@@ -491,23 +456,32 @@ fn editorial_cannot_attach_new_performance() {
     );
 }
 #[test]
-fn paused_session_requires_explicit_resume() {
+fn a_pause_is_refused_with_end_sitting_and_the_lesson_stays_open() {
     let f = Fixture::new();
     let start = f.start();
     let session = &start.references["session"];
     let pause = json!({"schema":SCHEMA,"action":"update","request_id":"pause","session":{"operation":"pause","session_id":session,"expected_revision":1}});
-    f.store.update(&f.host, pause.clone()).unwrap();
-    assert!(f.store.update(&f.host, pause).is_ok());
-    let other = HostContext {
-        host_kind: "test".into(),
-        host_thread_id: "other".into(),
-    };
-    f.store.update(&other,json!({"schema":SCHEMA,"action":"update","request_id":"other-start","session":{"operation":"start","client_ref":"other","goal":"another goal"}})).unwrap();
-    let use_request = json!({"schema":SCHEMA,"action":"update","request_id":"use-paused","session":{"operation":"use","session_id":session,"expected_revision":2}});
-    assert_eq!(
-        f.store.update(&other, use_request).unwrap_err().code,
-        "invalid_variant"
+    let error = f.store.update(&f.host, pause).unwrap_err();
+    assert_eq!(error.code, "invalid_variant");
+    let recovery = error.recovery.unwrap();
+    assert_eq!(recovery["field_path"], "session.operation");
+    assert!(
+        recovery["instruction"]
+            .as_str()
+            .unwrap()
+            .contains("\"action\":\"end_sitting\"")
     );
+    let (status, revision): (String, i64) = f
+        .store
+        .conn
+        .query_row(
+            "SELECT status, revision FROM learning_sessions WHERE session_id=?1",
+            [session],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((status.as_str(), revision), ("active", 1));
+    assert!(f.store.binding(&f.host).unwrap().1);
 }
 #[test]
 fn raw_event_and_client_reference_bounds_keep_receipts_readable() {
@@ -632,23 +606,13 @@ fn transient_native_success_replay_retains_raw_identity_and_original_request_has
     );
 }
 #[test]
-fn transient_native_requires_trusted_adapter_and_obeys_recording_off() {
+fn transient_native_requires_trusted_adapter() {
     let f = Fixture::new();
     let native = trusted_native("native:turn", "Teach me algebra");
     let request = native_start_payload("native-start", &native.text);
     assert_eq!(
-        f.store.update(&f.host, request.clone()).unwrap_err().code,
+        f.store.update(&f.host, request).unwrap_err().code,
         "invalid_variant"
-    );
-    f.store
-        .control(&f.host, "off", "recording_off", &native)
-        .unwrap();
-    assert_eq!(
-        f.store
-            .update_with_native_capture(&f.host, request, Some(&native))
-            .unwrap_err()
-            .code,
-        "recording_disabled"
     );
     assert_eq!(
         f.store
@@ -838,24 +802,12 @@ fn existing_observation_edit(f: &Fixture, event: &str, observation: &str) -> Val
 }
 
 #[test]
-fn existing_observation_support_completes_pending_turn_after_stop_without_duplicate_or_lost_help() {
+fn existing_observation_support_completes_pending_turn_without_duplicate_or_lost_help() {
     let f = Fixture::new();
     let (event, observation, help) = pending_observation_with_help(&f);
-    let control = RawEvent {
-        external_event_key: "stop".into(),
-        speaker: Speaker::Learner,
-        kind: "message".into(),
-        text: "Stop".into(),
-        metadata: None,
-        occurred_at_ms: None,
-    };
-    f.store.control(&f.host, "stop", "stop", &control).unwrap();
     let mut request = existing_observation_edit(&f, &event, &observation);
-    request["mode"] = json!("complete_captured");
     let first = f.store.update(&f.host, request.clone()).unwrap();
     assert_eq!(first.update_status, "committed");
-    assert!(!f.store.binding(&f.host).unwrap().1);
-    assert!(f.store.binding(&f.host).unwrap().2);
     let state: (String, String) = f
         .store
         .conn
@@ -904,7 +856,7 @@ fn existing_observation_support_completes_pending_turn_after_stop_without_duplic
     request["request_id"] = json!("duplicate-disposition");
     assert_eq!(
         f.store.update(&f.host, request).unwrap_err().code,
-        "event_scope_conflict"
+        "events_already_processed"
     );
 }
 
@@ -952,41 +904,14 @@ fn existing_observation_support_allows_explicit_normal_disposition_without_proce
 }
 
 #[test]
-fn existing_observation_completion_still_rejects_unrelated_support_and_recording_off() {
-    for variant in ["unrelated", "recording_off"] {
+fn existing_observation_completion_still_rejects_unrelated_support() {
+    {
         let f = Fixture::new();
         let (event, observation, _) = pending_observation_with_help(&f);
-        let turn = if variant == "unrelated" {
-            f.event("different-answer", "A different closing answer", None)
-        } else {
-            event.clone()
-        };
-        let control = RawEvent {
-            external_event_key: "stop".into(),
-            speaker: Speaker::Learner,
-            kind: "message".into(),
-            text: "Stop".into(),
-            metadata: None,
-            occurred_at_ms: None,
-        };
-        f.store.control(&f.host, "stop", "stop", &control).unwrap();
-        if variant == "recording_off" {
-            f.store
-                .control(&f.host, "off", "recording_off", &control)
-                .unwrap();
-        }
-        let mut request = existing_observation_edit(&f, &turn, &observation);
-        request["mode"] = json!("complete_captured");
+        let turn = f.event("different-answer", "A different closing answer", None);
+        let request = existing_observation_edit(&f, &turn, &observation);
         let error = f.store.update(&f.host, request).unwrap_err();
-        assert_eq!(
-            error.code,
-            if variant == "recording_off" {
-                "recording_disabled"
-            } else {
-                "invalid_variant"
-            }
-        );
-        assert!(!f.store.binding(&f.host).unwrap().1);
+        assert_eq!(error.code, "invalid_variant");
         assert_eq!(
             f.store
                 .conn
@@ -1129,35 +1054,6 @@ fn cancellation_after_commit_returns_and_replays_the_durable_receipt() {
     assert!(f.store.binding(&f.host).unwrap().1);
 }
 
-#[test]
-fn complete_captured_refuses_an_attempt_before_checking_it() {
-    let f = Fixture::new();
-    let (event, observation, _) = pending_observation_with_help(&f);
-    let control = RawEvent {
-        external_event_key: "stop".into(),
-        speaker: Speaker::Learner,
-        kind: "message".into(),
-        text: "Stop".into(),
-        metadata: None,
-        occurred_at_ms: None,
-    };
-    f.store.control(&f.host, "stop", "stop", &control).unwrap();
-    let mut request = existing_observation_edit(&f, &event, &observation);
-    request["mode"] = json!("complete_captured");
-    request["observations"] = json!([{"client_ref":"answer","kind":"learner_work",
-        "description":"Used b=-5.","events":[{"event_id":event,"role":"learner_response"}],
-        "attempt":{"label":"","question":"What is b?","first_try":"right","help":"none","cold":false}}]);
-    let error = f.store.update(&f.host, request).unwrap_err();
-    assert_eq!(error.code, "invalid_variant");
-    assert!(
-        error
-            .message
-            .starts_with("complete_captured cannot record an attempt"),
-        "{}",
-        error.message
-    );
-}
-
 fn check_label(n: usize) -> String {
     let letters = b"abcdefghijklmnopqrstuvwxyz";
     format!(
@@ -1230,20 +1126,20 @@ fn closing_a_lesson_from_an_inactive_conversation_cannot_carry_practice_writes()
         host_kind: "test".into(),
         host_thread_id: "tuesday".into(),
     };
-    let pause = || {
-        json!({"schema":SCHEMA,"action":"update","request_id":"pause-with-writes",
-            "session":{"operation":"pause","session_id":session,"expected_revision":1}})
+    let complete = || {
+        json!({"schema":SCHEMA,"action":"update","request_id":"complete-with-writes",
+            "session":{"operation":"complete","session_id":session,"expected_revision":1}})
     };
-    let mut with_observation = pause();
+    let mut with_observation = complete();
     with_observation["observations"] = json!([{"client_ref":"work","kind":"learner_work",
         "description":"Took b as 7.","events":[{"event_id":"e-00000000000000000000000000000000","role":"learner_response"}]}]);
     let inactive = f.store.update(&tuesday, with_observation).unwrap_err();
     assert_eq!(inactive.code, "learning_inactive");
     let before = practice_state(&f);
-    let mut with_practice = pause();
+    let mut with_practice = complete();
     with_practice["practice"] = json!([{"item":check_label(0),
         "next":{"question":"In x² − 3x + 2 = 0, what is b?","answer_key":"−3"}}]);
-    let mut with_correction = pause();
+    let mut with_correction = complete();
     with_correction["attempt_corrections"] =
         json!([{"attempt_id":attempt,"reason":"The mark was wrong.","first_try":"right"}]);
     for request in [with_practice, with_correction] {
@@ -1254,7 +1150,7 @@ fn closing_a_lesson_from_an_inactive_conversation_cannot_carry_practice_writes()
         );
         assert_eq!(practice_state(&f), before);
     }
-    f.store.update(&tuesday, pause()).unwrap();
+    f.store.update(&tuesday, complete()).unwrap();
 }
 
 #[test]

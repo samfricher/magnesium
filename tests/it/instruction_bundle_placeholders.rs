@@ -177,7 +177,7 @@ fn active_policy_uses_descriptive_memory_without_retired_authority_gates() {
         "no_change",
         "review_resolution",
         "model_reported",
-        "recording_off",
+        "end_sitting",
         "without mandatory retesting",
         "Stop retrieving once enough context",
         "same operation and context",

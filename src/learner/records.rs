@@ -1,6 +1,6 @@
 use super::{
     LearnerError, Result,
-    model::{Checkpoint, EventMetadata, MemoryRevision, PendingTask, Speaker},
+    model::{Checkpoint, EventMetadata, MemoryRevision, Speaker},
 };
 use rusqlite::{Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -37,12 +37,6 @@ impl StoredCheckpoint {
             ));
         }
         Ok(checkpoint)
-    }
-    pub(crate) fn pending_task(&self) -> Option<&PendingTask> {
-        match self {
-            Self::Saved(checkpoint) => checkpoint.pending_task.as_ref(),
-            Self::Empty(_) => None,
-        }
     }
     pub(crate) fn memory_refs(&self) -> &[super::model::MemoryRevisionRef] {
         match self {

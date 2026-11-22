@@ -13,7 +13,7 @@ mod receipts;
 mod reviews;
 mod session;
 
-pub(crate) use decode::{decode_at, decode_update_request, field_error};
+pub(crate) use decode::{decode_at, decode_update_request, field_error, refuse_removed_fields};
 use indexes::maintain_indexes;
 use keys::validate_batch_keys;
 #[cfg(test)]
@@ -81,19 +81,6 @@ impl LearnerStore {
         }
         let transition = SessionTransition::from_request(r);
         admit_semantic_update(&tx, host, r, transition)?;
-        if r.mode == UpdateMode::CompleteCaptured
-            && (r
-                .observations
-                .iter()
-                .any(|o| o.attempt.is_some() || !o.attempts.is_empty())
-                || !r.practice.is_empty()
-                || !r.attempt_corrections.is_empty())
-        {
-            return Err(LearnerError::new(
-                "invalid_variant",
-                "complete_captured cannot record an attempt, a practice change or an attempt correction, because each can change what is due",
-            ));
-        }
         for (index, d) in r.event_dispositions.iter().enumerate() {
             let old: Option<String> = tx
                 .query_row(
@@ -107,9 +94,7 @@ impl LearnerStore {
                 return Err(already_closed(index, &d.event_id, &request));
             }
         }
-        if r.mode == UpdateMode::Normal
-            && let Some(turn) = &r.turn_ref
-        {
+        if let Some(turn) = &r.turn_ref {
             let valid: bool = tx.query_row(
                 "SELECT EXISTS(
                 SELECT 1 FROM learning_events
@@ -159,16 +144,6 @@ impl LearnerStore {
         let mut edited = BTreeSet::new();
         for (edit_index, edit) in r.memory_edits.iter().enumerate() {
             let support = resolve_change_basis(&tx, &refs, edit)?;
-            if r.mode == UpdateMode::CompleteCaptured
-                && !support
-                    .participating_event_ids
-                    .contains(r.turn_ref.as_ref().expect("admitted completion turn"))
-            {
-                return Err(LearnerError::new(
-                    "invalid_variant",
-                    "Each completion memory edit needs change-basis support from the selected closing learner turn; historical current_basis can remain as context",
-                ));
-            }
             used_events.extend(support.participating_event_ids.iter().cloned());
             apply_memory(
                 &tx,
@@ -235,17 +210,6 @@ impl LearnerStore {
             &mut shortened,
         )?;
         crate::learner::practice::apply_edits(&tx, &r.practice, now, host, &mut shortened)?;
-        if r.mode == UpdateMode::CompleteCaptured
-            && (!r.observations.is_empty()
-                || !r.memory_edits.is_empty()
-                || !r.review_updates.is_empty())
-            && !used_events.contains(r.turn_ref.as_ref().expect("admitted completion turn"))
-        {
-            return Err(LearnerError::new(
-                "invalid_variant",
-                "Completion changes must be supported by the selected captured learner turn",
-            ));
-        }
         for (index, d) in r.event_dispositions.iter().enumerate() {
             if d.outcome == Disposition::Processed && !used_events.contains(&d.event_id) {
                 return Err(unsupported_processed(index, &d.event_id));

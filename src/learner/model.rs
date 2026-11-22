@@ -76,9 +76,6 @@ macro_rules! protocol_enum {
 }
 protocol_enum!(SchemaVersion { V2 => "learner-model/v2" });
 protocol_enum!(UpdateAction { Update => "update" });
-protocol_enum!(#[derive(Default)] UpdateMode {
-    #[default] Normal => "normal", CompleteCaptured => "complete_captured"
-});
 protocol_enum!(Speaker { Learner => "learner", Tutor => "tutor", Tool => "tool", Source => "source" });
 protocol_enum!(ObservationKind {
     LearnerWork => "learner_work", LearnerQuestion => "learner_question",
@@ -544,12 +541,6 @@ pub struct ResumeSessionEdit {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PauseSessionEdit {
-    pub session_id: String,
-    pub expected_revision: i64,
-}
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct CompleteSessionEdit {
     pub session_id: String,
     pub expected_revision: i64,
@@ -558,7 +549,6 @@ tagged_protocol!(SessionEdit, operation {
     Start => "start", StartSessionEdit;
     Use => "use", UseSessionEdit;
     Resume => "resume", ResumeSessionEdit;
-    Pause => "pause", PauseSessionEdit;
     Complete => "complete", CompleteSessionEdit;
 });
 
@@ -741,8 +731,6 @@ pub struct UpdateRequest<M = MemoryEdit, S = SessionEdit, R = ReviewEdit> {
     pub native_capture: Option<NativeCaptureRequest>,
     pub schema: SchemaVersion,
     pub action: UpdateAction,
-    #[serde(default)]
-    pub mode: UpdateMode,
     #[schemars(
         description = "Required. An ID you make up for this request, new to this study folder:\nevery conversation here shares its IDs, so end it with something only\nthis turn has, such as the last characters of its ticket or event ID.\nSend an ID again only to replay the identical request after an unknown\noutcome."
     )]

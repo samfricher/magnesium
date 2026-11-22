@@ -214,7 +214,7 @@ mod tests {
     fn revisions_retired_notices_and_exact_trace_controls() {
         let c = fixture();
         memory(&c, "m", "roles", "uncertain", "current text");
-        c.execute("INSERT INTO host_bindings(host_kind,host_thread_id,learning_active,recording_enabled) VALUES('test-host','fresh-thread',1,1)",[]).unwrap();
+        c.execute("INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('test-host','fresh-thread',1)",[]).unwrap();
         let p=run(&c,json!({"action":"read","refs":[{"kind":"current_memory","id":"m","expected_revision":7}]})).unwrap();
         assert_eq!(p["records"][0]["revision_changed"], true);
         let saved: String = c
@@ -223,7 +223,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(serde_json::from_str::<Value>(&saved).unwrap(), p);
-        c.execute("UPDATE host_bindings SET recording_enabled=0", [])
+        c.execute("UPDATE host_bindings SET learning_active=0", [])
             .unwrap();
         run(&c, json!({"action":"prepare"})).unwrap();
         assert_eq!(

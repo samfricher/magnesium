@@ -86,6 +86,7 @@ impl LearnerStore {
         if meta.2 != SCHEMA_VERSION {
             upgrade(path, &conn)?;
         }
+        retire_learner_controls(&conn)?;
         Ok(Self {
             conn,
             workspace_id: workspace_id.into(),
@@ -94,9 +95,35 @@ impl LearnerStore {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
-    pub fn binding(&self, host: &HostContext) -> Result<(Option<String>, bool, bool)> {
-        Ok(self.conn.query_row("SELECT session_id,learning_active,recording_enabled FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host.host_kind,host.host_thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.unwrap_or((None,false,true)))
+    pub fn binding(&self, host: &HostContext) -> Result<(Option<String>, bool)> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT session_id,learning_active FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",
+                params![host.host_kind, host.host_thread_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((None, false)))
     }
+}
+fn retire_learner_controls(conn: &Connection) -> Result<()> {
+    let waiting: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM host_bindings WHERE recording_enabled=0)
+             OR EXISTS(SELECT 1 FROM learning_sessions WHERE status='paused')",
+        [],
+        |r| r.get(0),
+    )?;
+    if waiting {
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute_batch(
+            "UPDATE host_bindings SET learning_active=0, recording_enabled=1 WHERE recording_enabled=0;
+             UPDATE learning_sessions SET status='active' WHERE status='paused';",
+        )?;
+        tx.commit()?;
+    }
+    Ok(())
 }
 pub fn needs_upgrade(path: &Path) -> Result<bool> {
     reject_symlinks(path)?;
@@ -286,6 +313,51 @@ fn reject_symlinks(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod schema_revision_tests {
     use super::*;
+
+    #[test]
+    fn a_chat_stored_with_recording_switched_off_has_no_lesson_and_a_paused_lesson_is_open() {
+        let dir = std::env::temp_dir().join(new_id("retired-controls-test").unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("state.sqlite");
+        let store = LearnerStore::initialize(&path, "retired").unwrap();
+        store
+            .conn
+            .execute_batch(
+                "INSERT INTO learning_sessions VALUES('s-paused','Paused goal','paused','{}',4,1,1);
+                 INSERT INTO learning_sessions VALUES('s-open','Open goal','active','{}',2,1,1);
+                 INSERT INTO host_bindings VALUES('claude','recording-off','s-open',1,0);
+                 INSERT INTO host_bindings VALUES('claude','paused','s-paused',0,1);
+                 INSERT INTO host_bindings VALUES('claude','ordinary','s-open',1,1);",
+            )
+            .unwrap();
+        drop(store);
+        let store = LearnerStore::open(&path, "retired").unwrap();
+        let binding = |thread: &str| {
+            store
+                .binding(&HostContext {
+                    host_kind: "claude".into(),
+                    host_thread_id: thread.into(),
+                })
+                .unwrap()
+        };
+        assert_eq!(binding("recording-off"), (Some("s-open".into()), false));
+        assert_eq!(binding("paused"), (Some("s-paused".into()), false));
+        assert_eq!(binding("ordinary"), (Some("s-open".into()), true));
+        let paused: (String, i64) = store
+            .conn
+            .query_row(
+                "SELECT status, revision FROM learning_sessions WHERE session_id='s-paused'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(paused, ("active".to_owned(), 4));
+        drop(store);
+        let before = std::fs::read(&path).unwrap();
+        drop(LearnerStore::open(&path, "retired").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn prior_schema_is_rejected_without_migration_or_data_loss() {

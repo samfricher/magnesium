@@ -131,23 +131,35 @@ fn a_sitting_with_only_a_decline_ends_with_nothing() {
 }
 
 #[test]
-fn a_stop_the_learner_asks_for_ends_the_sitting_too() {
+fn done_for_now_ends_the_sitting_and_the_next_message_goes_on_with_the_lesson() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     prompt(&e, "p-1", "teach me");
-    v2::start(&e, "claude", "conv");
+    let session = v2::start(&e, "claude", "conv")["references"]["session"].clone();
     let event = prompt(&e, "p-2", "b is 7");
     answer(&e, "wrong", &event, WRONG, "wrong");
-    let event = prompt(&e, "p-3", "stop learning");
-    let stopped = step(
-        &e,
-        json!({"schema":"learner-model/v2","action":"control","request_id":"stop-1","control":"stop","turn_ref":event}),
-    );
-    assert_eq!(stopped["durable"], true, "{stopped}");
+    prompt(&e, "p-3", "stop learning, I'm done for now");
+    let ended = end(&e);
+    assert_eq!(ended["sitting_ended"], true, "{ended}");
     assert_eq!(
         stop(&e, "p-3")["systemMessage"],
         format!("Can count from tomorrow: {WRONG}.")
     );
+    let next = prompt(&e, "p-4", "one more thing about b");
+    assert!(next.starts_with("e-"), "the next message is kept: {next:?}");
+    let owner = rusqlite::Connection::open(
+        e.workspace
+            .join(crate::support::CONTROL_DIR)
+            .join("state.sqlite"),
+    )
+    .unwrap()
+    .query_row(
+        "SELECT session_id FROM learning_events WHERE event_id=?1",
+        [&next],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap();
+    assert_eq!(json!(owner), session);
 }
 
 fn stop_in(e: &TestEnvironment, conversation: &str, prompt_id: &str) -> Value {

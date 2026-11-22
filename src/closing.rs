@@ -313,15 +313,6 @@ pub(crate) fn end_from_tool(
     })
 }
 
-pub(crate) fn ends_on_control(request: &Value, result: &Value) -> bool {
-    request.get("action").and_then(Value::as_str) == Some("control")
-        && matches!(
-            request.get("control").and_then(Value::as_str),
-            Some("pause" | "stop")
-        )
-        && result.get("durable") == Some(&Value::Bool(true))
-}
-
 pub(crate) fn stop_hook_lines(workspace: &Workspace, by: &str) -> Option<String> {
     if crate::mcp::catalog::window_surface() {
         return None;

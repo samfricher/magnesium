@@ -17,6 +17,11 @@ pub(crate) fn tool_success(value: Value) -> CallToolResponse {
     CallToolResult::success(vec![ContentBlock::text(text)]).into()
 }
 
+pub(crate) const OFF_LINE: &str = "Magnesium is off in this session, so nothing here is kept. Tell the user: to study with Magnesium, type /magnesium:learn or /magnesium:papers.";
+pub(crate) fn tool_off() -> CallToolResponse {
+    CallToolResult::error(vec![ContentBlock::text(OFF_LINE)]).into()
+}
+
 pub(crate) fn tool_error(action: &str, error: &str) -> CallToolResponse {
     CallToolResult::error(vec![ContentBlock::text(format!(
         "Magnesium could not {action}: {error}"

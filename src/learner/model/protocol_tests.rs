@@ -20,7 +20,6 @@ fn advertised_choices_decode<T: serde::de::DeserializeOwned + schemars::JsonSche
 fn every_advertised_enum_value_uses_the_actual_decoder() {
     advertised_choices_decode::<SchemaVersion>();
     advertised_choices_decode::<UpdateAction>();
-    advertised_choices_decode::<UpdateMode>();
     advertised_choices_decode::<Speaker>();
     advertised_choices_decode::<ObservationKind>();
     advertised_choices_decode::<ObservationRole>();

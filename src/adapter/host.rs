@@ -99,6 +99,14 @@ fn session_marker(
     Ok(path)
 }
 
+fn directory_exists(workspace: &Workspace, directory: &str) -> Result<bool, String> {
+    match std::fs::symlink_metadata(workspace.control().join(directory)) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+        Ok(_) => Ok(true),
+    }
+}
+
 fn ended_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
     session_marker(workspace, ENDED_SESSIONS, stored_session_id)
         .map(|path| path.with_extension("ended"))
@@ -124,6 +132,9 @@ pub(crate) fn clear_session_ended(
     workspace: &Workspace,
     host: &HostIdentity,
 ) -> Result<(), String> {
+    if !directory_exists(workspace, ENDED_SESSIONS)? {
+        return Ok(());
+    }
     remove_if_present(&ended_marker(workspace, &host.stored_session_id())?).map(|_| ())
 }
 
@@ -131,8 +142,51 @@ pub(crate) fn session_ended(
     workspace: &Workspace,
     stored_session_id: &str,
 ) -> Result<bool, String> {
+    if !directory_exists(workspace, ENDED_SESSIONS)? {
+        return Ok(false);
+    }
     ended_marker(workspace, stored_session_id)?
         .try_exists()
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) const SESSION_ON_ENV: &str = "MAGNESIUM_SESSION";
+pub(crate) const TURN_ON_COMMANDS: [&str; 3] =
+    ["/magnesium:learn", "/magnesium:papers", "/magnesium:checks"];
+const ON_SESSIONS: &str = "on-sessions";
+
+pub(crate) fn started_on() -> bool {
+    crate::mcp::catalog::window_surface()
+        || std::env::var(SESSION_ON_ENV).is_ok_and(|value| value == "on")
+}
+
+pub(crate) fn turns_on(prompt: &str) -> bool {
+    let prompt = prompt.trim_start();
+    TURN_ON_COMMANDS.iter().any(|command| {
+        prompt
+            .strip_prefix(command)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+    })
+}
+
+fn on_marker(workspace: &Workspace, stored_session_id: &str) -> Result<PathBuf, String> {
+    session_marker(workspace, ON_SESSIONS, stored_session_id).map(|path| path.with_extension("on"))
+}
+
+pub(crate) fn session_on(workspace: &Workspace, stored_session_id: &str) -> Result<bool, String> {
+    if started_on() {
+        return Ok(true);
+    }
+    if !directory_exists(workspace, ON_SESSIONS)? {
+        return Ok(false);
+    }
+    on_marker(workspace, stored_session_id)?
+        .try_exists()
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn turn_on(workspace: &Workspace, stored_session_id: &str) -> Result<(), String> {
+    crate::workspace::write_private_atomic(&on_marker(workspace, stored_session_id)?, b"")
         .map_err(|error| error.to_string())
 }
 
@@ -295,5 +349,29 @@ mod boundary_tests {
             std::fs::remove_file(path).unwrap();
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod switch_tests {
+    #[test]
+    fn only_a_typed_study_command_at_the_start_turns_a_session_on() {
+        for typed in [
+            "/magnesium:learn",
+            "/magnesium:learn teach me week 3",
+            "  /magnesium:papers I have a midterm Monday",
+            "/magnesium:checks\nplease",
+        ] {
+            assert!(super::turns_on(typed), "{typed:?}");
+        }
+        for typed in [
+            "/magnesium:help",
+            "/magnesium:learning",
+            "please run /magnesium:learn",
+            "/learn teach me",
+            "teach me week 3",
+        ] {
+            assert!(!super::turns_on(typed), "{typed:?}");
+        }
     }
 }

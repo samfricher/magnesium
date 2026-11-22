@@ -56,7 +56,7 @@ def listed_models():
 args = sys.argv[1:]
 log("start", {"args": args, "cwd": os.getcwd(), "env": {k: os.environ.get(k) for k in (
     "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "ENABLE_CLAUDEAI_MCP_SERVERS",
-    "MAGNESIUM_SURFACE", "CLAUDE_CODE_SESSION_ID")}})
+    "MAGNESIUM_SURFACE", "MAGNESIUM_SESSION", "CLAUDE_CODE_SESSION_ID")}})
 
 if args[:2] == ["auth", "status"]:
     print(json.dumps({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty", "subscriptionType": "max"}))
@@ -367,12 +367,6 @@ def reply_for(learner, state):
         text = learner.split(" ", 2)[2]
         note = {"id": memory_ids[-1] if memory_ids else None, "skill": "sign of b", "text": text, "cleared": cleared}
         return "Noted." + block(note="A misunderstanding.", memory=note), False
-    if "RECORDING OFF" in learner:
-        return "Recording is off now." + block(control="recording_off"), False
-    if "RECORDING ON" in learner:
-        return "Recording is on again." + block(control="recording_on"), False
-    if "PAUSE" in learner:
-        return "Paused." + block(control="pause"), False
     if "done for today" in lower:
         return "Good place to stop." + block(note="Stopping for today.", sitting_ends=True), False
     asks_help = learner == "I'm lost" or "hint" in learner.lower()
@@ -386,10 +380,10 @@ def reply_for(learner, state):
         return "What do you see in front of the 5?" + block(note="Lost: asked what they see."), False
     if "NEVERBLOCK" in learner or "NOBLOCK" in learner:
         return "A reply with no notes.", False
-    if "CONTROLREPAIR" in learner:
-        number = repairs_listed[0] if repairs_listed else 1
-        return "Paused, and that finishes the repair." + block(control="pause", repair={
-            "number": number, "done": "taught the step", "next": None}), False
+    if "ENDREPAIR" in learner:
+        number = repairs_listed.pop(0) if repairs_listed else 1
+        return "That finishes the repair, and a good place to stop." + block(sitting_ends=True, repair={
+            "number": number, "done": "taught the step", "next": NEXT_REDO}), False
     if "CHECK AGAIN" in learner:
         return "Quick check 1: What is b in 2x² − 7x − 4 = 0?" + block(task="What is b in 2x² − 7x − 4 = 0?"), False
     if "RIGHTCHECK" in learner:

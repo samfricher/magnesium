@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::paths;
+use crate::runtime;
 
 const PROTOCOL: &str = "2";
 const HOST_KIND: &str = "claude";
@@ -90,7 +90,7 @@ impl HostClient {
         if let (Some(payload), Some(fields)) = (payload.as_object_mut(), fields.as_object()) {
             payload.extend(fields.clone());
         }
-        let mut command = paths::light_command(&self.program);
+        let mut command = runtime::command(&self.program);
         command
             .current_dir(&self.folder)
             .env_remove(SESSION_ENV)
@@ -140,7 +140,7 @@ impl HostClient {
     }
 
     fn start_server(&self) -> Result<Server, String> {
-        let mut command = paths::light_command(&self.program);
+        let mut command = runtime::command(&self.program);
         command
             .current_dir(&self.folder)
             .env(SESSION_ENV, &self.session)
@@ -369,7 +369,7 @@ mod tests {
         let inactive = "learner-model/v2 native_capture.ticket=f4acccbef9d1724a; start/resume:exact text; compaction:context.prepare; unbound:0.";
         assert_eq!(ticket(inactive).as_deref(), Some("f4acccbef9d1724a"));
         assert_eq!(current_event(inactive), None);
-        let active = "Magnesium learner-model/v2; generation 0; pending 1; unbound 0; learning true; recording true; current event e-36c4b639. Read context.prepare. Sitting quick checks: due 2, posed 0.";
+        let active = "Magnesium learner-model/v2; generation 0; pending 1; unbound 0; learning true; current event e-36c4b639. Read context.prepare. Sitting quick checks: due 2, posed 0.";
         assert_eq!(current_event(active).as_deref(), Some("e-36c4b639"));
         assert_eq!(ticket(active), None);
         assert_eq!(

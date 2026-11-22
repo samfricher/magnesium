@@ -64,12 +64,12 @@ fn generated_schemas_keep_structured_memory_edits_and_protocol_identity() {
         "learner-model/v2",
         "current_basis",
         "change_basis",
-        "recording_off",
         "reported_events",
     ] {
         assert!(serialized.contains(expected), "missing {expected}");
     }
     for removed in [
+        "complete_captured",
         "attestation_id",
         "criterion_id",
         "verified_correct",
@@ -202,7 +202,7 @@ fn the_id_an_update_needs_is_said_where_the_tutor_reads_it() {
             needing.push(action.to_owned());
         }
     }
-    assert_eq!(needing, ["update", "control"]);
+    assert_eq!(needing, ["update"]);
 
     let description = tool.description.as_deref().unwrap();
     let at = description

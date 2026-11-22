@@ -53,6 +53,7 @@ impl Fixture {
             &crate::adapter::HostIdentity::claude("mcp-lifetime-thread").unwrap(),
         );
         store.update(&host, json!({"schema":crate::learner::SCHEMA,"action":"update","request_id":"start","session":{"operation":"start","client_ref":"s","goal":"request lifetime"}})).unwrap();
+        crate::adapter::host::turn_on(&workspace, &host.host_thread_id).unwrap();
         Self { root, store, host }
     }
     fn server(&self, hook: RequestCheckpoint) -> MagnesiumServer {
@@ -110,11 +111,18 @@ fn serve(server: MagnesiumServer) -> ServedFixture {
         outgoing,
     )
 }
-fn control() -> CallToolRequestParams {
+fn start_lesson() -> CallToolRequestParams {
     request(
         "learning_step",
-        json!({"schema":crate::learner::SCHEMA,"action":"control","request_id":"off","control":"recording_off","reported_event":{"external_event_key":"off-input","speaker":"learner","kind":"message","text":"Stop recording"}}),
+        json!({"schema":crate::learner::SCHEMA,"action":"update","request_id":"retargeted-start","session":{"operation":"start","client_ref":"retargeted","goal":"Must not start"}}),
     )
+}
+fn lessons(fixture: &Fixture) -> i64 {
+    fixture
+        .store
+        .conn
+        .query_row("SELECT count(*) FROM learning_sessions", [], |r| r.get(0))
+        .unwrap()
 }
 fn response_json(response: CallToolResponse) -> Value {
     serde_json::to_value(rmcp::model::ServerResult::from(response)).unwrap()
@@ -145,7 +153,7 @@ impl Drop for Release {
 }
 
 #[test]
-fn saturated_ordinary_handlers_do_not_delay_control_or_async_frames() {
+fn saturated_ordinary_handlers_do_not_delay_async_frames() {
     let _serial = super::runtime_bounds_tests::SERIAL
         .lock()
         .unwrap_or_else(|error| error.into_inner());
@@ -192,19 +200,6 @@ fn saturated_ordinary_handlers_do_not_delay_control_or_async_frames() {
             .unwrap()
             .unwrap();
         assert_eq!(serde_json::to_value(frame).unwrap()["id"], 100);
-        let reply = tokio::time::timeout(
-            Duration::from_secs(2),
-            server.call_tool(control(), context(service.peer(), 101)),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        let value = response_json(reply);
-        assert_ne!(value["isError"], true, "{value}");
-        assert!(
-            !fixture.store.binding(&fixture.host).unwrap().2,
-            "control must commit before ordinary jobs are released"
-        );
         _release.0.release();
         for job in jobs {
             job.await.unwrap().unwrap();
@@ -329,58 +324,8 @@ fn handler_cancellation_at_semantic_and_commit_boundaries_keeps_receipts_truthfu
                 assert!(reply.to_string().contains("request_cancelled"), "{reply}");
                 assert_eq!(receipts, 0);
             }
-            assert!(fixture.store.binding(&fixture.host).unwrap().2);
         });
     }
-}
-
-#[test]
-fn dropped_admitted_control_finishes_safety_and_releases_reserved_permit() {
-    let _serial = super::runtime_bounds_tests::SERIAL
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let fixture = Fixture::new();
-    runtime().block_on(async {
-        let gate = Arc::new(Gate::default());
-        let _release = Release(gate.clone());
-        let (entered, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (finished, mut finished_rx) = tokio::sync::mpsc::unbounded_channel();
-        let hook = Arc::new(move |_: &str, phase| {
-            if phase == "dispatch" {
-                entered.send(()).unwrap();
-                gate.wait();
-            }
-            if phase == "worker_finished" {
-                finished.send(()).unwrap();
-            }
-        });
-        let (service, _incoming, _outgoing) = serve(fixture.server(hook.clone()));
-        let server = Arc::new(fixture.server(hook));
-        let context = context(service.peer(), 1);
-        let task = tokio::spawn(async move { server.call_tool(control(), context).await });
-        tokio::time::timeout(Duration::from_secs(2), entered_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(control_worker_semaphore().available_permits(), 1);
-        task.abort();
-        assert!(task.await.unwrap_err().is_cancelled());
-        assert_eq!(
-            control_worker_semaphore().available_permits(),
-            1,
-            "dropped caller cannot free a running worker's permit"
-        );
-        _release.0.release();
-        tokio::time::timeout(Duration::from_secs(2), finished_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!fixture.store.binding(&fixture.host).unwrap().2);
-        let one = control_worker_semaphore().acquire().await.unwrap();
-        let two = control_worker_semaphore().acquire().await.unwrap();
-        drop((one, two));
-        assert_eq!(control_worker_semaphore().available_permits(), 2);
-    });
 }
 
 #[test]
@@ -438,68 +383,6 @@ fn handler_cancellation_before_trace_skips_optional_persistence() {
     });
 }
 
-#[test]
-fn cancelled_recording_on_does_not_expand_capture_permission() {
-    let _serial = super::runtime_bounds_tests::SERIAL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    for phase in ["before_control_grant", "before_control_commit"] {
-        let fixture = Fixture::new();
-        fixture
-            .store
-            .conn
-            .execute("UPDATE host_bindings SET recording_enabled=0", [])
-            .unwrap();
-        runtime().block_on(async {
-            let gate = Arc::new(Gate::default());
-            let _release = Release(gate.clone());
-            let (entered, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
-            let hook = Arc::new(move |_: &str, observed| {
-                if observed == phase {
-                    entered.send(()).unwrap();
-                    gate.wait();
-                }
-            });
-            let (service, _incoming, _outgoing) = serve(fixture.server(hook.clone()));
-            let server = Arc::new(fixture.server(hook));
-            let context = context(service.peer(), 1);
-            let cancelled = context.ct.clone();
-            let mut on = control();
-            on.arguments
-                .as_mut()
-                .unwrap()
-                .insert("control".into(), json!("recording_on"));
-            let task = tokio::spawn(async move { server.call_tool(on, context).await });
-            tokio::time::timeout(Duration::from_secs(2), entered_rx.recv())
-                .await
-                .unwrap()
-                .unwrap();
-            cancelled.cancel();
-            tokio::task::yield_now().await;
-            _release.0.release();
-            let reply = task.await.unwrap().unwrap();
-            assert!(
-                response_json(reply)
-                    .to_string()
-                    .contains("request_cancelled")
-            );
-            assert!(!fixture.store.binding(&fixture.host).unwrap().2);
-            assert_eq!(
-                fixture
-                    .store
-                    .conn
-                    .query_row(
-                        "SELECT count(*) FROM operation_receipts WHERE request_id='off'",
-                        [],
-                        |r| r.get::<_, i64>(0)
-                    )
-                    .unwrap(),
-                0
-            );
-        });
-    }
-}
-
 #[cfg(unix)]
 #[test]
 fn canonical_connection_binding_rejects_retargeted_root_symlink() {
@@ -519,7 +402,7 @@ fn canonical_connection_binding_rejects_retargeted_root_symlink() {
         let (service, _incoming, _outgoing) = serve(server);
         let reply = service
             .service()
-            .call_tool(control(), context(service.peer(), 1))
+            .call_tool(start_lesson(), context(service.peer(), 1))
             .await
             .unwrap();
         assert!(
@@ -527,47 +410,7 @@ fn canonical_connection_binding_rejects_retargeted_root_symlink() {
                 .to_string()
                 .contains("workspace_route_invalid")
         );
-        assert!(first.store.binding(&first.host).unwrap().2);
-        assert!(second.store.binding(&second.host).unwrap().2);
-    });
-}
-
-#[test]
-fn malformed_control_does_not_use_reserved_capacity() {
-    let _serial = super::runtime_bounds_tests::SERIAL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let fixture = Fixture::new();
-    runtime().block_on(async {
-        let (service, _incoming, _outgoing) = serve(fixture.server(Arc::new(|_, _| {
-            panic!("cancelled malformed control must never reach a worker")
-        })));
-        let mut permits = vec![];
-        for _ in 0..8 {
-            permits.push(blocking_worker_semaphore().acquire().await.unwrap());
-        }
-        let context = context(service.peer(), 1);
-        let cancelled = context.ct.clone();
-        let mut malformed = control();
-        malformed
-            .arguments
-            .as_mut()
-            .unwrap()
-            .remove("reported_event");
-        let mut call = Box::pin(service.service().call_tool(malformed, context));
-        std::future::poll_fn(|cx| {
-            assert!(call.as_mut().poll(cx).is_pending());
-            std::task::Poll::Ready(())
-        })
-        .await;
-        assert_eq!(control_worker_semaphore().available_permits(), 2);
-        cancelled.cancel();
-        let reply = call.await.unwrap();
-        assert!(
-            response_json(reply)
-                .to_string()
-                .contains("request_cancelled")
-        );
-        drop(permits);
+        assert_eq!(lessons(&first), 1);
+        assert_eq!(lessons(&second), 1);
     });
 }

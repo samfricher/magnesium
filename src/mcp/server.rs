@@ -13,7 +13,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 use super::catalog::{get_tool, tool_definitions};
-use super::{check_routing, compatibility_error, routing_error, tool_error, tool_success};
+use super::{
+    check_routing, compatibility_error, routing_error, tool_error, tool_off, tool_success,
+};
 use crate::adapter::{self, InvocationIdentity};
 use crate::request::{OperationCancellation, enter_request_cancellation};
 
@@ -22,15 +24,10 @@ const _: () = assert!(MAX_FRAME_BYTES > crate::learner::limits::REQUEST_BYTES);
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 
 const BLOCKING_WORKER_PERMITS: usize = 8;
-const CONTROL_WORKER_PERMITS: usize = 2;
 
 fn blocking_worker_semaphore() -> &'static tokio::sync::Semaphore {
     static SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
     SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(BLOCKING_WORKER_PERMITS))
-}
-fn control_worker_semaphore() -> &'static tokio::sync::Semaphore {
-    static SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
-    SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(CONTROL_WORKER_PERMITS))
 }
 
 #[cfg(test)]
@@ -67,7 +64,6 @@ struct WorkerRequest {
     bound_root: Option<std::path::PathBuf>,
     name: String,
     arguments: Option<rmcp::model::JsonObject>,
-    finish_safety_control: bool,
     #[cfg(test)]
     hooks: Option<Arc<TestRequestHooks>>,
 }
@@ -76,16 +72,11 @@ async fn dispatch_on_blocking_worker<F>(
     work: WorkerRequest,
     cancellation: OperationCancellation,
     cancelled: F,
-    control: bool,
 ) -> CallToolResponse
 where
     F: std::future::Future<Output = ()> + Send,
 {
-    let semaphore = if control {
-        control_worker_semaphore()
-    } else {
-        blocking_worker_semaphore()
-    };
+    let semaphore = blocking_worker_semaphore();
     let permit = tokio::select! {
         biased;
         () = cancelled => return tool_error("invoke tool", "request_cancelled: queued work did not start"),
@@ -96,13 +87,8 @@ where
     };
     match tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let effective = if work.finish_safety_control {
-            OperationCancellation::none()
-        } else {
-            cancellation
-        };
-        let _scope = enter_request_cancellation(&effective);
-        if effective.is_cancelled() {
+        let _scope = enter_request_cancellation(&cancellation);
+        if cancellation.is_cancelled() {
             return tool_error("invoke tool", "request_cancelled: work did not start");
         }
         #[cfg(test)]
@@ -128,20 +114,12 @@ where
         if let Err(error) = check_binding(work.bound_root.as_deref(), &cwd) {
             return routing_error(error);
         }
-        let independent_control = work.name == "learning_step"
-            && work
-                .arguments
-                .as_ref()
-                .and_then(|args| args.get("action"))
-                .and_then(serde_json::Value::as_str)
-                == Some("control");
         if !is_read_only_instruction_call(&work.name, work.arguments.as_ref())
-            && !independent_control
             && let Err(error) = check_routing(&cwd)
         {
             return routing_error(error);
         }
-        if effective.is_cancelled() {
+        if cancellation.is_cancelled() {
             return tool_error(
                 "invoke tool",
                 "request_cancelled: routing completed without starting domain work",
@@ -161,6 +139,12 @@ where
                 None
             }
         };
+        match crate::adapter::session_gate(&cwd, host.as_ref()) {
+            Err(error) => return tool_error(&format!("invoke {}", work.name), &error),
+            Ok(Some(false)) => return tool_off(),
+            Ok(Some(true)) => rescan_once(&cwd),
+            Ok(None) => {}
+        }
         let result = match dispatch_tool_call(&cwd, &work.name, work.arguments, host) {
             Ok(value) => tool_success(value),
             Err((action, error)) => tool_error(&action, &error),
@@ -264,19 +248,6 @@ impl ServerHandler for MagnesiumServer {
         if let Err(error) = adapter::validate(&self.identity) {
             return Ok(compatibility_error(&self.identity, error));
         }
-        let control = request.name == "learning_step"
-            && request.arguments.as_ref().is_some_and(|arguments| {
-                adapter::control_admission::valid_control_input(&serde_json::Value::Object(
-                    arguments.clone(),
-                ))
-            });
-        let finish_safety_control = control
-            && request
-                .arguments
-                .as_ref()
-                .and_then(|args| args.get("control"))
-                .and_then(serde_json::Value::as_str)
-                != Some("recording_on");
         let request_ct = context.ct.clone();
         let (cancellation_flag, watcher) =
             bridge_cancellation(async move { request_ct.cancelled().await });
@@ -298,13 +269,11 @@ impl ServerHandler for MagnesiumServer {
                 bound_root: self.bound_root.clone(),
                 name: request.name.into_owned(),
                 arguments: request.arguments,
-                finish_safety_control,
                 #[cfg(test)]
                 hooks: self.hooks.clone(),
             },
             cancellation,
             context.ct.cancelled(),
-            control,
         )
         .await)
     }
@@ -328,6 +297,16 @@ impl ServerHandler for MagnesiumServer {
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
         get_tool(name)
+    }
+}
+
+fn rescan_once(cwd: &std::path::Path) {
+    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if crate::retrieval::background_indexing_on()
+        && !DONE.swap(true, Ordering::Relaxed)
+        && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(cwd)
+    {
+        crate::retrieval::catch_up::schedule(workspace.root(), true);
     }
 }
 
@@ -374,14 +353,13 @@ pub(crate) fn run(
         plugin_version,
         protocol_version,
     });
-    if crate::retrieval::background_indexing_on()
-        && let Some(root) = server
-            .bound_root
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-        && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&root)
+    if let Some(root) = server
+        .bound_root
+        .clone()
+        .or_else(|| std::env::current_dir().ok())
+        && crate::adapter::session_gate(&root, None) == Ok(Some(true))
     {
-        crate::retrieval::catch_up::schedule(workspace.root(), true);
+        rescan_once(&root);
     }
     let result = runtime.block_on(async {
         let service = server

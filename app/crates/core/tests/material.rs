@@ -113,6 +113,7 @@ impl Scratch {
             ("XDG_CONFIG_HOME".to_owned(), path("config")),
             ("TMPDIR".to_owned(), path("tmp")),
             ("CLAUDE_CODE_SESSION_ID".to_owned(), "material".to_owned()),
+            ("MAGNESIUM_SESSION".to_owned(), "on".to_owned()),
         ]
     }
 

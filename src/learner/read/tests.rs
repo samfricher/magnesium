@@ -273,8 +273,11 @@ fn filtered_event_search_and_review_cursors_track_relational_generations() {
 #[test]
 fn trace_off_after_snapshot_discards_only_receipt_and_changes_no_generation() {
     let conn = fixture();
-    conn.execute("INSERT INTO host_bindings VALUES('h','fresh',NULL,1,1)", [])
-        .unwrap();
+    conn.execute(
+        "INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('h','fresh',1)",
+        [],
+    )
+    .unwrap();
     let prepared = prepare_snapshot(
         &conn,
         "h",
@@ -282,7 +285,7 @@ fn trace_off_after_snapshot_discards_only_receipt_and_changes_no_generation() {
         json!({"schema":crate::learner::SCHEMA,"action":"browse"}),
     )
     .unwrap();
-    conn.execute("UPDATE host_bindings SET recording_enabled=0", [])
+    conn.execute("UPDATE host_bindings SET learning_active=0", [])
         .unwrap();
     let packet = finish_trace(&conn, prepared, true).unwrap();
     assert_eq!(packet["trace_status"], "disabled");
@@ -1123,7 +1126,11 @@ fn selected_read_large_remaining_ref_envelope_does_not_break_single_record_reada
 fn native_trace_suppression_leaves_no_receipt_or_ability_changes() {
     let conn = fixture();
     conn.execute("INSERT INTO learner_memories(memory_id,title,scope,summary,state_text,current_basis_json,lifecycle,revision,created_at_ms,updated_at_ms) VALUES('m','title','scope','summary','state','[]','active',1,0,0)", []).unwrap();
-    conn.execute("INSERT INTO host_bindings(host_kind,host_thread_id,learning_active,recording_enabled) VALUES('h','fresh',1,1)", []).unwrap();
+    conn.execute(
+        "INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('h','fresh',1)",
+        [],
+    )
+    .unwrap();
     for n in 0..2 {
         conn.execute("INSERT INTO review_items(review_id,memory_id,memory_revision,purpose,reason,status,revision,updated_at_ms) VALUES(?1,'m',1,'review','reason','suggested',1,0)", [format!("r{n}")]).unwrap();
     }
