@@ -209,6 +209,22 @@ def posed_in(text: str, ids: list[str]) -> list[tuple[int, str]]:
     return sorted(found)
 
 
+def carried_in(text: str, ids: list[str]) -> list[str]:
+    found = []
+    for piece in CLAUSE.split(text):
+        if not re.search(r"\bcarr", piece, re.I):
+            continue
+        for name in ids:
+            if (id_pattern(name).search(piece) or in_range(piece, name)) and name not in found:
+                found.append(name)
+    return found
+
+
+def set_or_carried(text: str, ids: list[str]) -> list[str]:
+    named = {name for _, name in posed_in(text, ids)} | set(carried_in(text, ids))
+    return [n for n in ids if n in named]
+
+
 def where(line: dict | None) -> str | None:
     return f"{line['file']}:{line['line']}" if line else None
 
@@ -293,16 +309,19 @@ def score(folder: Path, lists: dict, judge=None, marker=None) -> dict:
         else:
             entry.update(judged.get(key, {"value": None, "of": None}))
         counts.append(entry)
+    plan_units = units(folder, lists)
     result = {"plan": str(folder), "files": [str(p.relative_to(folder)) for p in plan_files(folder)], "counts": counts,
-              "units": units(folder, lists)}
+              "units": [{k: v for k, v in u.items() if k != "body"} for u in plan_units]}
+    elsewhere = [b["body"] for b in plan_blocks if b["kind"] == "list"]
+    result["listed_elsewhere"] = [n for n in in_scope_ids if any(n in set_or_carried(t, in_scope_ids) for t in elsewhere)]
     if marker:
-        runs = marker(folder, result["units"])
+        runs = [[dict(m, listed=set_or_carried(u["body"], in_scope_ids)) for m, u in zip(run, plan_units)] for run in marker(folder, result["units"])]
         marks = majority(runs, result["units"])
         result["block_runs"] = runs
         result["blocks"] = marks
         result["block_spread"] = spread_of(runs, result["units"])
-        result["shape"] = shape(marks, sections, in_scope_ids)
-        result["shape_runs"] = [shape(run, sections, in_scope_ids) for run in runs]
+        result["shape"] = shape(marks, sections, in_scope_ids, result["listed_elsewhere"])
+        result["shape_runs"] = [shape(run, sections, in_scope_ids, result["listed_elsewhere"]) for run in runs]
     return result
 
 
@@ -327,11 +346,11 @@ def units(folder: Path, lists: dict) -> list[dict]:
         out = []
         for b in rows:
             cells = [c.strip() for c in b["line"]["text"].strip().strip("|").split("|")]
-            out.append({"block": cells[0], "title": cells[1] if len(cells) > 1 else "", "line": where(b["line"])})
+            out.append({"block": cells[0], "title": cells[1] if len(cells) > 1 else "", "line": where(b["line"]), "body": b["body"]})
         return out
     headings = [b for b in found if b["kind"] == "heading"]
-    out = [{"block": b["line"]["text"].lstrip("#").strip(), "title": b["line"]["text"].lstrip("#").strip(), "line": where(b["line"])}
-           for b in headings]
+    out = [{"block": b["line"]["text"].lstrip("#").strip(), "title": b["line"]["text"].lstrip("#").strip(), "line": where(b["line"]),
+            "body": b["body"]} for b in headings]
     if not headings:
         return out
     plan = [line for line in lines if line["file"] == "plan.md"]
@@ -345,7 +364,8 @@ def units(folder: Path, lists: dict) -> list[dict]:
             continue
         if heading and ROW.match(line["text"]) and SITS.search(line["text"]) and not CUT.search(line["text"]):
             n += 1
-            out.append({"block": f"{heading} {n}", "title": ROW.sub("", line["text"], count=1).strip()[:80], "line": where(line)})
+            out.append({"block": f"{heading} {n}", "title": ROW.sub("", line["text"], count=1).strip()[:80], "line": where(line),
+                        "body": line["text"]})
     return out
 
 
@@ -366,6 +386,8 @@ def section_list(value, section_ids: list[str]) -> list[str]:
 def clean(mark: dict, section_ids: list[str], listed_ids: list[str]) -> dict:
     kind = mark.get("kind") if mark.get("kind") in KINDS else "other"
     unseen = mark.get("unseen")
+    if "problems" in mark:
+        unseen = any(not p.get("seen") and not p.get("helped") for p in mark.get("problems") or [])
     return {"block": str(mark.get("block", "")), "done": bool(mark.get("done")),
             "sections": section_list(mark.get("sections"), section_ids), "kind": kind,
             "listed": sorted({x for x in (mark.get("listed") or []) if x in listed_ids}, key=listed_ids.index),
@@ -426,7 +448,7 @@ def spread_of(runs: list[list[dict]], plan_units: list[dict]) -> dict:
     return {"runs": len(runs), "blocks": len(plan_units), "identical_across_runs": same}
 
 
-def shape(marks: list[dict], sections: list[dict], listed_ids: list[str]) -> list[dict]:
+def shape(marks: list[dict], sections: list[dict], listed_ids: list[str], elsewhere: list[str] | None = None) -> list[dict]:
     ids = [s["id"] for s in sections]
     planned = [m for m in marks if not m["done"]]
     work = [m for m in planned if m["kind"] in WORK]
@@ -438,7 +460,7 @@ def shape(marks: list[dict], sections: list[dict], listed_ids: list[str]) -> lis
     seen = sorted(first, key=lambda s: (first[s][0], ids.index(s)))
     start = next((n for n, m in enumerate(planned) if m["kind"] in WORK and any(s in ids for s in m["sections"])), len(planned))
     unseen = {s for m in work if m["unseen"] for s in m["sections"] if s in ids}
-    listed = {x for m in planned for x in m["listed"] if x in listed_ids}
+    listed = {x for m in planned for x in m["listed"] if x in listed_ids} | {x for x in elsewhere or [] if x in listed_ids}
     return [
         {"key": "sections_worked", "label": "Sections with a block of their own work", "value": len(first), "of": len(ids)},
         {"key": "sections_in_order", "label": "Sections in lecture order (first block of each)",
@@ -487,9 +509,11 @@ BLOCK_SCHEMA = {
         "block": {"type": "string"}, "done": {"type": "boolean"},
         "sections": {"type": "array", "items": {"type": "string"}},
         "kind": {"type": "string", "enum": KINDS},
-        "listed": {"type": "array", "items": {"type": "string"}},
-        "unseen": {"type": ["boolean", "null"]}, "quote": {"type": "string"}},
-        "required": ["block", "done", "sections", "kind", "listed", "unseen", "quote"]}}},
+        "problems": {"type": "array", "items": {"type": "object", "properties": {
+            "problem": {"type": "string"}, "seen": {"type": "boolean"}, "seen_where": {"type": "string"}, "helped": {"type": "boolean"}},
+            "required": ["problem", "seen", "seen_where", "helped"]}},
+        "quote": {"type": "string"}},
+        "required": ["block", "done", "sections", "kind", "problems", "quote"]}}},
     "required": ["blocks"],
 }
 
@@ -508,7 +532,12 @@ def block_prompt(folder: Path, lists: dict, plan_units: list[dict], limit: int =
     listed_text = ", ".join(f"{e['id']} (section {e.get('section')})" for e in listed) or "none"
     unit_text = "\n".join(f"- {u['block']}: {u['title']}" for u in plan_units)
     return (f"{CODEBOOK.read_text(encoding='utf-8')}\n\nMark every block below, in this order, one entry each, with `block` written "
-            f"exactly as given. Write `sections` as a list of ids, or [\"all\"].\n\nSECTIONS\n{section_text}\n\n"
+            f"exactly as given. Write `sections` as a list of ids, or [\"all\"]. Leave out `listed`: it is counted from the text. "
+            f"In place of `unseen`, give `problems`: for a teach_first or test_first block, every problem the block has the learner do, "
+            f"each with `seen` true when it is a question from a paper he sat in an earlier block of this plan or before the plan, or a "
+            f"worked example he was shown, and `seen_where` naming that paper or block (\"\" when not seen); `helped` true when he does it "
+            f"with help. A problem named as a fresh, changed or new version is not seen. For every other kind, give an empty list."
+            f"\n\nSECTIONS\n{section_text}\n\n"
             f"LISTED EXERCISES\n{listed_text}\n\nBLOCKS\n{unit_text}\n\nPLAN FILES\n{text}")
 
 

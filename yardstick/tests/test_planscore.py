@@ -181,6 +181,20 @@ class Blocks(unittest.TestCase):
         self.assertEqual((result["sections"], result["unseen"]), ([3, 3], [2, 3]))
         self.assertEqual(result["differ"][0]["block"], "3")
 
+    def test_listed_exercises_are_read_from_setting_and_carrying_clauses(self):
+        ids = ["8.27", "8.29", "8.39", "8.41", "8.47", "8.57", "8.58"]
+        row = ("| 8 | Section D | C8 slides 49 to 56: 8.57, 8.58. Test: drill 32; drill 11 (it carries 8.27 and 8.29). "
+               "Then Exercise 8.47 in the book's wording |")
+        self.assertEqual(planscore.set_or_carried(row, ids), ["8.27", "8.29", "8.47"])
+        self.assertEqual(planscore.set_or_carried("| 7 | Section C | C8 slides 40 to 48: 8.39, 8.41 |", ids), [])
+
+    def test_unseen_comes_from_the_problems_listed(self):
+        seen = planscore.clean({"kind": "teach_first", "problems": [{"problem": "Diagnostic Q2", "seen": True, "helped": False}]}, ["A"], [])
+        fresh = planscore.clean({"kind": "test_first", "problems": [{"problem": "Diagnostic Q2", "seen": True, "helped": False},
+                                                                     {"problem": "MockA Q3", "seen": False, "helped": False}]}, ["A"], [])
+        helped = planscore.clean({"kind": "teach_first", "problems": [{"problem": "drill 4", "seen": False, "helped": True}]}, ["A"], [])
+        self.assertEqual((seen["unseen"], fresh["unseen"], helped["unseen"]), (False, True, False))
+
     def test_the_prompt_lists_every_block(self):
         units = planscore.units(self.fixture.plans()["used"], self.lists)
         prompt = planscore.block_prompt(self.fixture.plans()["used"], self.lists, units)
