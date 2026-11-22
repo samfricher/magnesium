@@ -242,11 +242,78 @@ class Today:
             "map_page_exists": bool(page and page.is_file()),
         }
 
-    def flagged_untaught(self, place: Place, target: str | None) -> list[str] | None:
-        return None
+    def slug(self, target: str | None) -> str | None:
+        return Path(target).name if target else None
+
+    def map_view(self, place: Place, target: str | None) -> dict | None:
+        slug = self.slug(target)
+        if not slug:
+            return None
+        value = self.cli_json(place, "map", "--target", slug, "--json")
+        if not value or value.get("map") == "none" or not value.get("items"):
+            return None
+        return value
+
+    def write_map(self, place: Place, request: dict) -> dict:
+        async def go():
+            async with self.channel(place, "map-write") as channel:
+                return await channel.call("course_map", request)
+
+        return asyncio.run(go())
+
+    def map_scope(self, place: Place, target: str | None, scope: list[str], label: str | None = None) -> dict:
+        slug = self.slug(target)
+        request = {"action": "write", "target": slug, "facts": {"label": label or slug},
+                   "scope": [{"ref": ref, "state": "in"} for ref in scope]}
+        return self.write_map(place, request)
+
+    def map_matches(self, view: dict, material: list[dict]) -> list[dict]:
+        found = []
+        items = view.get("items") or []
+        for ref in material:
+            path = ref.get("path")
+            where = ref.get("where") or ""
+            quoted = [q.lower() for q in re.findall(r"'([^']+)'", where)]
+            in_file = [i for i in items if i.get("file") == path]
+            if not in_file:
+                continue
+            if not quoted or "whole" in where.lower():
+                found.extend(in_file)
+                continue
+            for item in in_file:
+                title = (item.get("title") or "").lower()
+                if any(q == title or (len(q) > 6 and q in title) for q in quoted):
+                    found.append(item)
+        seen, out = set(), []
+        for item in found:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                out.append(item)
+        return out
+
+    def flagged_untaught(self, place: Place, target: str | None, asked: list[dict] | None = None) -> dict | None:
+        view = self.map_view(place, target)
+        if view is None:
+            return None
+        out = {}
+        for item in asked or []:
+            matched = self.map_matches(view, item.get("material") or [])
+            leaves = [m for m in matched if m.get("leaf")] or matched
+            out[item["id"]] = {
+                "on_map": len(matched),
+                "never_asked": sum(1 for m in leaves if m.get("record") == "never asked"),
+                "asked_by_plan": sum(1 for m in leaves if m.get("asked_by_plan")),
+                "leaves": len(leaves),
+                "items": [m["id"] for m in matched][:12],
+                "flagged": bool(leaves) and any(m.get("record") == "never asked" and not m.get("asked_by_plan") for m in leaves),
+            }
+        return out
 
     def use_links(self, place: Place, target: str | None) -> list | None:
-        return None
+        view = self.map_view(place, target)
+        if view is None:
+            return None
+        return [{"item": i["id"], "uses": i.get("uses") or [], "reach": i.get("reach")} for i in view["items"] if i.get("uses")]
 
     def hook(self, place: Place, event: str, conversation: str, **payload) -> str:
         body = {"session_id": conversation, "cwd": str(place.folder), "hook_event_name": HOOK_EVENTS[event], **payload}
@@ -377,28 +444,29 @@ class Today:
                 turns.append(turn)
         return turns
 
-    def lesson_command(self, place: Place, model: str, effort: str) -> list[str]:
+    def lesson_command(self, place: Place, model: str, effort: str, planning: str = "lesson") -> list[str]:
         folders = [place.folder]
         real = place.folder.resolve()
         if real != place.folder:
             folders.append(real)
         deny = [f"{tool}(/{f}/.magnesium/**)" for f in folders for tool in ("Write", "Edit")]
-        allow = [f"{tool}(/{f}/Study/*/{name})" for f in folders for name in ("plan.md", "graph.yaml") for tool in ("Edit", "Write")]
+        allow = [f"{tool}(/{f}/Study/*/{name})" for f in folders for name in ("drills.md", "drills-key.md", "papers/**") for tool in ("Edit", "Write")]
         settings = {
             "sandbox": {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False},
             "permissions": {"deny": deny, "allow": allow},
             "enableAllProjectMcpServers": False,
         }
-        args = ["--setting-sources", "project,local", "--tools", ",".join(LESSON_TOOLS), "--append-system-prompt", DRAWS,
+        tools = LESSON_TOOLS + (["Agent"] if planning == "own-run" else [])
+        args = ["--setting-sources", "project,local", "--tools", ",".join(tools), "--append-system-prompt", DRAWS,
                 "--permission-mode", "auto", "--model", model, "--effort", effort]
         plugin = self.plugin or (place.home / "Library/Application Support/magnesium/claude-plugin")
         args += ["--plugin-dir", str(plugin), "--settings", json.dumps(settings)]
         return args
 
-    def live(self, place: Place, model: str, effort: str, log: Path) -> "claude_code.Conversation":
+    def live(self, place: Place, model: str, effort: str, log: Path, planning: str = "lesson") -> "claude_code.Conversation":
         place.surface = "window"
         env = place.env(ENABLE_CLAUDEAI_MCP_SERVERS="false", PWD=str(place.folder))
-        return claude_code.Conversation(cwd=place.folder, env=env, args=self.lesson_command(place, model, effort), log=log)
+        return claude_code.Conversation(cwd=place.folder, env=env, args=self.lesson_command(place, model, effort, planning), log=log)
 
     def start_line(self, goal: str) -> str:
         return f"/magnesium:learn {goal.strip()}"

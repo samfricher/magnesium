@@ -4,7 +4,7 @@ Each turn, first start or resume the Magnesium session for the target (a slug li
 
 ## The plan is built outside the lesson
 
-The planning run builds the course map and the plan, in a run of its own, so this conversation never reads the folder file by file. Start it with the Agent tool, subagent_type `magnesium:planner`, and a brief that names:
+The planning run builds the course map and the plan, in a run of its own, so this conversation never reads the folder file by file. Start it with the subagent tool (Agent, called Task in some hosts), subagent_type `magnesium:planner`, and a brief that names:
 
 - the target slug;
 - the learner's own words about the test or goal (what, when, how long, aids);
@@ -13,7 +13,7 @@ The planning run builds the course map and the plan, in a run of its own, so thi
 
 Before you start it, ask only for what the learner's message and the folder do not show, each with a default they can skip. Also ask when and where they will practise, and what they will do if they miss a session. Suggest a default that fits their hours and commitments. They may take it or skip the question. Write the answer with course_map write facts sessions. Each session is one line, "If it is <days> at <HH:MM>, then I <what> <where>.", with a 24-hour start time. Leave out "<days> at" for every day. Then add one backup line that starts "If I miss".
 
-When the Agent tool is not available, load stage planning yourself and follow it here.
+When no subagent tool is available, load stage planning yourself and follow it here.
 
 While it runs, tell the learner in one line that the plan is being built from their files.
 

@@ -265,31 +265,29 @@ Next: type `/magnesium:help papers`.
 ````markdown
 # Practice papers
 
-You sit timed practice papers.
+You work each section of your course, then timed papers.
 The tutor marks them and helps you fix each gap.
 
 ## Steps
 
 1. Tell the tutor about your test, like "I have a midterm Monday", or type `/magnesium:papers`.
-2. Answer the tutor's questions.
-3. Magnesium reads your course files and builds the plan from them: every section of the material in your instructor's order, each with its listed exercises. It asks you about anything it would cut.
-4. **Work each section's problems** alone. For a timed paper, write `?` where you would look something up, and S (sure), U (unsure) or G (guess) after each answer.
-5. **Send photos or a PDF** of a paper's answers. Then say "mark my <paper>".
-6. The tutor marks your answers. Magnesium logs each part that lost marks.
-7. **Repair** each gap with the tutor.
-8. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
+2. Magnesium plans each section from your files. It asks before it cuts anything.
+3. **Work each section's problems** alone. On a paper, write `?` instead of looking up.
+4. **Send photos or a PDF** of a paper. Say "mark my <paper>".
+5. The tutor marks it and logs each part that lost marks.
+6. **Repair** each gap with the tutor.
+7. Later, do a **cold redo** of each gap with no help, on three different days. Three passes close it.
 
 ## What to say
 
 | Say this | What happens |
 |---|---|
 | "mark my PAPER" | The tutor marks that paper. |
-| "teach me SECTION" | The tutor teaches that section of the material. |
-| "repair ITEM" | The tutor does a short repair on that item. |
+| "teach me SECTION" | The tutor teaches that section. |
+| "repair ITEM" | The tutor repairs that item. |
 | "cold redo" | You redo the gaps that are due. |
 | "new mock" | You get another paper at test level. |
 | "re-time today" | The tutor fits today's work to the hours you have. |
-| "re-plan" | Magnesium lays out the plan again from what is done. |
 | "rebuild" | The tutor starts the plan again. |
 
 PAPER is a paper, like MockA. SECTION and ITEM are on your course map, `map.md`.
@@ -297,7 +295,7 @@ PAPER is a paper, like MockA. SECTION and ITEM are on your course map, `map.md`.
 ## Your files
 
 Your files are in `Study/<target>/`, like `Study/midterm-1/`.
-Each new session continues from `plan.md`. Magnesium writes `plan.md` and `map.md` from the course map: `map.md` lists every item in your files and whether you have answered it.
+Each new session continues from `plan.md`. `map.md` lists everything your files hold.
 
 ## Rules
 

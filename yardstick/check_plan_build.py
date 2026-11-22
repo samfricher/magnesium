@@ -175,6 +175,41 @@ def searches(log: Path) -> list[dict]:
     return out
 
 
+def planning_trace(log: Path) -> dict:
+    trace = {"subagent_runs": [], "stage_planning_in_lesson": 0, "stage_planning_in_subagent": 0, "course_map_calls": 0,
+             "subagent_output_tokens": 0, "lesson_output_tokens": 0}
+    if not log.is_file():
+        return trace
+    for line in log.read_text(encoding="utf-8").splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        inside = bool(value.get("parent_tool_use_id"))
+        message = value.get("message") or {}
+        usage = message.get("usage") or {}
+        if value.get("type") == "assistant" and usage:
+            key = "subagent_output_tokens" if inside else "lesson_output_tokens"
+            trace[key] += usage.get("output_tokens") or 0
+        for block in message.get("content") or []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name, data = str(block.get("name", "")), block.get("input") or {}
+            if name in ("Task", "Agent"):
+                trace["subagent_runs"].append({"subagent_type": data.get("subagent_type"), "brief": str(data.get("prompt", ""))[:1500]})
+            if name.endswith("__context") and data.get("stage") == "planning":
+                trace["stage_planning_in_subagent" if inside else "stage_planning_in_lesson"] += 1
+            if name.endswith("__course_map"):
+                trace["course_map_calls"] += 1
+    if trace["subagent_runs"]:
+        trace["where"] = "a run of its own (subagent " + ", ".join(sorted({str(r["subagent_type"]) for r in trace["subagent_runs"]})) + ")"
+    elif trace["stage_planning_in_lesson"]:
+        trace["where"] = "inside the lesson (stage planning loaded in the conversation)"
+    else:
+        trace["where"] = "inside the lesson, without the planning stage"
+    return trace
+
+
 def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: str = "") -> dict:
     removed = None
     if fixture.target and (place.folder / fixture.target).exists() and not args.keep_plan:
@@ -184,7 +219,7 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
     before = plans_in(place.folder)
     before_any = plans_in(place.folder, "*/*.md")
     log = place.root / "stream.jsonl"
-    conversation = adapter.live(place, args.model, args.effort, log)
+    conversation = adapter.live(place, args.model, args.effort, log, args.planning)
     usage: dict = {}
     turns = []
     started = time.monotonic()
@@ -199,7 +234,9 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
                           "usage": reply.usage, "cost_usd": reply.cost_usd, "error": reply.error})
             now = plans_in(place.folder)
             built = [k for k, v in now.items() if before.get(k) != v]
-            if built or reply.error:
+            view = adapter.map_view(place, fixture.target) if hasattr(adapter, "map_view") else None
+            scheduled = bool(view and view.get("schedule"))
+            if (built and (scheduled or view is None)) or reply.error:
                 break
             message = FOLLOW_UPS[n] if n < len(FOLLOW_UPS) else FOLLOW_UPS[-1]
     except SignedOut as signed:
@@ -216,6 +253,16 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
         chat.mkdir(exist_ok=True)
         (chat / "plan.md").write_text("\n\n".join(t["tutor"] for t in turns), encoding="utf-8")
         built, where = ["chat"], "the tutor's replies in the chat (no plan file was written)"
+    trace = planning_trace(log)
+    view = adapter.map_view(place, fixture.target) if hasattr(adapter, "map_view") else None
+    map_saved = None
+    if view is not None:
+        map_saved = Path(args.out) / f"plan-build-{fixture.name}-built{suffix}-map.json"
+        map_saved.parent.mkdir(parents=True, exist_ok=True)
+        map_saved.write_text(json.dumps(view, indent=1, ensure_ascii=False), encoding="utf-8")
+        study = place.folder / ".magnesium" / "map.sqlite"
+        if study.is_file():
+            shutil.copy2(study, Path(args.out) / f"plan-build-{fixture.name}-built{suffix}-map.sqlite")
     scores = {}
     for key in built:
         source = place.root / "chat-plan" if key == "chat" else place.folder / key
@@ -223,8 +270,14 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
         if saved.exists():
             shutil.rmtree(saved)
         shutil.copytree(source, saved)
-        scores[key] = scored(source, fixture, f"built{suffix}", fixture.lists() or {}, judge)
+        if fixture.lists():
+            scores[key] = scored(source, fixture, f"built{suffix}", fixture.lists(), judge)
     return {"removed_before_build": removed, "index_settled_first": settled, "plan_found_in": where, "request": request_for(fixture, adapter),
+            "planning": trace, "map": {"saved": str(map_saved) if map_saved else None,
+                                       "coverage": (view or {}).get("coverage"), "blocks": len((view or {}).get("schedule") or []),
+                                       "items": len((view or {}).get("items") or []),
+                                       "links": sum(len(i.get("uses") or []) for i in (view or {}).get("items") or [])},
+            "place": str(place.root),
             "turns": turns, "minutes": minutes, "usage": usage, "tokens": sum(usage.values()), "cost_usd": round(sum(t["cost_usd"] for t in turns), 3),
             "built": built, "scores": scores, "session_id": conversation.session_id, "searches": searches(log),
             "transcript": str(adapter.transcript_of(place, conversation.session_id) or "")}
@@ -232,14 +285,10 @@ def build(args, adapter, fixture: Fixture, judge: Judge | None, place, suffix: s
 
 def run(args, adapter) -> tuple[dict, str]:
     fixture = Fixture(args.fixture)
-    if args.planning == "own-run":
-        text = ("Check 5, plan build, planning as a run of its own: not implemented. Main builds plans only inside the lesson "
-                "(the papers skill). This option is here so a later phase can fill it in.")
-        return {"check": "plan-build", "fixture": fixture.name, "planning": "own-run", "implemented": False}, text
-    lists = fixture.lists()
-    if not lists:
+    lists = fixture.lists() or {}
+    if not lists and args.mode != "live":
         raise SystemExit(f"{fixture.name} has no lists/ folder, which the plan-build scorer needs")
-    judge = Judge(adapter.work, args.model, args.effort) if (args.judge or args.mode == "live") else None
+    judge = Judge(adapter.work, args.model, args.effort) if (args.judge or (args.mode == "live" and lists)) else None
     try:
         return measured(args, adapter, fixture, lists, judge)
     finally:
@@ -249,14 +298,14 @@ def run(args, adapter) -> tuple[dict, str]:
 
 def measured(args, adapter, fixture: Fixture, lists: dict, judge: Judge | None) -> tuple[dict, str]:
     lines = []
-    result = {"check": "plan-build", "fixture": fixture.name, "adapter": adapter.name, "mode": args.mode, "planning": "lesson"}
+    result = {"check": "plan-build", "fixture": fixture.name, "adapter": adapter.name, "mode": args.mode, "planning": args.planning}
     if args.mode == "live":
         builds = live(args, adapter, fixture, judge)
         result["live"] = builds[0] if len(builds) == 1 else builds
         signed = next((b for b in builds if b.get("signed_out")), None)
         if signed:
             return result, f"Check 5, plan build, live: Claude Code reported it is signed out, so the check stopped.\n{signed['signed_out']}"
-        lines.append(f"Check 5, plan build, live on {fixture.name}: Magnesium alone, planning inside the lesson, model {args.model} at {args.effort}, "
+        lines.append(f"Check 5, plan build, live on {fixture.name}: Magnesium alone, planning {'as a run of its own' if args.planning == 'own-run' else 'inside the lesson'}, model {args.model} at {args.effort}, "
                      f"{len(builds)} build{'s' if len(builds) > 1 else ''}.")
         lines.append(f"Request: {builds[0]['request']}")
         if builds[0].get("removed_before_build"):
@@ -267,6 +316,14 @@ def measured(args, adapter, fixture: Fixture, lists: dict, judge: Judge | None) 
         for n, built in enumerate(builds, 1):
             lines += ["", f"Build {n}. Turns: {len(built['turns'])}. Minutes: {built['minutes']}. Tokens: {built['tokens']:,}. Reported cost ${built['cost_usd']}. "
                       f"Plan scored from: {built['plan_found_in']}."]
+            trace = built.get("planning") or {}
+            lines.append(f"  Planning ran {trace.get('where', 'unknown')}. course_map calls: {trace.get('course_map_calls', 0)}. "
+                         f"Output tokens: lesson {trace.get('lesson_output_tokens', 0):,}, subagent {trace.get('subagent_output_tokens', 0):,}.")
+            mapped = built.get("map") or {}
+            if mapped.get("items"):
+                cov = mapped.get("coverage") or {}
+                lines.append(f"  Map: {mapped['items']} items in scope, {mapped['links']} use links, {mapped['blocks']} blocks; "
+                             f"asked by no planned task {cov.get('asked_by_no_planned_task')}, cut {cov.get('cut')}, cuts not agreed {cov.get('unconfirmed_cuts')}.")
             for search in built.get("searches", [])[:3]:
                 lines.append(f"  search {search['query']!r}: {search['chars']} characters back, starting {search['start'][:160]!r}")
             for key, score in built["scores"].items():

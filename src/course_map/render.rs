@@ -329,14 +329,7 @@ pub(crate) fn plan_page(
             cell(&title),
             block.opens_with.as_deref().unwrap_or(""),
             cell(&ids_text(map, &block.sections)),
-            cell(
-                &block
-                    .tasks
-                    .iter()
-                    .map(|t| format!("`{t}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            cell(&ids_text(map, &block.tasks)),
             block.minutes.map(|m| m.to_string()).unwrap_or_default(),
             status,
             running as f64 / 60.0

@@ -51,6 +51,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--keep-plan", action="store_true", help="plan-build live: keep the fixture's own plan folder in the copy")
     p.add_argument("--builds", type=int, default=1, help="plan-build live: how many separate builds, run --parallel at a time")
     p.add_argument("--settle-index", action="store_true", help="plan-build live: let the source index finish before Claude Code starts")
+    p.add_argument("--map-from", help="coverage: a study folder whose .magnesium/map.sqlite a planning run built, to measure instead of a runtime-only map")
     p.add_argument("--refresh-attempts", action="store_true", help="evidence: rewrite the fixture's attempts.json from a replay of its scripted record")
     return p
 
