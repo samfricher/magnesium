@@ -102,3 +102,281 @@ fn code_files_split_as_plain_text() {
         assert!(chunk.references.is_empty(), "{name}");
     }
 }
+
+fn headings(name: &str, text: &str) -> Vec<(u32, u32, Option<String>, ChunkKind)> {
+    chunk_text(Path::new(name), text)
+        .into_iter()
+        .map(|chunk| {
+            (
+                chunk.line_start,
+                chunk.line_end,
+                chunk.structural_path,
+                chunk.kind,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn slide_sources_use_markdown_headings_without_their_attributes() {
+    let qmd = "---\ntitle: \"Lecture 8\"\n---\n\n# Recurrent Networks\n\n## Parity {.smaller}\n\n```{python}\n# not a heading\nx = 1\n```\n\n## Parity\n\ntext\n";
+    for name in ["lec08.qmd", "notes.Rmd"] {
+        let found = headings(name, qmd);
+        assert_eq!(
+            found
+                .iter()
+                .map(|(start, _, path, _)| (*start, path.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (1, None),
+                (5, Some("Recurrent Networks".into())),
+                (7, Some("Recurrent Networks > Parity".into())),
+                (14, Some("Recurrent Networks > Parity".into())),
+            ],
+            "{name}"
+        );
+        assert!(
+            found[1..]
+                .iter()
+                .all(|(_, _, _, kind)| *kind == ChunkKind::Heading)
+        );
+    }
+}
+
+#[test]
+fn web_pages_use_their_heading_tags_and_skip_scripts() {
+    let html = "<html><head><style>h2 { color: red }</style>\n<script>var s = '<h2>fake</h2>';</script></head>\n<body>\n<h1 class=\"title\">10.1. Long Short-Term Memory (LSTM)<a class=\"headerlink\" href=\"#lstm\">¶</a><div class=\"tabs\">Colab [pytorch] Open the notebook</div></h1>\n<p>intro</p>\n<section><h2 id=\"gates\">Gated Memory &amp; Cells</h2>\n<p>gates</p>\n<h3\n>split tag</h3>\n<h2>Summary</h2>\n</body></html>\n";
+    let found = headings("lstm.html", html);
+    assert_eq!(
+        found
+            .iter()
+            .map(|(start, end, path, _)| (*start, *end, path.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (1, 3, None),
+            (4, 5, Some("10.1. Long Short-Term Memory (LSTM)".into())),
+            (
+                6,
+                7,
+                Some("10.1. Long Short-Term Memory (LSTM) > Gated Memory & Cells".into())
+            ),
+            (
+                8,
+                9,
+                Some(
+                    "10.1. Long Short-Term Memory (LSTM) > Gated Memory & Cells > split tag".into()
+                )
+            ),
+            (
+                10,
+                11,
+                Some("10.1. Long Short-Term Memory (LSTM) > Summary".into())
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_web_page_heading_with_an_ampersand_before_wide_characters_is_read() {
+    let titles = [
+        "Q&A: “Bayes” rule",
+        "R&D — what changed",
+        "& “Quoted” — text",
+        "Notes & 日本語の見出し",
+        "AT&T’s “network”",
+        "Tom & Jerry’s “café”",
+        "&#x2014;&#8212;—&amp;“é”",
+    ];
+    for title in titles {
+        for pad in 0..4 {
+            let heading = format!("{}{title}", "x".repeat(pad));
+            let html = format!("<h2>{heading}</h2>\n<p>body</p>\n");
+            let found = headings("page.html", &html);
+            let expected = heading
+                .replace("&#x2014;", "—")
+                .replace("&#8212;", "—")
+                .replace("&amp;", "&");
+            assert_eq!(found[0].2.as_deref(), Some(expected.as_str()), "{heading}");
+        }
+    }
+}
+
+#[test]
+fn every_section_reader_survives_mixed_markup_and_wide_characters() {
+    let pieces = [
+        "&",
+        ";",
+        "&amp;",
+        "&#x",
+        "&#",
+        "<h2>",
+        "</h2>",
+        "<h1 id=\"a\">",
+        "<div",
+        ">",
+        "<",
+        "“",
+        "”",
+        "—",
+        "é",
+        "日本",
+        "🙂",
+        "#",
+        "## ",
+        " ",
+        "\n",
+        "{",
+        "}",
+        "\\section",
+        "\\begin{frame}",
+        "\\frametitle",
+        "[",
+        "]",
+        "%",
+        "*",
+        "<script",
+        "</script",
+        "<!--",
+        "-->",
+        "```",
+        "~~~",
+        "\"",
+        "\\",
+        "\\n",
+        " {.smaller}",
+        "\r",
+    ];
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: usize| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(state >> 33).unwrap() % bound
+    };
+    for _ in 0..4_000 {
+        let length = next(40);
+        let text = (0..length)
+            .map(|_| pieces[next(pieces.len())])
+            .collect::<String>();
+        let cell = serde_json::to_string(&text).unwrap();
+        let notebook = format!(
+            "{{\n \"cells\": [\n  {{\n   \"cell_type\": \"markdown\",\n   \"source\": [\n    {cell}\n   ]\n  }}\n ]\n}}\n"
+        );
+        for name in ["a.md", "a.qmd", "a.html", "a.tex", "a.ipynb"] {
+            let result = std::panic::catch_unwind(|| chunk_text(Path::new(name), &text));
+            assert!(result.is_ok(), "{name}: {text:?}");
+        }
+        let result = std::panic::catch_unwind(|| chunk_text(Path::new("a.ipynb"), &notebook));
+        assert!(result.is_ok(), "notebook: {notebook:?}");
+    }
+}
+
+#[test]
+fn latex_uses_sectioning_commands_and_frame_titles() {
+    let tex = "\\documentclass{beamer}\n\\section{Estimation}\n% \\section{commented out}\n\\begin{frame}[t]{Pivotal \\textbf{quantity}}\nbody\n\\end{frame}\n\\begin{frame}\n\\frametitle{Exercise 8.59}\n\\end{frame}\n\\subsection*{Bias~and MSE\\label{sec:bias}}\n\\sectionmark{not a section}\n";
+    let found = headings("chap8.tex", tex);
+    assert_eq!(
+        found
+            .iter()
+            .map(|(start, _, path, _)| (*start, path.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (1, None),
+            (2, Some("Estimation".into())),
+            (4, Some("Estimation > Pivotal quantity".into())),
+            (8, Some("Estimation > Exercise 8.59".into())),
+            (10, Some("Estimation > Bias and MSE".into())),
+        ]
+    );
+}
+
+#[test]
+fn notebook_cells_keep_the_lines_of_the_original_file_and_carry_headings_across_cells() {
+    let notebook = r###"{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Lab 10\n",
+    "\n",
+    "## Part 1: an RNN by hand\n",
+    "Some \"quoted\" words."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import torch\n",
+    "# a comment, not a heading\n",
+    "h = torch.zeros(3)"
+   ]
+  }
+ ],
+ "metadata": {},
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+"###;
+    let chunks = chunk_text(Path::new("lab10.ipynb"), notebook);
+    let found = chunks
+        .iter()
+        .map(|chunk| {
+            (
+                chunk.line_start,
+                chunk.line_end,
+                chunk.structural_path.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        found,
+        [
+            (7, 8, Some("Lab 10".into())),
+            (9, 10, Some("Lab 10 > Part 1: an RNN by hand".into())),
+            (19, 21, Some("Lab 10 > Part 1: an RNN by hand".into())),
+        ]
+    );
+    assert_eq!(
+        chunks[2].kind,
+        ChunkKind::Fallback,
+        "a code cell continues its section"
+    );
+    let lines = notebook.lines().collect::<Vec<_>>();
+    assert!(lines[8].contains("Part 1"));
+    assert!(lines[18].contains("import torch"));
+    assert!(chunks[1].body.contains("Some \"quoted\" words."));
+    assert!(chunks[2].body.contains("h = torch.zeros(3)"));
+    assert!(!chunks[2].body.contains("\\n"));
+
+    let minified = notebook.replace('\n', "");
+    let fallback = chunk_text(Path::new("lab10.ipynb"), &minified);
+    assert!(
+        fallback
+            .iter()
+            .all(|chunk| chunk.kind == ChunkKind::Fallback && chunk.structural_path.is_none())
+    );
+}
+
+#[test]
+fn only_the_first_chunk_of_a_long_section_starts_it() {
+    let body = (0..300)
+        .map(|line| format!("line {line}\n"))
+        .collect::<String>();
+    let markdown = format!("# Long\n{body}# Long\nshort\n");
+    let found = headings("long.md", &markdown);
+    let kinds = found
+        .iter()
+        .map(|(_, _, path, kind)| (path.as_deref() == Some("Long"), *kind))
+        .collect::<Vec<_>>();
+    assert_eq!(kinds[0], (true, ChunkKind::Heading));
+    assert!(
+        kinds[1..kinds.len() - 1]
+            .iter()
+            .all(|kind| *kind == (true, ChunkKind::Fallback))
+    );
+    assert_eq!(kinds.last(), Some(&(true, ChunkKind::Heading)));
+}

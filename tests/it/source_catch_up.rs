@@ -60,6 +60,80 @@ fn one_search_leads_to_a_fully_indexed_folder() {
     client.close_cleanly();
 }
 
+#[test]
+fn init_indexes_the_folder_before_any_search() {
+    let _one_source_test = crate::support::sources::source_test_guard();
+    let environment = TestEnvironment::from_fixture("basic").unwrap();
+    write_lessons(&environment);
+    let output = environment
+        .command()
+        .env("MAGNESIUM_NO_BACKGROUND_INDEX", "0")
+        .args(["init", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["indexing"], "started", "{report}");
+    wait_for_every_lesson(&environment, "init");
+}
+
+#[test]
+fn a_lesson_start_indexes_the_folder_without_a_search() {
+    let _one_source_test = crate::support::sources::source_test_guard();
+    let environment = TestEnvironment::from_fixture("basic").unwrap();
+    init(&environment);
+    write_lessons(&environment);
+    let mut client = McpClient::spawn_with_env(
+        &environment,
+        true,
+        &[("MAGNESIUM_NO_BACKGROUND_INDEX", "0")],
+    );
+    client.initialize();
+    wait_for_every_lesson(&environment, "a server start");
+    let found = client.call_value(2, "search_sources", json!({"query": "spaced retrieval"}));
+    let readable = found["files"]["readable"].as_i64().unwrap();
+    assert!(readable >= LESSONS, "{found}");
+    assert_eq!(found["files"]["indexed"], readable, "{found}");
+    assert!(
+        found["files"]["summary"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!(
+                "{readable} of {readable} readable files are indexed"
+            )),
+        "{found}"
+    );
+    client.close_cleanly();
+}
+
+fn write_lessons(environment: &TestEnvironment) {
+    let notes = environment.workspace.join("notes");
+    fs::create_dir_all(&notes).unwrap();
+    for index in 0..LESSONS {
+        fs::write(
+            notes.join(format!("lesson-{index:03}.md")),
+            format!("# Lesson {index}\n\nSpaced retrieval note {index}.\n"),
+        )
+        .unwrap();
+    }
+}
+
+fn wait_for_every_lesson(environment: &TestEnvironment, after: &str) {
+    let index = environment
+        .workspace
+        .join(crate::support::CONTROL_DIR)
+        .join("index/source-search.sqlite");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while lesson_progress(&index) != Some((LESSONS, false)) {
+        assert!(
+            Instant::now() < deadline,
+            "after {after}, with no search, (indexed lessons, scan in progress) stayed {:?}",
+            lesson_progress(&index)
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
 fn lesson_progress(index: &Path) -> Option<(i64, bool)> {
     let connection = Connection::open_with_flags(
         index,

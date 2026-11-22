@@ -379,7 +379,7 @@ fn catch_up_indexes_a_pdf_that_outlasts_a_search() {
         "pending"
     );
 
-    catch_up(&fixture.root, &slow, &mut Skipped::new()).expect("catch up after the search");
+    catch_up(&fixture.root, &slow, &mut Skipped::new(), false).expect("catch up after the search");
     assert_eq!(
         source_status(&fixture.index(), "slides/lecture.pdf"),
         "indexed"
@@ -417,7 +417,7 @@ fn catch_up_makes_files_searchable_before_discovery_finishes() {
         }))
     };
     let _scope = enter_request_cancellation(&watch);
-    catch_up(&fixture.root, &watch, &mut Skipped::new()).expect("catch up");
+    catch_up(&fixture.root, &watch, &mut Skipped::new(), false).expect("catch up");
     assert_eq!(
         *scanning_at_first_publication.lock().unwrap(),
         Some(true),
@@ -446,6 +446,7 @@ fn catch_up_continues_past_files_it_cannot_finish() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "indexed");
@@ -475,9 +476,72 @@ fn catch_up_reaches_a_file_after_a_full_window_of_newly_excluded_files() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "lesson.md"), "indexed");
+}
+
+#[test]
+fn catch_up_reaches_the_files_after_one_whose_reader_fails_unexpectedly() {
+    let fixture = Fixture::new("catch-up-reader-panics");
+    fixture.write("a-lesson.md", b"first lesson\n");
+    fixture.write("b-slides.pdf", &pdf_fixture());
+    fixture.write("c-lesson.md", b"last lesson\n");
+    finish_metadata_scan(&fixture, budget(8));
+    assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "pending");
+    let panics = |root: &Path, index: &Path, relative: &Path, token: &OperationCancellation| {
+        if relative != Path::new("b-slides.pdf") {
+            return super::extract_for_search(root, index, relative, token).map(drop);
+        }
+        super::super::manifest::extract::extract_source_with_pdf(root, index, relative, |_| {
+            panic!("a reader bug")
+        })
+        .map(drop)
+    };
+
+    catch_up_with(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut Skipped::new(),
+        false,
+        panics,
+    )
+    .expect("catch up");
+    assert_eq!(source_status(&fixture.index(), "c-lesson.md"), "indexed");
+    assert_eq!(source_status(&fixture.index(), "b-slides.pdf"), "failed");
+}
+
+#[test]
+fn catch_up_indexes_a_web_page_whose_heading_mixes_an_ampersand_and_curly_quotes() {
+    let fixture = Fixture::new("catch-up-ampersand-heading");
+    fixture.write(
+        "a-page.html",
+        "<h2>& “Quoted” — text</h2>\n<p>body</p>\n".as_bytes(),
+    );
+    fixture.write("b-lesson.md", b"lesson\n");
+    finish_metadata_scan(&fixture, budget(8));
+
+    catch_up(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut Skipped::new(),
+        false,
+    )
+    .expect("catch up");
+    assert_eq!(source_status(&fixture.index(), "a-page.html"), "indexed");
+    assert_eq!(source_status(&fixture.index(), "b-lesson.md"), "indexed");
+    let title: String = Connection::open(fixture.index())
+        .unwrap()
+        .query_row(
+            "SELECT structural_path FROM source_candidates candidate
+             JOIN source_manifest manifest USING (manifest_id)
+             WHERE manifest.display_path = 'a-page.html' AND candidate.status = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(title, "& “Quoted” — text");
 }
 
 #[test]
@@ -504,6 +568,7 @@ fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
             &fixture.root,
             &OperationCancellation::none(),
             &mut skipped,
+            false,
             times_out,
         )
         .unwrap_or_else(|error| panic!("run {run}: {error}"));
@@ -531,15 +596,22 @@ fn catch_up_does_not_retry_an_unchanged_pdf_that_timed_out() {
         budget(8),
     )
     .expect("a search's recheck records the change");
-    catch_up(&fixture.root, &OperationCancellation::none(), &mut skipped).expect("catch up");
+    catch_up(
+        &fixture.root,
+        &OperationCancellation::none(),
+        &mut skipped,
+        false,
+    )
+    .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "a-slow.pdf"), "indexed");
 }
 
 #[test]
-fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
+fn catch_up_finishes_a_recheck_in_progress_and_starts_one_only_when_a_lesson_starts() {
     let idle = Fixture::new("catch-up-no-recheck");
     let rechecking = Fixture::new("catch-up-recheck-in-progress");
-    for fixture in [&idle, &rechecking] {
+    let lesson_start = Fixture::new("catch-up-lesson-start");
+    for fixture in [&idle, &rechecking, &lesson_start] {
         for index in 0..6 {
             fixture.write(
                 &format!("lesson-{index}.md"),
@@ -556,13 +628,19 @@ fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
         budget(1),
     )
     .expect("a search starts a recheck");
-    let recheck = persisted_cursor(&rechecking.index());
+    assert_eq!(scan_active(&rechecking.index()), 1);
+    let generation = |fixture: &Fixture| {
+        crate::retrieval::manifest::current_generation(&fixture.index()).unwrap()
+    };
+    let before = generation(&lesson_start);
+    lesson_start.write("lesson-6.md", b"added after the first scan\n");
 
-    for fixture in [&idle, &rechecking] {
+    for (fixture, rescan) in [(&idle, false), (&rechecking, false), (&lesson_start, true)] {
         catch_up(
             &fixture.root,
             &OperationCancellation::none(),
             &mut Skipped::new(),
+            rescan,
         )
         .expect("catch up");
         for index in 0..6 {
@@ -571,12 +649,17 @@ fn catch_up_never_starts_or_finishes_a_recheck_after_a_full_scan() {
                 "indexed"
             );
         }
+        assert_eq!(scan_active(&fixture.index()), 0, "a recheck was left open");
     }
-    assert_eq!(scan_active(&idle.index()), 0, "catch-up started a recheck");
     assert_eq!(
-        persisted_cursor(&rechecking.index()),
-        recheck,
-        "catch-up moved the recheck in progress"
+        generation(&idle),
+        before,
+        "catch-up started a recheck nobody asked for"
+    );
+    assert_eq!(generation(&lesson_start), before + 1);
+    assert_eq!(
+        source_status(&lesson_start.index(), "lesson-6.md"),
+        "indexed"
     );
 }
 
@@ -599,6 +682,7 @@ fn catch_up_leaves_a_failed_source_and_indexes_the_rest() {
         &fixture.root,
         &OperationCancellation::none(),
         &mut Skipped::new(),
+        false,
     )
     .expect("catch up");
     assert_eq!(source_status(&fixture.index(), "b-lesson.md"), "indexed");
@@ -614,7 +698,13 @@ fn a_search_succeeds_when_catch_up_publishes_its_fallback_source_first() {
     let root = fixture.root.clone();
     let background = std::thread::spawn(move || {
         ready_rx.recv().unwrap();
-        catch_up(&root, &OperationCancellation::none(), &mut Skipped::new()).unwrap();
+        catch_up(
+            &root,
+            &OperationCancellation::none(),
+            &mut Skipped::new(),
+            false,
+        )
+        .unwrap();
         published_tx.send(()).unwrap();
     });
     let published_rx = std::sync::Mutex::new(published_rx);

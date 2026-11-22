@@ -256,6 +256,80 @@ pub(crate) fn stale_candidates(
 }
 
 pub(crate) const SOURCES_EXCERPT_CHAR_CAP: usize = 65_536;
+pub(crate) const MAX_LISTED_SECTIONS: usize = 2_000;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SectionFact {
+    pub(crate) heading: String,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+}
+
+pub(crate) struct FileSections {
+    pub(crate) sections: Vec<SectionFact>,
+    pub(crate) untitled_anchors: usize,
+    pub(crate) truncated: bool,
+}
+
+pub(crate) fn read_sections(
+    index_path: &Path,
+    row: &ManifestRow,
+) -> Result<FileSections, ManifestError> {
+    let connection = open_index(index_path)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT anchor_start, anchor_end, structural_path, chunk_kind FROM source_candidates
+             WHERE manifest_id = ?1 AND content_sha256 = ?2 AND status = 'current'
+             ORDER BY anchor_start, anchor_end, candidate_id",
+        )
+        .map_err(|error| sqlite(index_path, "read file sections", error))?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![
+                row.manifest_id,
+                row.content_sha256.as_deref().unwrap_or_default()
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|error| sqlite(index_path, "read file sections", error))?;
+    let mut listed = FileSections {
+        sections: Vec::new(),
+        untitled_anchors: 0,
+        truncated: false,
+    };
+    for found in rows {
+        let (start, end, path, kind) =
+            found.map_err(|error| sqlite(index_path, "read file sections", error))?;
+        let Some(heading) = path.filter(|path| *path != format!("page {start}")) else {
+            listed.untitled_anchors += 1;
+            continue;
+        };
+        let full = listed.sections.len() == MAX_LISTED_SECTIONS;
+        match listed.sections.last_mut() {
+            Some(last)
+                if last.heading == heading
+                    && kind != "heading"
+                    && (kind != "page" || start <= last.end.saturating_add(1)) =>
+            {
+                last.end = last.end.max(end);
+            }
+            _ if full => listed.truncated = true,
+            _ => listed.sections.push(SectionFact {
+                heading,
+                start,
+                end,
+            }),
+        }
+    }
+    Ok(listed)
+}
 
 pub(crate) struct ManifestRow {
     pub(crate) manifest_id: i64,
@@ -513,4 +587,217 @@ pub(crate) fn load_current_candidates(
     }
     cancellation.check()?;
     Ok(facts)
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FolderFiles {
+    pub(crate) indexed: usize,
+    pub(crate) readable: usize,
+    pub(crate) waiting: usize,
+    pub(crate) first_scan_done: bool,
+    pub(crate) rechecking: bool,
+    pub(crate) ignored: usize,
+    pub(crate) unreadable: Vec<UnreadableGroup>,
+    pub(crate) page_code: Vec<(String, usize)>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UnreadableGroup {
+    pub(crate) kind: &'static str,
+    pub(crate) count: usize,
+    pub(crate) folders: Vec<(String, usize)>,
+    pub(crate) examples: Vec<String>,
+}
+
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp", "svg",
+];
+const DOCUMENT_EXTENSIONS: &[&str] = &[
+    "doc", "docx", "ppt", "pptx", "key", "pages", "xls", "xlsx", "numbers", "odt", "odp", "ods",
+    "rtf", "epub", "djvu",
+];
+const PAGE_CODE_EXTENSIONS: &[&str] = &["css", "scss", "less", "js", "mjs", "cjs", "map"];
+const PAGE_CODE_FOLDERS: &[&str] = &["_assets", "site_libs", "libs", "assets", "static", "vendor"];
+const PRIVATE_GROUPS: &[&str] = &["name_word", "password_like"];
+const LISTED_FOLDERS: usize = 3;
+const LISTED_EXAMPLES: usize = 3;
+const LISTED_PAGE_CODE: usize = 5;
+const PAGE_CODE_FLOOR: usize = 5;
+
+fn extension(path: &str) -> String {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn parent(path: &str) -> String {
+    Path::new(path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .filter(|parent| !parent.is_empty())
+        .unwrap_or_else(|| ".".to_owned())
+}
+
+fn page_code_folder(path: &str) -> Option<String> {
+    let parts = path.split('/').collect::<Vec<_>>();
+    parts
+        .iter()
+        .take(parts.len().saturating_sub(1))
+        .position(|part| PAGE_CODE_FOLDERS.contains(part) || part.ends_with("_files"))
+        .map(|at| parts[..=at].join("/"))
+}
+
+pub(crate) fn folder_files(index_path: &Path) -> Result<FolderFiles, ManifestError> {
+    let connection = open_index(index_path)?;
+    let mut files = FolderFiles {
+        first_scan_done: connection
+            .query_row(
+                "SELECT generation > 0 FROM source_index_metadata WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite(index_path, "read folder coverage", error))?,
+        rechecking: connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM source_reconciliation_state)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite(index_path, "read folder coverage", error))?,
+        ..FolderFiles::default()
+    };
+    let mut statement = connection
+        .prepare(
+            "SELECT display_path, source_kind, index_status, coalesce(exclusion_reason, ''),
+                    source_kind = 'pdf' AND index_status = 'indexed' AND NOT EXISTS(
+                        SELECT 1 FROM source_candidates candidate
+                        WHERE candidate.manifest_id = manifest.manifest_id
+                          AND candidate.status = 'current'
+                          AND length(trim(coalesce(candidate.body, ''))) > 0),
+                    source_kind = 'pdf' AND index_status = 'indexed' AND NOT EXISTS(
+                        SELECT 1 FROM source_candidates candidate
+                        WHERE candidate.manifest_id = manifest.manifest_id
+                          AND candidate.status = 'current'
+                          AND candidate.structural_path NOT LIKE 'page %')
+             FROM source_manifest manifest
+             WHERE present = 1 AND file_size IS NOT NULL
+             ORDER BY display_path COLLATE BINARY",
+        )
+        .map_err(|error| sqlite(index_path, "read folder coverage", error))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, bool>(4)?,
+                row.get::<_, bool>(5)?,
+            ))
+        })
+        .map_err(|error| sqlite(index_path, "read folder coverage", error))?;
+    let mut groups: HashMap<&'static str, Vec<String>> = HashMap::new();
+    let mut page_code: HashMap<String, usize> = HashMap::new();
+    for row in rows {
+        let (path, kind, status, reason, scan, untitled) =
+            row.map_err(|error| sqlite(index_path, "read folder coverage", error))?;
+        let group = match (kind.as_str(), status.as_str(), reason.as_str()) {
+            ("text" | "pdf", status, _) => {
+                files.readable += 1;
+                match status {
+                    "indexed" => {
+                        files.indexed += 1;
+                        if PAGE_CODE_EXTENSIONS.contains(&extension(&path).as_str()) {
+                            *page_code
+                                .entry(page_code_folder(&path).unwrap_or_else(|| parent(&path)))
+                                .or_insert(0) += 1;
+                        }
+                        if scan {
+                            Some("scan")
+                        } else if untitled {
+                            Some("no_titles")
+                        } else {
+                            None
+                        }
+                    }
+                    "failed" => Some("failed"),
+                    _ => {
+                        files.waiting += 1;
+                        None
+                    }
+                }
+            }
+            (_, _, "unsupported") => {
+                let extension = extension(&path);
+                Some(if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+                    "image"
+                } else if DOCUMENT_EXTENSIONS.contains(&extension.as_str()) {
+                    "document"
+                } else {
+                    "other"
+                })
+            }
+            (_, _, "sensitive") => Some("name_word"),
+            (_, _, "sensitive_content" | "sensitive_extracted") => Some("password_like"),
+            (_, _, "too_large") => Some("too_large"),
+            (_, _, "symlink") => Some("link"),
+            (_, _, "unreadable") => Some("unreadable"),
+            (_, _, "magnesiumignore") => {
+                files.ignored += 1;
+                None
+            }
+            _ => None,
+        };
+        if let Some(group) = group {
+            groups.entry(group).or_default().push(path);
+        }
+    }
+    let mut unreadable = groups
+        .into_iter()
+        .map(|(kind, paths)| {
+            if PRIVATE_GROUPS.contains(&kind) {
+                return UnreadableGroup {
+                    kind,
+                    count: paths.len(),
+                    folders: Vec::new(),
+                    examples: Vec::new(),
+                };
+            }
+            let mut folders: HashMap<String, usize> = HashMap::new();
+            for path in &paths {
+                *folders.entry(parent(path)).or_insert(0) += 1;
+            }
+            let mut folders = folders.into_iter().collect::<Vec<_>>();
+            folders.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            folders.truncate(LISTED_FOLDERS);
+            let mut examples = paths
+                .iter()
+                .filter(|path| page_code_folder(path).is_none())
+                .cloned()
+                .collect::<Vec<_>>();
+            if examples.is_empty() {
+                examples = paths.clone();
+            }
+            examples.sort_by_key(|path| (path.matches('/').count(), path.clone()));
+            examples.truncate(LISTED_EXAMPLES);
+            UnreadableGroup {
+                kind,
+                count: paths.len(),
+                folders,
+                examples,
+            }
+        })
+        .collect::<Vec<_>>();
+    unreadable.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.kind.cmp(b.kind)));
+    files.unreadable = unreadable;
+    let mut page_code = page_code
+        .into_iter()
+        .filter(|(_, count)| *count >= PAGE_CODE_FLOOR)
+        .collect::<Vec<_>>();
+    page_code.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    page_code.truncate(LISTED_PAGE_CODE);
+    files.page_code = page_code;
+    Ok(files)
 }

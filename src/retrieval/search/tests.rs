@@ -425,7 +425,7 @@ fn corpus_query_uses_keyed_ranking_projection_joins() {
         let ids = connection
             .prepare(SOURCE_QUERY_SQL)
             .unwrap()
-            .query_map(arguments(), |row| row.get::<_, String>(0))
+            .query_map(arguments(), |row| row.get::<_, i64>(0))
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap();
@@ -437,7 +437,7 @@ fn corpus_query_uses_keyed_ranking_projection_joins() {
             ids,
             (0..documents)
                 .step_by(2)
-                .map(|index| format!("{index:064x}"))
+                .map(|index| index + 1)
                 .collect::<Vec<_>>()
         );
         let count = callbacks.load(Ordering::Relaxed);

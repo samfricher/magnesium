@@ -322,7 +322,7 @@ pub(crate) fn export_learner_data(root: &Path, options: &ExportOptions) -> Resul
                     if bytes.len() > 16 * 1024 * 1024 {
                         return Err(CopyFailure::Unavailable("source_too_large".into()));
                     }
-                    if crate::retrieval::sensitive_content(&bytes).is_some() {
+                    if crate::retrieval::text_sensitivity(relative, &bytes).is_some() {
                         return Err(CopyFailure::Unavailable("sensitive_source_content".into()));
                     }
                     use sha2::Digest;

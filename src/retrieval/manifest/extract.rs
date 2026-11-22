@@ -5,7 +5,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
-use super::pdf::{extract_pdf_from_file, read_bounded_with_cancellation};
+use super::pdf::{extract_pdf_with_layout, read_bounded_with_cancellation};
+use super::pdf_layout::{PdfLayout, page_titles};
 use super::publication::{PreparedOutcome, prepare_extraction, publish_extraction};
 use super::schema::open_index_for_write;
 use super::source::{OpenSource, open_workspace_source};
@@ -13,7 +14,7 @@ use super::{
     AnchorKind, CurrentSource, ManifestError, SourceCandidate, hex_digest, io_error, json_column,
     sha256_hex, sqlite,
 };
-use crate::retrieval::chunking::{ChunkDraft, ChunkKind, chunk_text, page_chunk};
+use crate::retrieval::chunking::{ChunkDraft, ChunkKind, chunk_text, page_chunk, plain_text};
 use crate::retrieval::{MAX_PDF_SOURCE_BYTES, MAX_SOURCE_BYTES, SensitivityClass};
 use crate::workspace::native_path_key;
 
@@ -159,14 +160,22 @@ pub(crate) fn extract_source_with_hooks(
     let cancellation = cancellation.unwrap_or(&fallback_cancellation);
     let source_file = open_workspace_source(workspace_root, relative_path, after_open)?;
     cancellation.check()?;
-    let extracted = prepare_source_content(
-        workspace_root,
-        relative_path,
-        &source,
-        source_file,
-        custom_pdf_extractor,
-        Some(cancellation),
-    );
+    let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        prepare_source_content(
+            workspace_root,
+            relative_path,
+            &source,
+            source_file,
+            custom_pdf_extractor,
+            Some(cancellation),
+        )
+    }))
+    .unwrap_or_else(|_| {
+        Err(ManifestError::Invalid(format!(
+            "{} could not be read: the reader for this kind of file failed on it",
+            relative_path.display()
+        )))
+    });
     let (outcome, converter) = match extracted {
         Ok(extracted) => extracted,
         Err(
@@ -264,15 +273,20 @@ fn prepare_source_content(
             if let Some(sensitivity) = sensitive_content(&bytes) {
                 return Ok((PdfOutcome::Sensitive(sensitivity), None));
             }
-            String::from_utf8(bytes)
-                .map(|text| chunk_text(relative_path, &text))
-                .map_err(|_| {
-                    ManifestError::Invalid(format!(
-                        "{} is not valid UTF-8 text",
-                        relative_path.display()
-                    ))
-                })
-                .map(|drafts| (PdfOutcome::Drafts(drafts), None))
+            let text = String::from_utf8(bytes).map_err(|_| {
+                ManifestError::Invalid(format!(
+                    "{} is not valid UTF-8 text",
+                    relative_path.display()
+                ))
+            })?;
+            let drafts = chunk_text(relative_path, &text);
+            Ok((
+                match extracted_sensitivity(relative_path, &text, &drafts) {
+                    Some(sensitivity) => PdfOutcome::Sensitive(sensitivity),
+                    None => PdfOutcome::Drafts(drafts),
+                },
+                None,
+            ))
         }
         "pdf" => {
             if let Some(custom) = custom_pdf_extractor {
@@ -299,7 +313,7 @@ fn prepare_source_content(
                     cancellation.check()?;
                 }
                 pages
-                    .and_then(native_pages_to_drafts)
+                    .and_then(|pages| native_pages_to_drafts(pages, None))
                     .map(|outcome| (outcome, None))
             } else {
                 use std::io::{Seek, SeekFrom, Write};
@@ -359,18 +373,19 @@ fn prepare_source_content(
                 snapshot_file
                     .seek(SeekFrom::Start(0))
                     .map_err(|source| io_error("rewind pdf snapshot", &snapshot_path, source))?;
-                let native = extract_pdf_from_file(snapshot_file, cancellation);
+                let native = extract_pdf_with_layout(snapshot_file, cancellation);
                 let worker = super::convert::worker_config_from_env();
                 match try_worker_for_blank_pdf(
                     source,
-                    &native,
+                    native.as_ref().ok().map(|(pages, _)| pages.as_slice()),
                     &snapshot_path,
                     worker.as_ref(),
                     cancellation,
                 )? {
                     Some((outcome, provenance)) => Ok((outcome, provenance)),
                     None => match native {
-                        Ok(pages) => native_pages_to_drafts(pages).map(|outcome| (outcome, None)),
+                        Ok((pages, layout)) => native_pages_to_drafts(pages, Some(&layout))
+                            .map(|outcome| (outcome, None)),
                         Err(error) => Err(error),
                     },
                 }
@@ -390,33 +405,64 @@ pub(super) enum PdfOutcome {
     Drafts(Vec<ChunkDraft>),
 }
 
-fn native_pages_to_drafts(pages: Vec<String>) -> Result<PdfOutcome, ManifestError> {
+fn native_pages_to_drafts(
+    pages: Vec<String>,
+    layout: Option<&PdfLayout>,
+) -> Result<PdfOutcome, ManifestError> {
     if let Some(sensitivity) = pages
         .iter()
         .find_map(|page| sensitive_content(page.as_bytes()))
     {
         return Ok(PdfOutcome::Sensitive(sensitivity));
     }
-    Ok(PdfOutcome::Drafts(
-        pages
-            .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                let page = u32::try_from(index + 1).expect("PDF page limit fits u32");
-                page_chunk(page, text)
-            })
-            .collect(),
-    ))
+    let titles = layout.map_or_else(Vec::new, |layout| page_titles(layout, pages.len()));
+    let drafts = pages
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let page = u32::try_from(index + 1).expect("PDF page limit fits u32");
+            page_chunk(page, text, titles.get(index).cloned().flatten())
+        })
+        .collect::<Vec<_>>();
+    Ok(match drafts_sensitivity(&drafts) {
+        Some(sensitivity) => PdfOutcome::Sensitive(sensitivity),
+        None => PdfOutcome::Drafts(drafts),
+    })
+}
+
+fn drafts_sensitivity(drafts: &[ChunkDraft]) -> Option<SensitivityClass> {
+    drafts.iter().find_map(|draft| {
+        sensitive_content(draft.body.as_bytes()).or_else(|| {
+            let titles = draft.structural_path.as_deref()?.replace(" > ", "\n");
+            sensitive_content(titles.as_bytes())
+        })
+    })
+}
+
+fn extracted_sensitivity(
+    path: &Path,
+    text: &str,
+    drafts: &[ChunkDraft],
+) -> Option<SensitivityClass> {
+    drafts_sensitivity(drafts)
+        .or_else(|| plain_text(path, text).and_then(|plain| sensitive_content(plain.as_bytes())))
+}
+
+pub(crate) fn text_sensitivity(path: &Path, bytes: &[u8]) -> Option<SensitivityClass> {
+    sensitive_content(bytes).or_else(|| {
+        let text = std::str::from_utf8(bytes).ok()?;
+        extracted_sensitivity(path, text, &chunk_text(path, text))
+    })
 }
 
 pub(super) fn try_worker_for_blank_pdf(
     source: &CurrentSource,
-    native: &Result<Vec<String>, ManifestError>,
+    native: Option<&[String]>,
     snapshot_path: &Path,
     worker: Option<&super::convert::WorkerConfig>,
     cancellation: Option<&crate::retrieval::OperationCancellation>,
 ) -> Result<Option<(PdfOutcome, Option<super::convert::ConverterProvenance>)>, ManifestError> {
-    let Ok(pages) = native else {
+    let Some(pages) = native else {
         return Ok(None);
     };
     if pages.iter().any(|page| !page.trim().is_empty()) {
@@ -460,7 +506,7 @@ pub(super) fn try_worker_for_blank_pdf(
             extraction
                 .blocks
                 .into_iter()
-                .map(|block| page_chunk(block.anchor_start, block.text))
+                .map(|block| page_chunk(block.anchor_start, block.text, None))
                 .collect(),
         ),
         Some(provenance),

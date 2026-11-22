@@ -20,49 +20,52 @@ const SOURCE_QUERY_SQL: &str = r#"WITH ranked_matches AS MATERIALIZED (
                  FROM source_search_ranked
                  WHERE source_search_ranked MATCH ?1
              )
-             SELECT candidate.candidate_id, manifest.display_path,
-                    candidate.content_sha256, candidate.anchor_kind,
-                    candidate.anchor_start, candidate.anchor_end, candidate.body,
-                    candidate.chunk_kind, candidate.structural_path, candidate.language,
-                    candidate.definitions_json, candidate.imports_json,
-                    candidate.references_json,
+             SELECT candidate.candidate_no, manifest.display_path,
                     manifest.display_path = ?2 AS exact_path_match,
                     coalesce((candidate.structural_path = ?2 COLLATE NOCASE
-                     OR EXISTS(
+                     OR (candidate.definitions_json != '[]' AND EXISTS(
                          SELECT 1 FROM json_each(candidate.definitions_json)
                          WHERE json_extract(value, '$.name') = ?2 COLLATE NOCASE
-                     )
-                     OR EXISTS(
+                     ))
+                     OR (candidate.imports_json != '[]' AND EXISTS(
                          SELECT 1 FROM json_each(candidate.imports_json) AS source_import
                          WHERE json_extract(source_import.value, '$.module') = ?2 COLLATE NOCASE
                             OR EXISTS(
                                 SELECT 1 FROM json_each(source_import.value, '$.names')
                                 WHERE value = ?2 COLLATE NOCASE
                             )
-                     )
-                     OR EXISTS(
+                     ))
+                     OR (candidate.references_json != '[]' AND EXISTS(
                          SELECT 1 FROM json_each(candidate.references_json)
                          WHERE json_extract(value, '$.name') = ?2 COLLATE NOCASE
-                     )), 0) AS exact_identifier_match,
-                    CASE WHEN source_search_ranked.rowid IS NULL THEN source_search.rowid IN (
-                        SELECT rowid FROM source_search WHERE source_search MATCH ?9
-                    ) ELSE source_search_ranked.rowid IN (
-                        SELECT rowid FROM source_search_ranked
-                        WHERE source_search_ranked MATCH ?9
-                    ) END AS phrase_match,
-                    CASE WHEN source_search_ranked.rowid IS NULL THEN source_search.rowid IN (
-                        SELECT rowid FROM source_search WHERE source_search MATCH ?10
-                    ) ELSE source_search_ranked.rowid IN (
-                        SELECT rowid FROM source_search_ranked
-                        WHERE source_search_ranked MATCH ?10
-                    ) END AS full_token_match
+                     ))), 0) AS exact_identifier_match,
+                    CASE WHEN candidate.candidate_no IN (
+                             SELECT rowid FROM source_search_ranked
+                             WHERE source_search_ranked MATCH ?9
+                         ) THEN 1
+                         WHEN candidate.candidate_no IN (
+                             SELECT rowid FROM source_search WHERE source_search MATCH ?9
+                         ) THEN NOT EXISTS(
+                             SELECT 1 FROM source_search_ranked
+                             WHERE source_search_ranked.rowid = candidate.candidate_no
+                         )
+                         ELSE 0 END AS phrase_match,
+                    CASE WHEN candidate.candidate_no IN (
+                             SELECT rowid FROM source_search_ranked
+                             WHERE source_search_ranked MATCH ?10
+                         ) THEN 1
+                         WHEN candidate.candidate_no IN (
+                             SELECT rowid FROM source_search WHERE source_search MATCH ?10
+                         ) THEN NOT EXISTS(
+                             SELECT 1 FROM source_search_ranked
+                             WHERE source_search_ranked.rowid = candidate.candidate_no
+                         )
+                         ELSE 0 END AS full_token_match
              FROM source_search
              JOIN source_candidates candidate
                ON candidate.candidate_no = source_search.rowid
              JOIN source_manifest manifest
                ON manifest.manifest_id = candidate.manifest_id
-             LEFT JOIN source_search_ranked
-               ON source_search_ranked.rowid = candidate.candidate_no
              LEFT JOIN ranked_matches
                ON ranked_matches.candidate_no = candidate.candidate_no
              WHERE source_search MATCH ?1
@@ -81,6 +84,11 @@ const SOURCE_QUERY_SQL: &str = r#"WITH ranked_matches AS MATERIALIZED (
                       ),
                       manifest.display_path COLLATE BINARY,
                       candidate.anchor_start, candidate.candidate_id"#;
+
+const SOURCE_FETCH_SQL: &str = r#"SELECT candidate_id, content_sha256, anchor_kind, anchor_start, anchor_end,
+                    body, chunk_kind, structural_path, language,
+                    definitions_json, imports_json, references_json
+             FROM source_candidates WHERE candidate_no = ?1"#;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceSearchRequest {
@@ -373,76 +381,80 @@ fn query_index_with_budget(
     })?;
     #[cfg(test)]
     crate::request::test_checkpoint("source_query_ranking");
-    let rows = statement
-        .query_map(
-            params![
-                plan.candidates,
-                raw_query,
-                scope.as_ref(),
-                scope_like,
-                path_prefix.as_ref(),
-                path_prefix_like,
-                allowed_source_paths.is_some(),
-                allowed_paths,
-                plan.phrase,
-                plan.full_tokens,
-            ],
-            |row| {
-                let anchor_kind = row.get::<_, String>(3)?;
-                let chunk_kind = row.get::<_, String>(7)?;
-                Ok((
-                    SourceCandidate {
-                        candidate_id: row.get(0)?,
-                        path: row.get(1)?,
-                        content_sha256: row.get(2)?,
-                        anchor_kind: if anchor_kind == "page" {
-                            AnchorKind::Page
-                        } else {
-                            AnchorKind::Line
-                        },
-                        anchor_start: row.get(4)?,
-                        anchor_end: row.get(5)?,
-                        body: row.get(6)?,
-                        chunk_kind: ChunkKind::parse(&chunk_kind).ok_or_else(|| {
-                            rusqlite::Error::InvalidColumnType(
-                                7,
-                                "chunk_kind".to_owned(),
-                                rusqlite::types::Type::Text,
-                            )
-                        })?,
-                        structural_path: row.get(8)?,
-                        language: row.get(9)?,
-                        definitions: json_column(row, 10)?,
-                        imports: json_column(row, 11)?,
-                        references: json_column(row, 12)?,
-                    },
-                    row.get::<_, bool>(13)?,
-                    row.get::<_, bool>(14)?,
-                    row.get::<_, bool>(15)?,
-                    row.get::<_, bool>(16)?,
-                ))
-            },
-        )
+    let mut fetch = connection.prepare(SOURCE_FETCH_SQL).map_err(|source| {
+        sqlite_or_interrupted(index_path, "prepare ranked source fetch", source, &reason)
+    })?;
+    let mut rows = statement
+        .query(params![
+            plan.candidates,
+            raw_query,
+            scope.as_ref(),
+            scope_like,
+            path_prefix.as_ref(),
+            path_prefix_like,
+            allowed_source_paths.is_some(),
+            allowed_paths,
+            plan.phrase,
+            plan.full_tokens,
+        ])
         .map_err(|source| {
             sqlite_or_interrupted(index_path, "query lexical source search", source, &reason)
         })?;
     let mut hits = Vec::with_capacity(request.limit);
-    for row in rows {
-        let (candidate, exact_path, exact_identifier, phrase_match, full_token_match) = row
-            .map_err(|source| {
-                sqlite_or_interrupted(index_path, "read lexical source search", source, &reason)
-            })?;
+    while let Some(row) = rows.next().map_err(|source| {
+        sqlite_or_interrupted(index_path, "read lexical source search", source, &reason)
+    })? {
+        let read = |source| sqlite(index_path, "read lexical source search", source);
+        let candidate_no: i64 = row.get(0).map_err(read)?;
+        let path: String = row.get(1).map_err(read)?;
+        let exact_path: bool = row.get(2).map_err(read)?;
+        let exact_identifier: bool = row.get(3).map_err(read)?;
+        let phrase_match: bool = row.get(4).map_err(read)?;
+        let full_token_match: bool = row.get(5).map_err(read)?;
         cancellation.check()?;
         if std::time::Instant::now() >= deadline {
             return Err(ManifestError::BudgetExhausted);
         }
-        if super::source_relative_path_is_excluded(workspace_root, Path::new(&candidate.path))? {
+        if super::source_relative_path_is_excluded(workspace_root, Path::new(&path))? {
             continue;
         }
         cancellation.check()?;
         if std::time::Instant::now() >= deadline {
             return Err(ManifestError::BudgetExhausted);
         }
+        let candidate = fetch
+            .query_row([candidate_no], |row| {
+                let anchor_kind = row.get::<_, String>(2)?;
+                let chunk_kind = row.get::<_, String>(6)?;
+                Ok(SourceCandidate {
+                    candidate_id: row.get(0)?,
+                    path: path.clone(),
+                    content_sha256: row.get(1)?,
+                    anchor_kind: if anchor_kind == "page" {
+                        AnchorKind::Page
+                    } else {
+                        AnchorKind::Line
+                    },
+                    anchor_start: row.get(3)?,
+                    anchor_end: row.get(4)?,
+                    body: row.get(5)?,
+                    chunk_kind: ChunkKind::parse(&chunk_kind).ok_or_else(|| {
+                        rusqlite::Error::InvalidColumnType(
+                            6,
+                            "chunk_kind".to_owned(),
+                            rusqlite::types::Type::Text,
+                        )
+                    })?,
+                    structural_path: row.get(7)?,
+                    language: row.get(8)?,
+                    definitions: json_column(row, 9)?,
+                    imports: json_column(row, 10)?,
+                    references: json_column(row, 11)?,
+                })
+            })
+            .map_err(|source| {
+                sqlite_or_interrupted(index_path, "fetch ranked source candidate", source, &reason)
+            })?;
         hits.push(SourceSearchHit {
             candidate,
             signals: LexicalMatchSignals {

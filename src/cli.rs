@@ -227,6 +227,7 @@ pub(crate) fn command() -> ClapCommand {
                         ),
                 )
                 .subcommand(ClapCommand::new("extract-pdf"))
+                .subcommand(ClapCommand::new("index"))
                 .subcommand(
                     ClapCommand::new("hook")
                         .arg(Arg::new("plugin-version").long("plugin-version"))

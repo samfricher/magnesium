@@ -168,7 +168,7 @@ where
         if work.name == "search_sources"
             && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&cwd)
         {
-            crate::retrieval::catch_up::schedule(workspace.root());
+            crate::retrieval::catch_up::schedule(workspace.root(), false);
         }
         #[cfg(test)]
         if let Some(hooks) = &work.hooks {
@@ -374,6 +374,15 @@ pub(crate) fn run(
         plugin_version,
         protocol_version,
     });
+    if crate::retrieval::background_indexing_on()
+        && let Some(root) = server
+            .bound_root
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+        && let Ok(Some(workspace)) = crate::workspace::Workspace::discover(&root)
+    {
+        crate::retrieval::catch_up::schedule(workspace.root(), true);
+    }
     let result = runtime.block_on(async {
         let service = server
             .serve(BoundedStdio::new())

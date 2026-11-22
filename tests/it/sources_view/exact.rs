@@ -517,27 +517,6 @@ fn scan_cursor(environment: &TestEnvironment) -> Option<(i64, String)> {
     ).optional().unwrap()
 }
 
-fn wait_for_background_indexing(environment: &TestEnvironment) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        let pending: i64 = source_index(environment)
-            .query_row(
-                "SELECT count(*) FROM source_manifest WHERE present = 1 AND index_status = 'pending'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        if pending == 0 {
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "{pending} sources still wait for background indexing"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-}
-
 fn unrelated_manifest(environment: &TestEnvironment) -> Vec<Value> {
     let index = source_index(environment);
     let mut statement = index.prepare(
@@ -581,6 +560,19 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
         )
         .unwrap();
     }
+    let background = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(
+            environment
+                .workspace
+                .join(crate::support::CONTROL_DIR)
+                .join("index/indexer.lock"),
+        )
+        .unwrap();
+    background.lock().unwrap();
     let discovery = client.call_value(
         20,
         "search_sources",
@@ -588,7 +580,6 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
     );
     assert!(discovery["hits"].is_array(), "{discovery}");
     let cursor = scan_cursor(&environment).expect("unrestricted scan must remain active");
-    wait_for_background_indexing(&environment);
     let manifest_before = unrelated_manifest(&environment);
     assert!(
         manifest_before
@@ -609,6 +600,7 @@ fn exact_preparation_preserves_unrestricted_cursor_and_unrelated_deletion() {
         manifest_before,
         "selected preparation changed unrelated manifest state"
     );
+    background.unlock().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut attempt = 0;
     loop {

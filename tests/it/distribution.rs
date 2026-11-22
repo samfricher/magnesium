@@ -15,8 +15,10 @@ fn selected_native_content_dependencies_work_without_sidecars() {
     assert!(pages[1].contains("Beta page anchor"));
 
     let runtime_pages = runtime_pdf_pages(&pdf);
-    assert!(runtime_pages[0].contains("Alpha page anchor"));
-    assert!(runtime_pages[1].contains("Beta page anchor"));
+    assert_eq!(
+        runtime_pages, pages,
+        "the runtime reads the same page text as the library"
+    );
 }
 
 fn runtime_pdf_pages(pdf: &[u8]) -> Vec<String> {
@@ -54,7 +56,8 @@ fn runtime_pdf_pages(pdf: &[u8]) -> Vec<String> {
     assert_eq!(payload.len(), length, "complete PDF frame");
     let reply: Value = serde_json::from_slice(payload).expect("PDF frame JSON");
     assert_eq!(reply["outcome"], "pages");
-    assert_eq!(reply.as_object().expect("PDF reply").len(), 2);
+    assert_eq!(reply.as_object().expect("PDF reply").len(), 3);
+    assert!(reply["layout"]["tops"].is_array(), "{reply}");
     reply["pages"]
         .as_array()
         .expect("PDF pages")
