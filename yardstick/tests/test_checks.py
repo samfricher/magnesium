@@ -76,6 +76,13 @@ class Scenes(unittest.TestCase):
         tools = ["mcp__m__context", "Read", "mcp__m__learning_step", "mcp__m__reply", "mcp__m__learning_step"]
         out = check_scenes.decide({"kind": "tool_calls", "turn": 1}, [turn("x", None, tools)], FakeAdapter(), None)
         self.assertEqual((out["tool_calls"], out["runtime_calls"], out["turn_calls"]), (3, 2, 5))
+        self.assertIsNone(out["pass"])
+        sized = dict(turn("x", None, tools), tool_chars=[100, 2000, 300, 5, 5])
+        capped = check_scenes.decide({"kind": "tool_calls", "turn": 1, "most": 0}, [sized], FakeAdapter(), None)
+        self.assertFalse(capped["pass"])
+        self.assertEqual(capped["chars_before_reply"], 2400)
+        none = check_scenes.decide({"kind": "tool_calls", "turn": 1, "most": 0}, [turn("x", None, ["mcp__m__reply"])], FakeAdapter(), None)
+        self.assertTrue(none["pass"])
 
     def test_the_test_date_moves(self):
         folder = Path(tempfile.mkdtemp())
@@ -90,7 +97,8 @@ class Scenes(unittest.TestCase):
         spec = __import__("json").loads((HERE / "dummy" / "course" / "scenes.json").read_text())
         self.assertEqual(len(spec["scenes"]), 7)
         for scene in spec["scenes"]:
-            self.assertTrue(scene["messages"] and scene["decide"], scene["id"])
+            self.assertTrue(scene["messages"] and scene["decide"] and scene["from"], scene["id"])
+        self.assertEqual({s["id"] for s in spec["scenes"] if s.get("guard")}, {"side-question", "due-checks"})
 
 
 class SignIn(unittest.TestCase):

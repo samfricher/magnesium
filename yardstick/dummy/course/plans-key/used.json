@@ -7,7 +7,7 @@
    "sections": [
     "A"
    ],
-   "kind": "teach_first",
+   "kind": "test_first",
    "listed": [
     "2.1",
     "2.3",
@@ -22,7 +22,7 @@
    "sections": [
     "B"
    ],
-   "kind": "teach_first",
+   "kind": "test_first",
    "listed": [
     "2.5",
     "2.7",
@@ -37,7 +37,7 @@
    "sections": [
     "C"
    ],
-   "kind": "teach_first",
+   "kind": "test_first",
    "listed": [
     "2.9",
     "2.10",
@@ -53,7 +53,7 @@
    "sections": [
     "D"
    ],
-   "kind": "teach_first",
+   "kind": "test_first",
    "listed": [
     "2.15",
     "2.17"

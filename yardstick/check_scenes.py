@@ -98,12 +98,16 @@ def decide(rule: dict, turns: list[dict], adapter, judge: Judge | None) -> dict:
                         f"runtime sees a quick check open {runtime}; names a due skill as a check {named}"}
     if kind == "tool_calls":
         tools = turns[n - 1]["tools"]
+        chars = turns[n - 1].get("tool_chars") or [0] * len(tools)
         first = next((i for i, t in enumerate(tools) if adapter.is_reply_tool(t)), len(tools))
         before = tools[:first]
         runtime = [t for t in before if adapter.is_runtime_tool(t)]
-        return {"kind": kind, "how": "recorded", "pass": None,
-                "fact": f"{len(before)} tool calls before the reply ({len(runtime)} Magnesium), {len(tools)} in the turn",
-                "tool_calls": len(before), "runtime_calls": len(runtime), "turn_calls": len(tools), "tools": tools}
+        back = sum(chars[:first])
+        most = rule.get("most")
+        return {"kind": kind, "how": "recorded" if most is None else "mechanical", "pass": None if most is None else len(before) <= most,
+                "fact": f"{len(before)} tool calls before the reply ({len(runtime)} Magnesium, {back:,} characters back), {len(tools)} in the turn"
+                        + ("" if most is None else f"; at most {most} allowed"),
+                "tool_calls": len(before), "runtime_calls": len(runtime), "chars_before_reply": back, "turn_calls": len(tools), "tools": tools}
     if kind == "stated_due_checks":
         stated = rule.get("stated") or {}
         due = stated.get("hook_due")
@@ -138,7 +142,9 @@ def play(args, adapter, fixture: Fixture, scene: dict, number: int, judge: Judge
             reply = conversation.say(message, timeout=args.turn_timeout)
             add_usage(usage, reply.usage)
             said = "\n".join(t for t in (adapter.tutor_text(x["name"], x["input"]) for x in reply.tools) if t) or reply.text
+            sizes = {r["id"]: r["chars"] for r in reply.results}
             turns.append({"learner": message, "tutor": said, "tools": [x["name"] for x in reply.tools],
+                          "tool_chars": [sizes.get(x["id"], 0) for x in reply.tools],
                           "seconds": round(reply.seconds, 1), "usage": reply.usage, "cost_usd": reply.cost_usd,
                           "error": reply.error, "state": adapter.lesson(place)})
             if reply.error:
@@ -226,16 +232,19 @@ def scored(args, adapter, fixture: Fixture, scenes: list[dict], sections: list[d
         passed = sum(1 for r in mine if r["pass"])
         how = sorted({h for r in mine for h in r["how"]})
         facts = [d for r in mine for d in r["decisions"] if d["kind"] == "tool_calls"]
-        extra = f"; tool calls to pick up: {', '.join(str(d['tool_calls']) for d in facts)}" if facts else ""
+        extra = (f"; tool calls to pick up: {', '.join(str(d['tool_calls']) for d in facts)}"
+                 f" ({', '.join(format(d.get('chars_before_reply', 0), ',') for d in facts)} characters)") if facts else ""
         errors = [r["error"] for r in mine if r.get("error")]
         unset = len(everything) - len(mine) - len(errors)
         note = (f"errors: {len(errors)}" if errors else "") + extra
         if unset:
             note += f"{'; ' if note else ''}{unset} not counted: the runtime stated no due checks (no new sitting)"
+        if scene.get("guard"):
+            note = "guard" + (f"; {note}" if note else "")
         rows.append([scene["id"], scene["title"], f"{passed} of {len(mine)}", " and ".join(how) or "none", note])
-        summary.append({"scene": scene["id"], "title": scene["title"], "passed": passed, "runs": len(mine),
+        summary.append({"scene": scene["id"], "title": scene["title"], "guard": bool(scene.get("guard")), "passed": passed, "runs": len(mine),
                         "runs_started": len(everything), "not_counted": unset, "how": how,
-                        "pickup_tool_calls": [d["tool_calls"] for d in facts], "errors": errors})
+                        "pickup_tool_calls": [d["tool_calls"] for d in facts], "pickup_chars": [d.get("chars_before_reply") for d in facts], "errors": errors})
     minutes = round((time.monotonic() - started) / 60, 1)
     if args.rejudge:
         minutes = earlier.get("minutes", minutes)
@@ -257,6 +266,9 @@ def scored(args, adapter, fixture: Fixture, scenes: list[dict], sections: list[d
         f"  teaching replies: {counts['teaching_replies']}, of which set no task: {counts['teaching_replies_setting_no_task']}",
         f"  detours to an earlier step, by section: {counts['detours_to_earlier_step'] or 'none'}",
         "  planned items against parts marked: no data",
+        "",
+        "A guard is a scene main already passes, kept so a later phase cannot lose what works; the bar counts only the others. "
+        "Each scene's 'from' in scenes.json says what happened in the real moment it stands for.",
         "",
         "Limit: main has no clock control. 'Yesterday' is a model-reported learner message dated the day before the live chat. "
         "Magnesium opens a new sitting three hours after the last learner message it stored, so a scene that needs one sets that "

@@ -364,8 +364,9 @@ class Today:
                 if task:
                     checkpoint = {"current_problem": step.get("problem", script["goal"]),
                                   "working_diagnosis": step.get("diagnosis", "Working on the task."),
-                                  "next_action": "Mark the answer to the task.",
-                                  "pending_task": {"proposal_event_ref": reply.get("event_id"), "conditions": task}}
+                                  "next_action": "Mark the answer to the task."}
+                    if step.get("task_recorded", True):
+                        checkpoint["pending_task"] = {"proposal_event_ref": reply.get("event_id"), "conditions": task}
                     request = {"schema": SCHEMA, "action": "update", "request_id": f"{conversation}-c{n}",
                                "checkpoint": checkpoint, "session": channel.use(session)}
                     if not closed and event:
