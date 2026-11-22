@@ -7,7 +7,7 @@ pub(crate) const SESSION_CHOICES_SQL: &str = "WITH pending AS MATERIALIZED (
     FROM learning_events WHERE processing='pending' AND session_id IS NOT NULL GROUP BY session_id
 ) SELECT s.session_id,s.goal,s.status,s.revision,coalesce(p.event_count,0),p.last_captured_at_ms
 FROM learning_sessions s LEFT JOIN pending p ON p.session_id=s.session_id
-WHERE s.session_id>?1 AND (s.status IN ('active','paused') OR p.session_id IS NOT NULL)
+WHERE s.session_id>?1 AND (s.status = 'active' OR p.session_id IS NOT NULL)
 ORDER BY s.session_id LIMIT 4";
 pub(super) fn session_choice_rows(
     conn: &Connection,

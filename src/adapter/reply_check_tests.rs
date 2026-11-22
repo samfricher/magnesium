@@ -83,38 +83,6 @@ fn claude_prompt_notice_reports_only_the_reply_to_the_previous_prompt() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
-#[test]
-fn claude_feedback_never_judges_a_reply_across_an_unrecorded_turn() {
-    let (root, store, host) = claude_lesson();
-    let context = host_context(&host);
-    let control = |request: &str, action: &str| {
-        let event = crate::learner::RawEvent {
-            external_event_key: request.into(),
-            speaker: crate::learner::Speaker::Learner,
-            kind: "message".into(),
-            text: action.into(),
-            metadata: Some(crate::learner::EventMetadata {
-                origin: Some("model_reported".into()),
-                ..Default::default()
-            }),
-            occurred_at_ms: None,
-        };
-        store.control(&context, request, action, &event).unwrap();
-    };
-    claude_prompt(&root, &host, "one");
-    control("off", "recording_off");
-    claude_stop(&root, &host, "one", &"unrecorded ".repeat(300)).unwrap();
-    claude_prompt(&root, &host, "two");
-    control("on", "recording_on");
-    claude_stop(&root, &host, "two", &"recorded ".repeat(300)).unwrap();
-    let after_gap = claude_prompt(&root, &host, "three");
-    assert!(!after_gap.contains("Previous reply"), "{after_gap}");
-    claude_stop(&root, &host, "three", &"recorded ".repeat(300)).unwrap();
-    let resumed = claude_prompt(&root, &host, "four");
-    assert!(resumed.contains(" Previous reply: 300 words."), "{resumed}");
-    drop(store);
-    std::fs::remove_dir_all(root).unwrap();
-}
 fn long_reply() -> String {
     "This is the idea and it is what you need. ".repeat(30)
 }
@@ -170,7 +138,7 @@ fn a_long_reply_shortens_the_state_line_and_keeps_every_reminder() {
     let (root, store, host) = claude_lesson();
     store
         .conn
-        .execute("UPDATE workspace_meta SET memory_generation=?1", [9999])
+        .execute("UPDATE workspace_meta SET memory_generation=?1", [i64::MAX])
         .unwrap();
     claude_prompt(&root, &host, "one");
 

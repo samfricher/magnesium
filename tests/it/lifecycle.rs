@@ -88,48 +88,6 @@ fn compact_and_session_end_preserve_recorded_work_without_creating_observations(
     assert!(notice.contains("pending 2"));
 }
 #[test]
-fn recording_off_stops_subsequent_native_prompt_and_delivery_capture() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    init(&e);
-    start(&e, "claude", "thread");
-    let receipt = tool(
-        &e,
-        "claude",
-        "thread",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"control","request_id":"off","control":"recording_off","reported_event":{"external_event_key":"off-turn","speaker":"learner","kind":"message","text":"Stop recording."}}),
-    );
-    assert!(receipt.get("error").is_none());
-    prompt(
-        &e,
-        "claude",
-        "thread",
-        Some("private"),
-        "PRIVATE_OFF_PROMPT",
-    );
-    let out = run_hook(
-        &e,
-        "stop",
-        json!({"session_id":"thread","cwd":e.workspace,"hook_event_name":"Stop","prompt_id":"private","stop_hook_active":false,"last_assistant_message":"PRIVATE_OFF_DELIVERY"}),
-    );
-    assert!(out.status.success());
-    let conn = rusqlite::Connection::open(
-        e.workspace
-            .join(crate::support::CONTROL_DIR)
-            .join("state.sqlite"),
-    )
-    .unwrap();
-    assert_eq!(
-        conn.query_row(
-            "SELECT count(*) FROM learning_events WHERE text LIKE '%PRIVATE_OFF%'",
-            [],
-            |r| r.get::<_, i64>(0)
-        )
-        .unwrap(),
-        0
-    );
-}
-#[test]
 fn malformed_hook_fails_open_and_reports_content_free_diagnostic() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     init(&e);

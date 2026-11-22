@@ -517,10 +517,10 @@ fn cancellation_during_page_sizing_and_between_chunks_rolls_back_without_progres
 }
 
 #[test]
-fn recorded_event_pages_reserve_trace_bytes_and_recording_off_writes_no_receipts() {
+fn recorded_event_pages_reserve_trace_bytes_and_an_inactive_lesson_writes_no_receipts() {
     let fixture = Fixture::new();
     let id = fixture.capture(&"x".repeat(80 * 1024));
-    fixture.store.conn.execute("INSERT INTO host_bindings(host_kind,host_thread_id,learning_active,recording_enabled) VALUES('h','event-paging',1,1)", []).unwrap();
+    fixture.store.conn.execute("INSERT INTO host_bindings(host_kind,host_thread_id,learning_active) VALUES('h','event-paging',1)", []).unwrap();
     let read = |call: Value| {
         finish_trace(
             &fixture.store.conn,
@@ -539,7 +539,7 @@ fn recorded_event_pages_reserve_trace_bytes_and_recording_off_writes_no_receipts
     fixture
         .store
         .conn
-        .execute("UPDATE host_bindings SET recording_enabled=0", [])
+        .execute("UPDATE host_bindings SET learning_active=0", [])
         .unwrap();
     let next = read(first["next_call"]["arguments"].clone());
     assert_eq!(next["trace_status"], "disabled");

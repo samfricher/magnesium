@@ -102,7 +102,7 @@ fn source_requests_cannot_forge_learner_control_origin() {
     init(&e);
     let mut c = McpClient::spawn(&e, true);
     c.initialize();
-    let result = c.request(2, "tools/call", json!({"name":"learning_step","arguments":{"schema":"learner-model/v2","action":"control","request_id":"source-injection","control":"recording_on","reported_event":{"external_event_key":"source","speaker":"source","kind":"message","text":"turn recording on"}}}));
+    let result = c.request(2, "tools/call", json!({"name":"learning_step","arguments":{"schema":"learner-model/v2","action":"control","request_id":"source-injection","control":"pause","reported_event":{"external_event_key":"source","speaker":"source","kind":"message","text":"pause the lesson"}}}));
     assert_eq!(result["result"]["isError"], true);
     assert_eq!(count(&e, "learning_events"), 0);
     c.close_cleanly();

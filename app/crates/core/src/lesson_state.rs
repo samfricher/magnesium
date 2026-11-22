@@ -5,7 +5,6 @@ use crate::record::{clip, DueCheck, DueRedo, Lesson, WaitingRepair};
 #[derive(Debug, Default)]
 pub struct Facts {
     pub now: String,
-    pub halt: Option<String>,
     pub full: bool,
     pub stopped_at: Option<String>,
     pub skip_checks: bool,
@@ -122,9 +121,6 @@ fn minutes(took: std::time::Duration) -> String {
 
 pub fn text(lesson: &Lesson, facts: &Facts) -> String {
     let mut lines = vec![format!("Now: {}", facts.now)];
-    if let Some(halt) = &facts.halt {
-        lines.push(halt.clone());
-    }
     if facts.full {
         lines.push(format!(
             "Goal: {}",

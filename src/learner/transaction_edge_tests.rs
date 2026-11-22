@@ -171,7 +171,7 @@ fn event_status(conn: &Connection, id: &str) -> (String, Option<String>) {
 }
 
 #[test]
-fn a_stop_waits_out_another_process_mid_write_instead_of_failing() {
+fn completing_a_lesson_waits_out_another_process_mid_write_instead_of_failing() {
     let f = Fixture::new();
     let other = Connection::open(f.root.join("state.sqlite")).unwrap();
     other
@@ -186,17 +186,9 @@ fn a_stop_waits_out_another_process_mid_write_instead_of_failing() {
         std::thread::sleep(std::time::Duration::from_millis(250));
         other.execute_batch("COMMIT").unwrap();
     });
-    let stop = RawEvent {
-        external_event_key: "stop".into(),
-        speaker: crate::learner::Speaker::Learner,
-        kind: "message".into(),
-        text: "Stop".into(),
-        metadata: None,
-        occurred_at_ms: None,
-    };
-    let stopped = f.store.control(&f.host, "stop-while-busy", "stop", &stop);
+    let completed = f.store.update(&f.host, json!({"schema":SCHEMA,"action":"update","request_id":"complete-while-busy","session":{"operation":"complete","session_id":f.session,"expected_revision":1}}));
     writer.join().unwrap();
-    assert_eq!(stopped.unwrap()["durable"], json!(true));
+    assert_eq!(completed.unwrap().update_status, "committed");
     assert!(!f.store.binding(&f.host).unwrap().1);
 }
 

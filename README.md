@@ -35,7 +35,7 @@ Magnesium works in a study folder. A study folder is any course or project folde
 - **Remember how you reason.** Magnesium keeps your strengths, your difficulties, your original answers, and the help that you received.
 - **Learn from your materials.** The tutor searches your local notes, PDFs, and source code during a conversation.
 - **Correct a wrong memory.** Tell the tutor what really happened. The tutor checks the memory against your original work and corrects it.
-- **Control what is recorded.** You can pause a lesson, turn recording off, or export your history.
+- **Keep your record in your folder.** Everything you type in a lesson is kept in the study folder, on your computer. You can export it at any time.
 
 Magnesium uses Claude Code's existing model connection. Your usual model limits and charges apply. Magnesium needs no separate API key, embedding model, or database server.
 
@@ -45,19 +45,21 @@ Hand this repository to your coding agent and ask it to install Magnesium by fol
 
 On an Apple Silicon Mac you can instead download the study window, which installs Magnesium and sets up each study folder itself, with no terminal. [Download](#download) gives the steps.
 
-In Claude Code, type `/magnesium:help` first. It shows a short guide and suggests a next step for your folder, such as adding your materials, studying a chapter, or continuing your study plan. To read about one topic, type `/magnesium:help papers`, `/magnesium:help recording`, `/magnesium:help setup`, or `/magnesium:help trouble`.
+In Claude Code, type `/magnesium:help` first. It shows a short guide and suggests a next step for your folder, such as adding your materials, studying a chapter, or continuing your study plan. To read about one topic, type `/magnesium:help papers`, `/magnesium:help privacy`, `/magnesium:help setup`, or `/magnesium:help trouble`.
 
-To start a lesson, ask for one. For example:
+Magnesium is off in each new Claude Code session, so it never touches your other work in the folder. To start a lesson, type `/magnesium:learn` and then what you want. For example:
 
-> Teach me how confidence intervals work using the notes in this folder.
+```text
+/magnesium:learn Teach me how confidence intervals work using the notes in this folder.
+```
 
-Ordinary coding conversations do not start a lesson. Ask to learn, practise, or review when you want Magnesium involved.
+Magnesium then stays on until the session ends, and you talk to the tutor as usual. `/magnesium:learn` alone goes on with your last lesson. Claude cannot turn Magnesium on by itself. The study window turns it on for you.
 
-To practise for a test in Claude Code, tell the tutor about the test, for example "I have a midterm Monday". You can also type `/magnesium:papers`. The tutor writes your plan and papers in `Study/<target>/`, for example `Study/midterm-1/`. Later conversations continue from that plan. The [user guide](docs/user-guide.md#practise-with-timed-papers) gives the steps.
+To practise for a test in Claude Code, type `/magnesium:papers` and then the test, for example `/magnesium:papers I have a midterm Monday`. The tutor writes your plan and papers in `Study/<target>/`, for example `Study/midterm-1/`. A later session continues from that plan when you type `/magnesium:papers`. The [user guide](docs/user-guide.md#practise-with-timed-papers) gives the steps.
 
 Magnesium is built and tested for Claude Code. Its learner record, its files and its tools are open to any agent that can call them. The hooks that keep a lesson on track, the skills and the plan templates work only in Claude Code. An adapter for another agent is separate work.
 
-Magnesium stores your learning history in `.magnesium/` inside the study folder. Your assistant's model receives the memories and file excerpts that a lesson needs. The [user guide](docs/user-guide.md#control-recording-and-keep-a-copy) explains how to control recording and export your history.
+Magnesium stores your learning history in `.magnesium/` inside the study folder. Everything you type in a session where Magnesium is on is kept there. A session where it is off keeps nothing. Your assistant's model receives the memories and file excerpts that a lesson needs. The [user guide](docs/user-guide.md#what-magnesium-keeps) explains what is kept, how to leave files out, and how to export your history.
 
 ## The study window
 

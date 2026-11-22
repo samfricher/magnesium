@@ -99,7 +99,8 @@ impl TestEnvironment {
             .env("TEMP", &self.temp)
             .env("TMP", &self.temp)
             .env("MAGNESIUM_UNSAFE_NO_SYNC", "1")
-            .env("MAGNESIUM_NO_BACKGROUND_INDEX", "1");
+            .env("MAGNESIUM_NO_BACKGROUND_INDEX", "1")
+            .env("MAGNESIUM_SESSION", "on");
         command
     }
 
@@ -175,6 +176,17 @@ pub fn run_hook(environment: &TestEnvironment, event: &str, input: Value) -> pro
     run_hook_with_host_flag(environment, &environment.workspace, event, input, "claude")
 }
 
+pub fn run_hook_off(environment: &TestEnvironment, event: &str, input: Value) -> process::Output {
+    spawn_hook_with(
+        environment,
+        &environment.workspace,
+        event,
+        &["--host-kind", "claude"],
+        input,
+        &[("MAGNESIUM_SESSION", "off")],
+    )
+}
+
 pub fn run_hook_without_host_flag(
     environment: &TestEnvironment,
     event: &str,
@@ -206,8 +218,22 @@ fn spawn_hook(
     extra_args: &[&str],
     input: Value,
 ) -> process::Output {
-    let mut child = environment
-        .command_with(test_binary(), current_dir)
+    spawn_hook_with(environment, current_dir, event, extra_args, input, &[])
+}
+
+fn spawn_hook_with(
+    environment: &TestEnvironment,
+    current_dir: &Path,
+    event: &str,
+    extra_args: &[&str],
+    input: Value,
+    variables: &[(&str, &str)],
+) -> process::Output {
+    let mut command = environment.command_with(test_binary(), current_dir);
+    for (name, value) in variables {
+        command.env(name, value);
+    }
+    let mut child = command
         .args([
             "_internal",
             "hook",

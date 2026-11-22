@@ -264,6 +264,26 @@ fn handle(
     adapter::check_workspace_binding(workspace)?;
     let host = &HostIdentity::new(kind, &input.session_id)
         .map_err(|detail| format!("unavailable_capture: {detail}"))?;
+    match event {
+        HookEvent::SessionStart => adapter::host::clear_session_ended(workspace, host)?,
+        HookEvent::SessionEnd => {
+            if matches!(input.reason.as_deref(), Some("clear" | "resume")) {
+                adapter::host::mark_session_ended(workspace, host)?;
+            }
+            return Ok(None);
+        }
+        _ => {}
+    }
+    if !adapter::host::session_on(workspace, &host.stored_session_id())? {
+        let typed = input
+            .prompt
+            .as_deref()
+            .filter(|_| matches!(event, HookEvent::UserPromptSubmit));
+        if !typed.is_some_and(adapter::host::turns_on) {
+            return Ok(None);
+        }
+        adapter::host::turn_on(workspace, &host.stored_session_id())?;
+    }
     if let HookEvent::PostToolUse = event {
         let tool = input.tool_name.as_deref();
         let ends = match tool_kind(tool) {
@@ -283,7 +303,6 @@ fn handle(
     }
     match event {
         HookEvent::SessionStart => {
-            adapter::host::clear_session_ended(workspace, host)?;
             let context = adapter::host_session_start(&input.cwd, host)?;
             Ok(context.map(|c| additional_context(event, c)))
         }
@@ -324,13 +343,7 @@ fn handle(
                 |lines| json!({"systemMessage": lines}),
             )))
         }
-        HookEvent::SessionEnd => {
-            if matches!(input.reason.as_deref(), Some("clear" | "resume")) {
-                adapter::host::mark_session_ended(workspace, host)?;
-            }
-            Ok(None)
-        }
-        HookEvent::PostToolUse => Ok(None),
+        HookEvent::SessionEnd | HookEvent::PostToolUse => Ok(None),
     }
 }
 

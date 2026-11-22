@@ -20,16 +20,38 @@ pub(crate) fn field_error(
     if crate::adapter::HostKind::parse(&host.host_kind).is_ok() {
         arguments["host"] = json!(host.host_kind);
     }
-    let instruction = if path == "control" {
-        arguments["stage"] = json!("consolidate_and_resume");
-        "Controls are their own action, not an update field: {\"schema\":\"learner-model/v2\",\"action\":\"control\",\"request_id\":<new>,\"control\":\"pause\"|\"stop\"|\"recording_off\"|\"recording_on\",\"turn_ref\":<the prompt hook's current event>}. It stops this conversation; session.pause then stops the lesson in every conversation."
-    } else {
-        "Correct the indicated field using the tool contract. Preserve captured_event_ids and the complete intended checkpoint when retrying."
-    };
     failure.recovery = Some(
-        json!({"field_path":path,"tool":"context","arguments":arguments,"instruction":instruction}),
+        json!({"field_path":path,"tool":"context","arguments":arguments,"instruction":"Correct the indicated field using the tool contract. Preserve captured_event_ids and the complete intended checkpoint when retrying."}),
     );
     failure
+}
+const END_FOR_NOW: &str = "A lesson stays open and keeps everything until it is completed. When the learner is done for now, send {\"schema\":\"learner-model/v2\",\"action\":\"end_sitting\"}; the next message in this conversation goes on with the same lesson. When they have finished it for good, send session.complete.";
+pub(crate) fn refuse_removed_fields(payload: &Value, host: &HostContext) -> Result<()> {
+    let removed = if payload.get("control").is_some() {
+        (
+            "control",
+            "pause, stop and recording on or off no longer exist",
+        )
+    } else if payload.get("mode").is_some() {
+        (
+            "mode",
+            "complete_captured no longer exists; send the update without mode, in an open lesson",
+        )
+    } else if payload
+        .pointer("/session/operation")
+        .and_then(Value::as_str)
+        == Some("pause")
+    {
+        ("session.operation", "pause no longer exists")
+    } else {
+        return Ok(());
+    };
+    let mut error = field_error(removed.0, removed.1, host);
+    if let Some(recovery) = error.recovery.as_mut() {
+        recovery["arguments"]["stage"] = json!("consolidate_and_resume");
+        recovery["instruction"] = json!(END_FOR_NOW);
+    }
+    Err(error)
 }
 pub(crate) fn decode_at<T: serde::de::DeserializeOwned>(
     payload: &Value,
@@ -71,7 +93,6 @@ pub(crate) fn decode_update_request(payload: &Value, host: &HostContext) -> Resu
         native_capture: envelope.native_capture,
         schema: envelope.schema,
         action: envelope.action,
-        mode: envelope.mode,
         request_id: envelope.request_id,
         turn_ref: envelope.turn_ref,
         session,

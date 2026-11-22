@@ -27,13 +27,16 @@ fn claude_notices_say_when_to_start_and_continue_a_lesson() {
         .unwrap();
     assert_eq!(ticket.len(), 32, "{inactive}");
     assert!(
-        inactive.contains("load the learn skill and start or resume a session"),
+        inactive.contains(
+            "no lesson is open here: when the learner wants to study, start or resume one"
+        ),
         "{inactive}"
     );
     assert!(
-        inactive.contains("exam, midterm or final to prepare for, load the papers skill"),
+        inactive.contains("For practice papers for an exam, the learner types /magnesium:papers."),
         "{inactive}"
     );
+    assert!(!inactive.contains("load the learn skill"), "{inactive}");
     assert!(
         inactive.len() <= 512,
         "{} bytes: {inactive}",
@@ -89,7 +92,6 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     assert!(second.contains(" Previous reply: 849 words."), "{second}");
     assert!(second.contains(REMINDER), "{second}");
     assert!(second.contains(WHEN_CONFUSED), "{second}");
-    assert!(!second.contains("Read context.prepare"), "{second}");
     assert!(second.len() <= 512, "{} bytes: {second}", second.len());
 
     claude_stop(
@@ -110,34 +112,6 @@ fn claude_lesson_turns_carry_the_teaching_reminder_and_name_what_the_last_reply_
     ));
     assert!(session_start.contains(CORE_HEADING), "{session_start}");
     assert!(!session_start.contains("Teaching reply"), "{session_start}");
-}
-
-#[test]
-fn claude_reminder_stays_without_feedback_while_recording_is_off() {
-    let e = TestEnvironment::from_fixture("basic").unwrap();
-    v2::init(&e);
-    v2::start(&e, "claude", "conv");
-    let event = claude_prompt(&e, "conv", "p-1", "stop recording please")
-        .split_once("current event ")
-        .unwrap()
-        .1
-        .split('.')
-        .next()
-        .unwrap()
-        .to_owned();
-    v2::tool(
-        &e,
-        "claude",
-        "conv",
-        "learning_step",
-        json!({"schema":"learner-model/v2","action":"control","request_id":"off","control":"recording_off","turn_ref":event}),
-    );
-    claude_stop(&e, "conv", "p-1", &"Unrecorded words. ".repeat(300));
-    let notice = claude_prompt(&e, "conv", "p-2", "what next?");
-    assert!(notice.contains("recording false"), "{notice}");
-    assert!(notice.contains(REMINDER), "{notice}");
-    assert!(!notice.contains("Previous reply"), "{notice}");
-    assert!(notice.len() <= 512, "{} bytes: {notice}", notice.len());
 }
 
 #[test]
@@ -174,7 +148,7 @@ fn claude_session_start_points_a_new_learner_at_help_once_per_machine() {
 }
 
 #[test]
-fn reused_request_ids_name_the_fix_for_updates_and_controls() {
+fn reused_request_ids_name_the_fix_for_updates() {
     let e = TestEnvironment::from_fixture("basic").unwrap();
     v2::init(&e);
     let started = v2::start(&e, "claude", "conv");
@@ -186,41 +160,13 @@ fn reused_request_ids_name_the_fix_for_updates_and_controls() {
     let update = reuse(
         json!({"schema":"learner-model/v2","action":"update","request_id":"start-claude-conv","session":{"operation":"use","session_id":session,"expected_revision":1}}),
     );
-    let event = v2::context(&v2::prompt(
-        &e,
-        "claude",
-        "conv",
-        Some("t-1"),
-        "pause please",
-    ))
-    .split_once("current event ")
-    .unwrap()
-    .1
-    .split('.')
-    .next()
-    .unwrap()
-    .to_owned();
-    let first = reuse(
-        json!({"schema":"learner-model/v2","action":"control","request_id":"pause-1","control":"recording_off","turn_ref":event}),
+    assert_eq!(update["error"]["code"], "request_key_conflict", "{update}");
+    let instruction = update["error"]["recovery"]["instruction"].as_str().unwrap();
+    assert!(instruction.contains("new request_id"), "{instruction}");
+    assert!(
+        instruction.contains("shared by every conversation"),
+        "{instruction}"
     );
-    assert_eq!(first["durable"], true, "{first}");
-    let control = reuse(
-        json!({"schema":"learner-model/v2","action":"control","request_id":"pause-1","control":"pause","turn_ref":event}),
-    );
-    for response in [update, control] {
-        assert_eq!(
-            response["error"]["code"], "request_key_conflict",
-            "{response}"
-        );
-        let instruction = response["error"]["recovery"]["instruction"]
-            .as_str()
-            .unwrap();
-        assert!(instruction.contains("new request_id"), "{instruction}");
-        assert!(
-            instruction.contains("shared by every conversation"),
-            "{instruction}"
-        );
-    }
 }
 
 fn current_event(notice: &str) -> String {
@@ -555,13 +501,16 @@ fn the_verb_the_help_screen_offers_for_unreadable_lines_is_served_and_listed() {
     ] {
         assert!(text.contains(verb), "{name} does not mention {verb:?}");
     }
-    let papers_description = include_str!("../../claude-plugin/skills/papers/SKILL.md")
-        .lines()
-        .find(|line| line.starts_with("description:"))
+    let loop_verbs = include_str!("../../claude-plugin/skills/papers/SKILL.md")
+        .split_once("## Loop verbs")
+        .unwrap()
+        .1
+        .split("\n## ")
+        .next()
         .unwrap();
     assert!(
-        papers_description.contains(verb),
-        "the papers skill description, which routes the verb to the skill, does not list {verb:?}"
+        loop_verbs.contains(verb),
+        "the papers skill's loop verbs, which the learner types after /magnesium:papers, do not list {verb:?}"
     );
     let host = "claude";
     let served = v2::tool(
@@ -1336,7 +1285,7 @@ fn one_command_turns_the_core_rules_off_for_a_study_folder() {
     let claude = v2::context(&compaction(&e, "claude-lesson"));
     assert!(!claude.contains(CORE_HEADING), "{claude}");
     assert!(
-        claude.contains("After a new conversation or compaction, load the learn skill"),
+        claude.contains("After a new conversation or compaction, Read .magnesium/INSTRUCTIONS.md"),
         "{claude}"
     );
     assert!(served_core(&e).contains("**Start from one concrete case.**"));

@@ -21,7 +21,7 @@ use crate::gaplog;
 use crate::host_client::{self, HostClient};
 use crate::lesson_state::{self, Facts};
 use crate::paths;
-use crate::record::{self, Control, Cutter, DueCheck, Lesson, Message, NotARedo, Record};
+use crate::record::{self, Cutter, DueCheck, Lesson, Message, NotARedo, Record};
 use crate::store::Store;
 
 pub const PROMPT_ENV: &str = "MAGNESIUM_TUTOR_PROMPT";
@@ -65,6 +65,7 @@ pub fn direct_args(
         "command": runtime,
         "args": ["_internal", "mcp-server", "--plugin-version", version,
                  "--adapter-protocol-version", "2", "--host-kind", "claude"],
+        "env": {crate::runtime::SESSION_ON_ENV: crate::runtime::SESSION_ON},
     }}});
     let mut args: Vec<String> = [
         "-p",
@@ -259,6 +260,7 @@ impl Harness for DirectTutor {
             .current_dir(&folder)
             .env("PWD", &folder)
             .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env(crate::runtime::SESSION_ON_ENV, crate::runtime::SESSION_ON)
             .envs(ISOLATION)
             .args(pick)
             .args(direct_args(
@@ -284,10 +286,6 @@ impl Harness for DirectTutor {
         let stderr = child.stderr.take();
         let (events_in, events) = channel();
         let host = HostClient::new(runtime.clone(), folder.clone(), session.clone(), version);
-        let recording_off = self
-            .store
-            .as_ref()
-            .is_some_and(|store| store.folder(&root).recording_off);
         let memo = self
             .store
             .as_ref()
@@ -319,10 +317,7 @@ impl Harness for DirectTutor {
             counter: AtomicU64::new(0),
             stderr_tail: Mutex::new(String::new()),
             state: Mutex::new({
-                let mut state = State {
-                    halt: recording_off.then_some(Halt::RecordingOff),
-                    ..State::default()
-                };
+                let mut state = State::default();
                 state.restore(memo, &session, resumed.is_some());
                 state
             }),
@@ -381,9 +376,7 @@ impl Harness for DirectTutor {
             *lock(&shared.initialize) = None;
         }
         let source = if shared.resumed { "resume" } else { "startup" };
-        if recording_off {
-            shared.note("recording is off in this study folder: no hooks, no record");
-        } else if let Err(why) =
+        if let Err(why) =
             shared
                 .host
                 .hook("session-start", "SessionStart", json!({"source": source}))
@@ -420,27 +413,9 @@ enum Item {
     Ended,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Halt {
-    RecordingOff,
-    Paused,
-    Stopped,
-}
-
-impl Halt {
-    fn line(self) -> &'static str {
-        match self {
-            Self::RecordingOff => "Recording is off, as the learner asked: nothing from here on is kept in their record, and their answers get no mark. Teach only what they ask for, and set no quiz they did not ask for. Recording comes back on only when they ask for it.",
-            Self::Paused => "The learner paused the lesson: their record keeps what came before, and nothing from here on. Set no task and ask no question unless they ask to go on. To go on with their record, they open the lesson again from the course page (Continue).",
-            Self::Stopped => "The learner stopped the lesson: their record keeps what came before, and nothing from here on. Set no task and ask no question unless they ask to go on. To go on with their record, they open the lesson again from the course page (Continue).",
-        }
-    }
-}
-
 #[derive(Default)]
 struct State {
     lesson: Lesson,
-    halt: Option<Halt>,
     told: bool,
     help: Vec<String>,
     labels_told: Vec<String>,
@@ -555,7 +530,6 @@ const REDO_UNLISTED: &str = "The tutor called this a paper redo, but the window 
 const REDO_SET_ASIDE: &str = "The paper redo was set aside before it was answered. It stays due.";
 const CHECK_NO_PASS: &str = "Your answer is saved, but it did not count as a pass for the quick check this time. That check stays due.";
 const STOPPED: &str = "Your last reply was stopped part-way by the learner, and nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
-const RECORDING_BACK: &str = "Recording is back on. Nothing said while it was off was recorded, so no task is open: pose the task again before you mark an answer to it.";
 const UNREAD: &str = "Your last reply's record block was unreadable, so nothing of it was recorded: no task is open, and an answer to what it asked gets no mark. Pose the task again before you mark an answer to it.";
 
 struct Shared {
@@ -1190,16 +1164,6 @@ struct Prepared {
     no_clock: bool,
 }
 
-impl Prepared {
-    fn unrecorded(state: String) -> Self {
-        Self {
-            event: None,
-            state,
-            no_clock: false,
-        }
-    }
-}
-
 fn prepare(
     shared: &Arc<Shared>,
     words: &str,
@@ -1236,14 +1200,6 @@ fn prepare(
     state
         .lesson
         .set_today(&Local::now().format("%Y-%m-%d").to_string());
-    if from_window && matches!(state.halt, Some(Halt::Paused | Halt::Stopped)) {
-        state.halt = None;
-    }
-    if let Some(halt) = state.halt {
-        facts.halt = Some(halt.line().to_owned());
-        state.told = true;
-        return Prepared::unrecorded(lesson_state::text(&state.lesson, &facts));
-    }
     let notice = match host.hook(
         "user-prompt-submit",
         "UserPromptSubmit",
@@ -1257,12 +1213,6 @@ fn prepare(
     };
     shared.trace("@", &format!("user-prompt-submit: {notice}"));
     facts.checks_only |= notice.contains(CHECKS_ALONE_CLAUSE);
-    if notice.contains("recording false") {
-        state.halt = Some(Halt::RecordingOff);
-        facts.halt = Some(Halt::RecordingOff.line().to_owned());
-        state.told = true;
-        return Prepared::unrecorded(lesson_state::text(&state.lesson, &facts));
-    }
     let mut event = host_client::current_event(&notice);
     let mut found: Option<Due> = state.late.take();
     let mut asked = false;
@@ -1696,36 +1646,6 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
             record
         }
     };
-    let halted = lock(&shared.state).halt.is_some();
-    if let Some(control) = record.as_ref().and_then(|record| record.control) {
-        apply_control(shared, control, &words, event.as_deref());
-        say_if_the_sitting_ended(shared);
-        tell_task(shared, false);
-        if let Some(note) = record.as_ref().and_then(|record| record.repair.as_ref()) {
-            shared.note(&format!(
-                "repair {} not recorded: the block also asked for a control",
-                note.number
-            ));
-            repair_lost(
-                shared,
-                &format!(
-                    "Repair {} was not recorded: the same reply asked to pause, stop or change recording, and records nothing more. Its paper question still waits for a repair.",
-                    note.number
-                ),
-                REPAIR_NOT_SAVED,
-            );
-        }
-        return ended;
-    }
-    if halted {
-        shared
-            .note("recording is off, or the lesson is paused or stopped: no record for this turn");
-        tell_task(
-            shared,
-            record.as_ref().is_some_and(|record| record.task.is_some()),
-        );
-        return ended;
-    }
     let message = Message {
         words: words.clone(),
         event_id: event,
@@ -1735,11 +1655,9 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
     match &record {
         Some(record) => {
             let saved = save(shared, record, &message, &reply, deadline, shown);
-            let halted = lock(&shared.state).halt.is_some();
-            match (&record.repair, saved, halted) {
-                (_, _, true) => {}
-                (Some(note), true, false) => repair(shared, note, deadline),
-                (Some(note), false, false) => {
+            match (&record.repair, saved) {
+                (Some(note), true) => repair(shared, note, deadline),
+                (Some(note), false) => {
                     shared.note(&format!(
                         "repair {} not recorded: the turn's record was not kept",
                         note.number
@@ -1753,7 +1671,7 @@ fn turn(shared: &Arc<Shared>, text: &str) -> bool {
         REPAIR_NOT_SAVED,
     );
                 }
-                (None, _, false) if record.repair_unreadable => {
+                (None, _) if record.repair_unreadable => {
                     shared.note("the block named a repair that could not be read");
                     repair_lost(
                         shared,
@@ -1946,10 +1864,6 @@ fn repair(shared: &Arc<Shared>, note: &record::RepairNote, deadline: Instant) {
         Ok(result) => result,
         Err(why) => {
             shared.note(&format!("repair {} not recorded: {why}", note.number));
-            if why.contains("recording_disabled") {
-                lock(&shared.state).halt = Some(Halt::RecordingOff);
-                return;
-            }
             if host_client::unknown(&why) {
                 repair_lost(
                     shared,
@@ -2083,7 +1997,7 @@ fn forget_open_task(
         ),
         None => why.to_owned(),
     });
-    if task.is_none() || state.halt.is_some() {
+    if task.is_none() {
         return task;
     }
     let cleared = Record {
@@ -2432,14 +2346,6 @@ fn save(
         }
         Err(why) => {
             shared.note(&format!("the record was not saved: {why}"));
-            if why.contains("recording_disabled") {
-                state.halt = Some(Halt::RecordingOff);
-                return false;
-            }
-            if why.contains("learning_inactive") {
-                state.halt = Some(Halt::Stopped);
-                return false;
-            }
             if write.marked {
                 lost(&why);
             }
@@ -2451,63 +2357,6 @@ fn save(
 fn say_if_the_sitting_ended(shared: &Arc<Shared>) {
     if shared.host.take_sitting_ended() {
         shared.emit(AgentEvent::SittingEnded);
-    }
-}
-
-fn apply_control(shared: &Arc<Shared>, control: Control, words: &str, event: Option<&str>) {
-    let mut request = json!({
-        "schema": "learner-model/v2",
-        "action": "control",
-        "request_id": format!("{}-control-{}", shared.session, shared.next_id()),
-        "control": control.word(),
-    });
-    match event {
-        Some(event) => request["turn_ref"] = json!(event),
-        None => {
-            request["reported_event"] = json!({
-                "external_event_key": format!("{}-said-{}", shared.session, shared.next_id()),
-                "speaker": "learner",
-                "kind": "message",
-                "text": words,
-            })
-        }
-    }
-    let outcome = shared.host.call("learning_step", request);
-    if let Err(why) = &outcome {
-        shared.note(&format!("control {} refused: {why}", control.word()));
-    }
-    let remember = |off: bool| {
-        if let Some(store) = &shared.store {
-            store.update(&shared.root, |state| state.recording_off = off);
-        }
-    };
-    let mut state = lock(&shared.state);
-    match control {
-        Control::RecordingOff => {
-            state.halt = Some(Halt::RecordingOff);
-            remember(true);
-        }
-        Control::Pause => state.halt = Some(Halt::Paused),
-        Control::Stop => state.halt = Some(Halt::Stopped),
-        Control::RecordingOn => {
-            state.halt = None;
-            remember(false);
-        }
-    }
-    drop(state);
-    if control == Control::RecordingOn {
-        forget_open_task(
-            shared,
-            "",
-            "Recording came back on, so the task that was open before it went off is set aside.",
-            RECORDING_BACK,
-        );
-    }
-    if outcome.is_err() && control != Control::RecordingOn {
-        shared.emit(AgentEvent::Notice {
-            kind: NoticeKind::Other,
-            text: "Your record could not confirm this. The window sends nothing more to it from this lesson.".into(),
-        });
     }
 }
 
@@ -2737,6 +2586,10 @@ mod tests {
         assert_eq!(
             server["mcpServers"]["magnesium"]["command"],
             "/bin/magnesium"
+        );
+        assert_eq!(
+            server["mcpServers"]["magnesium"]["env"]["MAGNESIUM_SESSION"],
+            "on"
         );
         assert_eq!(
             args.last().unwrap(),

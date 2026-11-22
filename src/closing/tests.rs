@@ -241,14 +241,10 @@ fn nothing_shows_when_there_is_no_pass_and_no_day() {
 }
 
 #[test]
-fn only_a_committed_pause_or_stop_ends_the_sitting() {
-    let control = |word: &str| json!({"action": "control", "control": word});
-    let durable = json!({"durable": true});
-    assert!(ends_on_control(&control("pause"), &durable));
-    assert!(ends_on_control(&control("stop"), &durable));
-    assert!(!ends_on_control(&control("recording_off"), &durable));
-    assert!(!ends_on_control(&control("stop"), &json!({"error": {}})));
-    assert!(!ends_on_control(&json!({"action": "update"}), &durable));
+fn only_an_end_sitting_request_ends_the_sitting() {
+    assert!(!is_end_request(
+        &json!({"action": "control", "control": "pause"})
+    ));
     assert!(is_end_request(
         &json!({"schema": "learner-model/v2", "action": "end_sitting"})
     ));

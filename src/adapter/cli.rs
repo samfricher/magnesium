@@ -30,6 +30,17 @@ pub(crate) fn run_cli_call(operation: &str, protocol_version: u64, json_input: &
             return ExitCode::from(1);
         }
     };
+    match super::session_gate(&cwd, None) {
+        Err(error) => {
+            eprintln!("adapter operation `{operation}` failed: {error}");
+            return ExitCode::from(1);
+        }
+        Ok(Some(false)) => {
+            eprintln!("{}", crate::mcp::OFF_LINE);
+            return ExitCode::from(1);
+        }
+        Ok(_) => {}
+    }
     match dispatch_operation(operation, &cwd, &input_bytes) {
         Ok(value) => match serde_json::to_string(&value) {
             Ok(serialized) => {

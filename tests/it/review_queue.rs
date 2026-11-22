@@ -358,37 +358,6 @@ fn review_only_writes_stale_cursors_without_changing_memory_or_creating_observat
 }
 
 #[test]
-fn recording_off_leaves_no_receipt_or_ability_changes() {
-    let f = fixture(2);
-    assert_eq!(count(&f.e, "context_receipts"), 0);
-    tool(
-        &f.e,
-        "claude",
-        THREAD,
-        "learning_step",
-        json!({"schema":"learner-model/v2",
-        "action":"control","request_id":"off","control":"recording_off",
-        "reported_event":{"external_event_key":"off","speaker":"learner","kind":"message","text":"Stop recording."}}),
-    );
-    let before = learner_state(&f);
-    for _ in 0..2 {
-        let packet = read(&f, json!({}));
-        assert_eq!(packet["trace_status"], "disabled");
-        assert!(packet["trace_id"].is_null());
-        assert_eq!(packet["coverage"]["review_queue_count"], 2);
-        assert!(
-            packet["reviews"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|item| item["status"] == "suggested")
-        );
-    }
-    assert_eq!(count(&f.e, "context_receipts"), 0);
-    assert_eq!(learner_state(&f), before);
-}
-
-#[test]
 fn cursor_scope_and_tampering_are_rejected_and_large_current_text_has_a_read_reference() {
     let f = fixture(2);
     let first = read(&f, json!({"limit":1}));

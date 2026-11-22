@@ -179,7 +179,25 @@ fn the_lesson_command_prints_goal_steps_and_the_open_task_and_writes_nothing() {
     assert_eq!(printed["goal"], "Learn coefficient roles");
     assert_eq!(printed["status"], "active");
     assert_eq!(printed["learning_on"], true);
-    assert_eq!(printed["recording_on"], true);
+    let mut fields: Vec<&str> = printed
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(
+        fields,
+        [
+            "goal",
+            "learning_on",
+            "open_task",
+            "session_id",
+            "status",
+            "steps",
+            "updated_at"
+        ]
+    );
     assert_eq!(
         printed["steps"],
         json!([{"step":"Find the factors","status":"doing"},{"step":"Read off the roots","status":"todo"}])

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,14 @@ use serde_json::Value;
 use crate::paths;
 
 pub const PROGRAM_ENV: &str = "MAGNESIUM_APP_RUNTIME";
+pub const SESSION_ON_ENV: &str = "MAGNESIUM_SESSION";
+pub const SESSION_ON: &str = "on";
+
+pub fn command(program: &Path) -> Command {
+    let mut command = paths::light_command(program);
+    command.env(SESSION_ON_ENV, SESSION_ON);
+    command
+}
 
 pub fn program() -> Option<PathBuf> {
     if let Some(named) = env::var_os(PROGRAM_ENV).filter(|v| !v.is_empty()) {
@@ -20,7 +29,7 @@ pub fn program() -> Option<PathBuf> {
 
 fn run(folder: &Path, args: &[&str], limit: Duration) -> Result<String, String> {
     let program = program().ok_or("the magnesium program is not installed")?;
-    let mut command = paths::light_command(&program);
+    let mut command = command(&program);
     command.current_dir(folder).args(args);
     paths::run(command, limit)
 }
@@ -250,7 +259,7 @@ pub fn upgrade(root: &Path) -> Result<(), String> {
 pub const WINDOW_FEATURES_NEEDED: u64 = 4;
 
 pub fn window_features(program: &Path) -> Option<u64> {
-    let mut command = paths::light_command(program);
+    let mut command = command(program);
     command.current_dir("/").arg("digest");
     let out = paths::run(command, Duration::from_secs(10)).ok()?;
     let value: Value = serde_json::from_str(&out).ok()?;

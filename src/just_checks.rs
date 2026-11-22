@@ -79,7 +79,6 @@ pub(crate) fn asked_in_words(text: &str) -> bool {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Asker {
-    pub(crate) records: bool,
     pub(crate) lesson_active: bool,
 }
 
@@ -107,12 +106,6 @@ pub(crate) fn from_tool(
         })
     };
     let asker = asker(&workspace);
-    if !asker.records {
-        return answer(
-            0,
-            "Recording is off in this conversation, so no answer to a quick check can be marked now. Say so in a line, set no task and ask no question.".to_owned(),
-        );
-    }
     let now = now_ms();
     let mut sittings = match Sittings::open(&workspace) {
         Ok(sittings) => sittings,
@@ -207,13 +200,7 @@ pub(crate) fn lift_on_stage(
     lift(cwd, by)
 }
 
-pub(crate) fn lifts_on_control(request: &Value, result: &Value) -> bool {
-    request.get("action").and_then(Value::as_str) == Some("control")
-        && request.get("control").and_then(Value::as_str) == Some("recording_off")
-        && result.get("durable") == Some(&Value::Bool(true))
-}
-
-pub(crate) fn lift(cwd: &Path, by: Option<&str>) -> bool {
+fn lift(cwd: &Path, by: Option<&str>) -> bool {
     let Some(workspace) = Workspace::discover(cwd).ok().flatten() else {
         return false;
     };

@@ -195,7 +195,7 @@ fn prepare_decoded_snapshot(
                 |r| r.get(0),
             )
             .map_err(db)?;
-        let trace_capable:bool=conn.query_row("SELECT learning_active=1 AND recording_enabled=1 FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host_kind,host_thread_id],|r|r.get(0)).optional().map_err(db)?.unwrap_or(false);
+        let trace_capable:bool=conn.query_row("SELECT learning_active=1 FROM host_bindings WHERE host_kind=?1 AND host_thread_id=?2",params![host_kind,host_thread_id],|r|r.get(0)).optional().map_err(db)?.unwrap_or(false);
         let deps = dependencies(
             &request,
             state.memory_generation,
@@ -359,7 +359,7 @@ pub fn finish_trace(
         let inserted = if crate::request::OperationCancellation::none().is_cancelled() {
             Ok(0)
         } else {
-            conn.execute("INSERT INTO context_receipts(trace_id,host_kind,host_thread_id,session_id,tool_action,request_json,response_json,created_at_ms) SELECT ?1,?2,?3,COALESCE(?8,session_id),?4,?5,?6,?7 FROM host_bindings WHERE host_kind=?2 AND host_thread_id=?3 AND learning_active=1 AND recording_enabled=1",params![prepared.trace,prepared.host_kind,prepared.host_thread_id,prepared.action,prepared.request.to_string(),packet_json,now,prepared.packet.session.as_ref().map(|s|s.session_id.as_str())])
+            conn.execute("INSERT INTO context_receipts(trace_id,host_kind,host_thread_id,session_id,tool_action,request_json,response_json,created_at_ms) SELECT ?1,?2,?3,COALESCE(?8,session_id),?4,?5,?6,?7 FROM host_bindings WHERE host_kind=?2 AND host_thread_id=?3 AND learning_active=1",params![prepared.trace,prepared.host_kind,prepared.host_thread_id,prepared.action,prepared.request.to_string(),packet_json,now,prepared.packet.session.as_ref().map(|s|s.session_id.as_str())])
         };
         match inserted {
             Ok(1) => {}

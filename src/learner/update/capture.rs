@@ -14,45 +14,6 @@ impl LearnerStore {
         if let Some(result) = self.replay(host, &payload)? {
             return Ok(result);
         }
-        if payload.get("mode").and_then(Value::as_str)
-            == Some(UpdateMode::CompleteCaptured.as_str())
-        {
-            let request = decode_update_request(&payload, host)?;
-            if native.is_some()
-                || request.native_capture.is_some()
-                || !request.reported_events.is_empty()
-            {
-                return Err(LearnerError::new(
-                    "invalid_variant",
-                    "mode.complete_captured forbids native_capture and reported_events",
-                ));
-            }
-            let captured = match &request.turn_ref {
-                Some(turn) => {
-                    let scoped: bool = self.conn.query_row(
-                        "SELECT EXISTS(
-                            SELECT 1 FROM learning_events e WHERE e.event_id = ?1
-                              AND ((e.host_kind = ?2 AND e.host_thread_id = ?3)
-                                   OR EXISTS(
-                                       SELECT 1 FROM host_bindings b
-                                       WHERE b.host_kind = ?2 AND b.host_thread_id = ?3
-                                         AND b.session_id = e.session_id
-                                   ))
-                        )",
-                        params![turn, host.host_kind, host.host_thread_id],
-                        |row| row.get(0),
-                    )?;
-                    if scoped { vec![turn.clone()] } else { vec![] }
-                }
-                None => vec![],
-            };
-            return self
-                .semantic_update(host, &request, &payload, &captured, &[])
-                .map_err(|mut error| {
-                    error.captured_event_ids = captured;
-                    error
-                });
-        }
         let operation = payload
             .pointer("/session/operation")
             .and_then(Value::as_str);
@@ -111,6 +72,7 @@ impl LearnerStore {
                     captured.push(turn.into());
                 }
             }
+            refuse_removed_fields(&payload, host)?;
             let request = decode_update_request(&payload, host)?;
             self.semantic_update(host, &request, &payload, &captured, &attachment_ids)
         })();
