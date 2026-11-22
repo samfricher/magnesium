@@ -134,13 +134,15 @@ fn emit_sections(
     let mut sections = Vec::new();
     let mut start = 0;
     let mut current_path = heading_path(stack);
+    let mut opens = false;
     for (index, heading) in headings.iter().enumerate().take(lines.len()) {
         let Some((level, title)) = heading else {
             continue;
         };
         if index > start {
-            sections.push((start, index, current_path.clone()));
+            sections.push((start, index, current_path.clone(), opens));
         }
+        opens = true;
         while stack.last().is_some_and(|(top, _)| *top >= *level) {
             stack.pop();
         }
@@ -149,11 +151,11 @@ fn emit_sections(
         start = index;
     }
     if start < lines.len() {
-        sections.push((start, lines.len(), current_path));
+        sections.push((start, lines.len(), current_path, opens));
     }
-    for (start, end, path) in sections {
+    for (start, end, path, opens) in sections {
         let body = &text[lines[start].start..lines[end - 1].end];
-        let kind = if path.is_some() {
+        let kind = if path.is_some() && opens {
             ChunkKind::Heading
         } else {
             ChunkKind::Fallback
@@ -275,7 +277,15 @@ fn html_headings(text: &str) -> Vec<Heading> {
             at = body_start;
             continue;
         };
-        let title = html_text(&text[body_start..body_end]);
+        let inner = &lower[body_start..body_end];
+        let cut = [
+            "<div", "<p", "<ul", "<ol", "<button", "<table", "<form", "<nav",
+        ]
+        .iter()
+        .filter_map(|tag| inner.find(tag))
+        .min()
+        .map_or(body_end, |offset| body_start + offset);
+        let title = html_text(&text[body_start..cut]);
         let line = lines.partition_point(|line| line.end <= open);
         if !title.is_empty() && line < headings.len() && headings[line].is_none() {
             headings[line] = Some((level, title));
@@ -379,7 +389,7 @@ fn latex_headings(text: &str) -> Vec<Heading> {
                 }
                 .trim_start();
                 let title = latex_text(braced(after)?);
-                (!title.is_empty()).then(|| (*level, title))
+                (!title.is_empty()).then_some((*level, title))
             })
         })
         .collect()

@@ -8,6 +8,7 @@ const KEPT_TOP: f64 = 0.4;
 const MAX_LINES_PER_PAGE: usize = 12;
 const MAX_LINE_CHARS: usize = 200;
 const MAX_TITLE_WORDS: usize = 14;
+const MAX_TITLE_CHARS: usize = 90;
 const MAX_OUTLINE_ENTRIES: usize = 4_096;
 const MIN_REPEATED_PAGES: usize = 3;
 const REPEATED_PAGE_PERCENT: usize = 50;
@@ -318,6 +319,7 @@ pub(crate) fn page_titles(layout: &PdfLayout, page_count: usize) -> Vec<Option<S
 fn plausible_title(text: &str) -> bool {
     let words = text.split_whitespace().count();
     (1..=MAX_TITLE_WORDS).contains(&words)
+        && text.chars().count() <= MAX_TITLE_CHARS
         && text.chars().any(char::is_alphabetic)
         && !text.ends_with(',')
 }

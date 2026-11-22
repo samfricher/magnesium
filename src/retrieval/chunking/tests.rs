@@ -145,7 +145,7 @@ fn slide_sources_use_markdown_headings_without_their_attributes() {
 
 #[test]
 fn web_pages_use_their_heading_tags_and_skip_scripts() {
-    let html = "<html><head><style>h2 { color: red }</style>\n<script>var s = '<h2>fake</h2>';</script></head>\n<body>\n<h1 class=\"title\">10.1. Long Short-Term Memory (LSTM)<a class=\"headerlink\" href=\"#lstm\">¶</a></h1>\n<p>intro</p>\n<section><h2 id=\"gates\">Gated Memory &amp; Cells</h2>\n<p>gates</p>\n<h3\n>split tag</h3>\n<h2>Summary</h2>\n</body></html>\n";
+    let html = "<html><head><style>h2 { color: red }</style>\n<script>var s = '<h2>fake</h2>';</script></head>\n<body>\n<h1 class=\"title\">10.1. Long Short-Term Memory (LSTM)<a class=\"headerlink\" href=\"#lstm\">¶</a><div class=\"tabs\">Colab [pytorch] Open the notebook</div></h1>\n<p>intro</p>\n<section><h2 id=\"gates\">Gated Memory &amp; Cells</h2>\n<p>gates</p>\n<h3\n>split tag</h3>\n<h2>Summary</h2>\n</body></html>\n";
     let found = headings("lstm.html", html);
     assert_eq!(
         found
@@ -244,6 +244,11 @@ fn notebook_cells_keep_the_lines_of_the_original_file_and_carry_headings_across_
             (9, 10, Some("Lab 10 > Part 1: an RNN by hand".into())),
             (19, 21, Some("Lab 10 > Part 1: an RNN by hand".into())),
         ]
+    );
+    assert_eq!(
+        chunks[2].kind,
+        ChunkKind::Fallback,
+        "a code cell continues its section"
     );
     let lines = notebook.lines().collect::<Vec<_>>();
     assert!(lines[8].contains("Part 1"));

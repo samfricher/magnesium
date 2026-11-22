@@ -316,7 +316,7 @@ pub(crate) fn read_sections(
             Some(last)
                 if last.heading == heading
                     && kind != "heading"
-                    && start <= last.end.saturating_add(1) =>
+                    && (kind != "page" || start <= last.end.saturating_add(1)) =>
             {
                 last.end = last.end.max(end);
             }
