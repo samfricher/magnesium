@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import adapter
 import check_coverage
 import check_evidence
 import check_scenes
@@ -90,6 +91,21 @@ class Scenes(unittest.TestCase):
         self.assertEqual(len(spec["scenes"]), 7)
         for scene in spec["scenes"]:
             self.assertTrue(scene["messages"] and scene["decide"], scene["id"])
+
+
+class SignIn(unittest.TestCase):
+    def test_a_run_leaves_no_keychain_link(self):
+        home = Path(tempfile.mkdtemp()) / "home"
+        released = []
+        fake = SimpleNamespace(place=lambda *a, **k: SimpleNamespace(home=home), release=lambda place: released.append(place))
+        adapter.sign_in(home)
+        self.assertTrue((home / "Library" / "Keychains").is_symlink())
+        with self.assertRaises(AttributeError):
+            check_scenes.one_run(SimpleNamespace(), fake, SimpleNamespace(folder=None), {"id": "x"}, 1, None, [])
+        self.assertEqual(len(released), 1)
+        adapter.sign_out(home)
+        self.assertFalse((home / "Library" / "Keychains").exists())
+        self.assertTrue((adapter.real_home() / "Library" / "Keychains").is_dir())
 
 
 class Common(unittest.TestCase):

@@ -59,6 +59,13 @@ def request_for(fixture: Fixture, adapter) -> str:
 
 def live(args, adapter, fixture: Fixture, judge: Judge | None) -> dict:
     place = adapter.place(fixture.folder, f"plan-build-{fixture.name}", live=True)
+    try:
+        return build(args, adapter, fixture, judge, place)
+    finally:
+        adapter.release(place)
+
+
+def build(args, adapter, fixture: Fixture, judge: Judge | None, place) -> dict:
     removed = None
     if fixture.target and (place.folder / fixture.target).exists() and not args.keep_plan:
         shutil.rmtree(place.folder / fixture.target)
@@ -122,6 +129,14 @@ def run(args, adapter) -> tuple[dict, str]:
     if not lists:
         raise SystemExit(f"{fixture.name} has no lists/ folder, which the plan-build scorer needs")
     judge = Judge(adapter.work, args.model, args.effort) if (args.judge or args.mode == "live") else None
+    try:
+        return measured(args, adapter, fixture, lists, judge)
+    finally:
+        if judge:
+            judge.close()
+
+
+def measured(args, adapter, fixture: Fixture, lists: dict, judge: Judge | None) -> tuple[dict, str]:
     lines = []
     result = {"check": "plan-build", "fixture": fixture.name, "adapter": adapter.name, "mode": args.mode, "planning": "lesson"}
     if args.mode == "live":

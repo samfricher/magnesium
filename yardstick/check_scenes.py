@@ -121,6 +121,13 @@ def one_run(args, adapter, fixture: Fixture, scene: dict, number: int, judge: Ju
     name = f"scene-{scene['id']}-{number}"
     started = time.monotonic()
     place = adapter.place(fixture.folder, name, live=True, surface="window")
+    try:
+        return play(args, adapter, fixture, scene, number, judge, sections, place, started)
+    finally:
+        adapter.release(place)
+
+
+def play(args, adapter, fixture: Fixture, scene: dict, number: int, judge: Judge | None, sections: list[dict], place, started: float) -> dict:
     seeded = seed(adapter, place, fixture, scene.get("seed"), bool(scene.get("new_sitting")))
     conversation = adapter.live(place, args.model, args.effort, place.root / "stream.jsonl")
     usage: dict = {}
@@ -183,6 +190,13 @@ def run(args, adapter) -> tuple[dict, str]:
     scenes = [s for s in spec["scenes"] if not args.scene or s["id"] in args.scene]
     sections = ((fixture.lists() or {}).get("order") or {}).get("sections", [])
     judge = Judge(adapter.work, args.model, args.effort)
+    try:
+        return scored(args, adapter, fixture, scenes, sections, judge)
+    finally:
+        judge.close()
+
+
+def scored(args, adapter, fixture: Fixture, scenes: list[dict], sections: list[dict], judge: Judge) -> tuple[dict, str]:
     started = time.monotonic()
     if args.rejudge:
         earlier = load(args.rejudge)

@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 import claude_code
-from adapter import real_home
+from adapter import sign_in, sign_out
 from claude_code import add_usage
 
 VERDICT = {
@@ -24,9 +24,8 @@ class Judge:
             shutil.rmtree(self.root)
         self.home = self.root / "home"
         self.tmp = self.root / "tmp"
-        (self.home / "Library").mkdir(parents=True)
-        self.tmp.mkdir()
-        os.symlink(real_home() / "Library" / "Keychains", self.home / "Library" / "Keychains")
+        self.tmp.mkdir(parents=True)
+        sign_in(self.home)
         self.lock = threading.Lock()
         self.usage: dict = {}
         self.calls = 0
@@ -52,6 +51,9 @@ class Judge:
         )
         answer = self.ask(prompt)
         return {"pass": bool(answer.get("pass")), "sentence": answer.get("sentence", ""), "why": answer.get("why", "")}
+
+    def close(self):
+        sign_out(self.home)
 
     def cost(self) -> dict:
         return {"calls": self.calls, "seconds": round(self.seconds, 1), "usage": self.usage}

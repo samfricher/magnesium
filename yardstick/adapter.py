@@ -46,6 +46,17 @@ def real_home() -> Path:
     return Path(pwd.getpwuid(os.getuid()).pw_dir)
 
 
+def sign_in(home: Path):
+    (home / "Library").mkdir(parents=True, exist_ok=True)
+    os.symlink(real_home() / "Library" / "Keychains", home / "Library" / "Keychains")
+
+
+def sign_out(home: Path):
+    link = home / "Library" / "Keychains"
+    if link.is_symlink():
+        link.unlink()
+
+
 @dataclass
 class Place:
     root: Path
@@ -121,13 +132,15 @@ class Today:
         home.mkdir(parents=True)
         tmp.mkdir()
         if live:
-            (home / "Library").mkdir()
-            os.symlink(real_home() / "Library" / "Keychains", home / "Library" / "Keychains")
+            sign_in(home)
         place = Place(root=root, folder=folder, home=home, tmp=tmp, bin=self.bin, surface=surface)
         code, out, err = self.cli(place, "init", "--json")
         if code:
             raise SystemExit(f"magnesium init failed in {folder}: {err or out}")
         return place
+
+    def release(self, place: Place):
+        sign_out(place.home)
 
     def place_with_record(self, source: Path, name: str) -> Place | None:
         if not (source / ".magnesium").is_dir():
