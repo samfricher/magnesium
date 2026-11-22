@@ -1,0 +1,84 @@
+{
+ "plan": "magnesium",
+ "blocks": [
+  {
+   "block": "1",
+   "done": false,
+   "sections": "all",
+   "kind": "tutor_paper",
+   "listed": [],
+   "unseen": null,
+   "quote": "Diagnostic"
+  },
+  {
+   "block": "2",
+   "done": false,
+   "sections": [],
+   "kind": "marking",
+   "listed": [],
+   "unseen": null,
+   "quote": "Mark and log the Diagnostic"
+  },
+  {
+   "block": "3",
+   "done": false,
+   "sections": [
+    "A",
+    "B"
+   ],
+   "kind": "teach_first",
+   "listed": [],
+   "unseen": false,
+   "quote": "Teach EXPVAL and VARSHORT"
+  },
+  {
+   "block": "4",
+   "done": false,
+   "sections": [
+    "C"
+   ],
+   "kind": "teach_first",
+   "listed": [],
+   "unseen": false,
+   "quote": "Teach BINOM"
+  },
+  {
+   "block": "5",
+   "done": false,
+   "sections": [
+    "B"
+   ],
+   "kind": "teach_first",
+   "listed": [],
+   "unseen": false,
+   "quote": "Teach VARSCALE"
+  },
+  {
+   "block": "6",
+   "done": false,
+   "sections": "all",
+   "kind": "tutor_paper",
+   "listed": [],
+   "unseen": null,
+   "quote": "MockA"
+  },
+  {
+   "block": "7",
+   "done": false,
+   "sections": [],
+   "kind": "marking",
+   "listed": [],
+   "unseen": null,
+   "quote": "Mark, log and repair MockA"
+  },
+  {
+   "block": "8",
+   "done": false,
+   "sections": "all",
+   "kind": "instructor_paper",
+   "listed": [],
+   "unseen": null,
+   "quote": "Old test 1"
+  }
+ ]
+}

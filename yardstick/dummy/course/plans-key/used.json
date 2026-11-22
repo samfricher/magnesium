@@ -1,0 +1,74 @@
+{
+ "plan": "used",
+ "blocks": [
+  {
+   "block": "Section A: expected value (slides 1 to 4)",
+   "done": false,
+   "sections": [
+    "A"
+   ],
+   "kind": "test_first",
+   "listed": [
+    "2.1",
+    "2.3",
+    "2.4"
+   ],
+   "unseen": true,
+   "quote": "Each section opens by reading the slides' worked examples"
+  },
+  {
+   "block": "Section B: variance (slides 5 to 8)",
+   "done": false,
+   "sections": [
+    "B"
+   ],
+   "kind": "test_first",
+   "listed": [
+    "2.5",
+    "2.7",
+    "2.8"
+   ],
+   "unseen": true,
+   "quote": "Small test: a changed 2.5 and a changed 2.8, no help"
+  },
+  {
+   "block": "Section C: named distributions (slides 9 to 13)",
+   "done": false,
+   "sections": [
+    "C"
+   ],
+   "kind": "test_first",
+   "listed": [
+    "2.9",
+    "2.10",
+    "2.12",
+    "2.13"
+   ],
+   "unseen": true,
+   "quote": "Small test: a changed 2.9 and a changed 2.13, no help"
+  },
+  {
+   "block": "Section D: indicators and sums (slides 14 to 16)",
+   "done": false,
+   "sections": [
+    "D"
+   ],
+   "kind": "test_first",
+   "listed": [
+    "2.15",
+    "2.17"
+   ],
+   "unseen": true,
+   "quote": "Small test: a changed 2.15 and a changed 2.17, no help"
+  },
+  {
+   "block": "Then 1",
+   "done": false,
+   "sections": "all",
+   "kind": "instructor_paper",
+   "listed": [],
+   "unseen": null,
+   "quote": "The old test 1 from `Materials/Past/old-test-1.md`, cold, timed"
+  }
+ ]
+}

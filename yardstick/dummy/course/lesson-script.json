@@ -1,0 +1,111 @@
+{
+  "basis": "An invented ten-message lesson with six marked answers, driven through the binary as the window's instructions prescribe: observation and attempt, then the reply, then a checkpoint when the reply sets a task.",
+  "goal": "Variance for Test 1",
+  "stages": [
+    "teach_and_practice"
+  ],
+  "turns": [
+    {
+      "learner": "/magnesium:learn Variance for Test 1",
+      "tutor": "Variance measures spread around the mean. Let's start from the definition.\n\nX takes the values 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) from the definition, Var(X) = E[(X − µ)²].",
+      "task": "X takes the values 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) from the definition, Var(X) = E[(X − µ)²]."
+    },
+    {
+      "learner": "µ = 0.3+0.8 = 1.1, Var = 1.21(0.5)+0.01(0.3)+8.41(0.2) = 2.29",
+      "tutor": "Right: µ = 1.1 and Var(X) = 2.29.\n\nSame X: it takes 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) again with the shortcut E[X²] − (E[X])².",
+      "task": "Same X: it takes 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) again with the shortcut E[X²] − (E[X])².",
+      "attempt": {
+        "label": "variance from the definition",
+        "kind": "VARSHORT",
+        "question": "X takes the values 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) from the definition, Var(X) = E[(X − µ)²].",
+        "first_try": "right",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Computes the mean and the weighted squared distances correctly."
+    },
+    {
+      "learner": "E[X^2] = 0.3 + 3.2 = 3.5, so Var = 1.21 - 3.5",
+      "tutor": "The order is reversed: the shortcut is E[X²] minus the square of the mean, and a variance is never negative.\n\nY takes 0 and 2, each with probability 0.5. Find Var(Y) with the shortcut E[Y²] − (E[Y])².",
+      "task": "Y takes 0 and 2, each with probability 0.5. Find Var(Y) with the shortcut E[Y²] − (E[Y])².",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "Same X: it takes 0, 1 and 4 with probabilities 0.5, 0.3 and 0.2. Find Var(X) again with the shortcut E[X²] − (E[X])².",
+        "first_try": "wrong",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Subtracts in the wrong order."
+    },
+    {
+      "learner": "Can you explain why the shortcut works before I try?",
+      "tutor": "Expand the square: E[(X − µ)²] = E[X²] − 2µE[X] + µ² = E[X²] − µ². The middle term uses E[X] = µ, and that is all the shortcut is.\n\nY takes 0 and 2, each with probability 0.5. Find Var(Y) with the shortcut E[Y²] − (E[Y])².",
+      "task": "Y takes 0 and 2, each with probability 0.5. Find Var(Y) with the shortcut E[Y²] − (E[Y])²."
+    },
+    {
+      "learner": "E[Y^2] = 2, E[Y] = 1, Var = 1",
+      "tutor": "Right.\n\nVar(X) = 9. Find Var(2X + 5).",
+      "task": "Var(X) = 9. Find Var(2X + 5).",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "Y takes 0 and 2, each with probability 0.5. Find Var(Y) with the shortcut E[Y²] − (E[Y])².",
+        "first_try": "right",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Applies the shortcut in the right order."
+    },
+    {
+      "learner": "2*9 + 5 = 23",
+      "tutor": "The 5 shifts every value and the mean together, so it adds no spread, and the 2 stretches each distance, which variance squares. A thermometer reads Celsius C with Var(C) = 4. Fahrenheit is F = 1.8C + 32. Find Var(F).",
+      "task": "A thermometer reads Celsius C with Var(C) = 4. Fahrenheit is F = 1.8C + 32. Find Var(F).",
+      "attempt": {
+        "label": "variance of aX+b",
+        "kind": "VARSCALE",
+        "question": "Var(X) = 9. Find Var(2X + 5).",
+        "first_try": "wrong",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Scales by a, not a², and keeps the shift."
+    },
+    {
+      "learner": "Why doesn't the 32 matter though?",
+      "tutor": "Adding 32 moves every reading and the mean by the same amount, so every distance from the mean stays the same, and variance only sees those distances."
+    },
+    {
+      "learner": "1.8^2 * 4 = 12.96",
+      "tutor": "Right.\n\nVar(X) = 16. Find SD(−3X + 1).",
+      "task": "Var(X) = 16. Find SD(−3X + 1).",
+      "attempt": {
+        "label": "variance of aX+b",
+        "kind": "VARSCALE",
+        "question": "A thermometer reads Celsius C with Var(C) = 4. Fahrenheit is F = 1.8C + 32. Find Var(F).",
+        "first_try": "right",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Squares the scale and drops the shift."
+    },
+    {
+      "learner": "Wait, what is the difference between SD and variance again?",
+      "tutor": "The standard deviation is the square root of the variance, so it is in the units of X, while the variance is in squared units.\n\nVar(X) = 16. Find SD(−3X + 1).",
+      "task": "Var(X) = 16. Find SD(−3X + 1)."
+    },
+    {
+      "learner": "-3*4 = -12",
+      "tutor": "A standard deviation is never negative: SD(aX + b) = |a| SD(X) = 3 × 4 = 12.",
+      "attempt": {
+        "label": "standard deviation of aX+b",
+        "kind": "VARSCALE",
+        "question": "Var(X) = 16. Find SD(−3X + 1).",
+        "first_try": "wrong",
+        "help": "none",
+        "cold": false
+      },
+      "shows": "Keeps the sign of the scale."
+    }
+  ]
+}

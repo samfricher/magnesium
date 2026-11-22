@@ -1,0 +1,27 @@
+{
+  "name": "dummy-course",
+  "as_of": "2026-11-18",
+  "test": {
+    "label": "Test 1",
+    "at": "2026-11-24 10:00"
+  },
+  "folder": "folder",
+  "target": "Study/test-1",
+  "attempts": "attempts.json",
+  "asked": "asked.json",
+  "record": "record.json",
+  "lesson_script": "lesson-script.json",
+  "scenes": "scenes.json",
+  "transcripts": [
+    {
+      "path": "transcripts/lesson.jsonl",
+      "label": "an invented two-day lesson",
+      "host": "window",
+      "days": [
+        "2026-11-19",
+        "2026-11-20"
+      ]
+    }
+  ],
+  "plan_key": "plans-key"
+}

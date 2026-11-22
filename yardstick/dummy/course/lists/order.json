@@ -1,0 +1,58 @@
+{
+  "deck": "Materials/Slides/unit-2-slides.md",
+  "sections": [
+    {
+      "id": "A",
+      "label": "expected value",
+      "slide_pages": [
+        1,
+        4
+      ],
+      "terms": [
+        "expected value",
+        "linearity",
+        "E[X]"
+      ]
+    },
+    {
+      "id": "B",
+      "label": "variance",
+      "slide_pages": [
+        5,
+        8
+      ],
+      "terms": [
+        "variance",
+        "shortcut",
+        "Var(aX + b)"
+      ]
+    },
+    {
+      "id": "C",
+      "label": "named distributions",
+      "slide_pages": [
+        9,
+        13
+      ],
+      "terms": [
+        "binomial",
+        "geometric",
+        "Bernoulli",
+        "memoryless"
+      ]
+    },
+    {
+      "id": "D",
+      "label": "indicators and sums",
+      "slide_pages": [
+        14,
+        16
+      ],
+      "terms": [
+        "indicator",
+        "indicators",
+        "Var(X + Y)"
+      ]
+    }
+  ]
+}

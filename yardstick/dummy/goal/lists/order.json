@@ -1,0 +1,47 @@
+{
+  "deck": "Materials/chapter-4-logarithms.md",
+  "sections": [
+    {
+      "id": "4.1",
+      "label": "exponents and their inverse",
+      "slide_pages": [],
+      "terms": [
+        "inverse"
+      ]
+    },
+    {
+      "id": "4.2",
+      "label": "the three laws",
+      "slide_pages": [],
+      "terms": [
+        "three laws",
+        "product law"
+      ]
+    },
+    {
+      "id": "4.3",
+      "label": "change of base",
+      "slide_pages": [],
+      "terms": [
+        "change of base"
+      ]
+    },
+    {
+      "id": "4.4",
+      "label": "solving exponential equations",
+      "slide_pages": [],
+      "terms": [
+        "exponential equations"
+      ]
+    },
+    {
+      "id": "4.5",
+      "label": "growth and halving",
+      "slide_pages": [],
+      "terms": [
+        "half-life",
+        "doubling"
+      ]
+    }
+  ]
+}

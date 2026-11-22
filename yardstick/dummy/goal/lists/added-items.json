@@ -1,0 +1,24 @@
+{
+  "basis": "Ideas the chapter states that no exercise asks on its own.",
+  "items": [
+    {
+      "id": "X1",
+      "idea": "log_b(1) = 0 and log_b(b) = 1",
+      "slide_pages": [],
+      "terms": [
+        "log_b(1)",
+        "log_5(1)"
+      ],
+      "in_used_plan_as": null
+    },
+    {
+      "id": "X2",
+      "idea": "the product law from the exponent law b^p b^q = b^(p+q)",
+      "slide_pages": [],
+      "terms": [
+        "product law"
+      ],
+      "in_used_plan_as": null
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "basis": "A scripted record for the dummy course. Each answer is sent as a model-reported learner message dated by its day offset from the day the script is replayed, then marked with an attempt.",
+  "goal": "Test 1 practice",
+  "turns": [
+    {
+      "day": -3,
+      "time": "19:05",
+      "learner": "E[X] = 0(0.5)+2(0.4)+10(0.1) = 1.8",
+      "task_asked": "A spinner pays 0, 2 or 10 dollars with probabilities 0.5, 0.4 and 0.1. Find E[X].",
+      "shows": "Sums value times probability correctly.",
+      "attempt": {
+        "label": "expected value from a table",
+        "kind": "EXPVAL",
+        "question": "A spinner pays 0, 2 or 10 dollars with probabilities 0.5, 0.4 and 0.1. Find E[X].",
+        "first_try": "right",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": -3,
+      "time": "19:20",
+      "learner": "Var is E[X]^2 - E[X^2] = 3.24 - 11.6",
+      "task_asked": "For the spinner, find Var(X) with the shortcut, given E[X²] = 11.6.",
+      "shows": "Subtracts in the wrong order.",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "For the spinner, find Var(X) with the shortcut, given E[X²] = 11.6.",
+        "first_try": "wrong",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": -3,
+      "time": "19:40",
+      "learner": "fixed number of trials and same p",
+      "task_asked": "Name the three conditions for a binomial count.",
+      "shows": "Names two of the three conditions; misses independence.",
+      "attempt": {
+        "label": "binomial conditions",
+        "kind": "BINOM",
+        "question": "Name the three conditions for a binomial count.",
+        "first_try": "partly",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": -2,
+      "time": "18:10",
+      "learner": "11.6 - 3.24 ... = 8.36?",
+      "task_asked": "With the hint that the shortcut subtracts the square of the mean, find Var(X) for the spinner.",
+      "shows": "Right order after the hint, unsure.",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "With the hint that the shortcut subtracts the square of the mean, find Var(X) for the spinner.",
+        "first_try": "partly",
+        "help": "hint",
+        "cold": false
+      }
+    },
+    {
+      "day": -2,
+      "time": "18:25",
+      "learner": "E[X^2] = 1.6, E[X] = 1, so Var = 0.6",
+      "task_asked": "X takes 0 and 4 with probabilities 0.6 and 0.4... first E[X²] = 6.4 and E[X] = 1.6, so Var(X) = ?",
+      "shows": "Finishes once both moments are supplied.",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "X takes 0 and 4 with probabilities 0.6 and 0.4... first E[X²] = 6.4 and E[X] = 1.6, so Var(X) = ?",
+        "first_try": "right",
+        "help": "step",
+        "cold": false
+      }
+    },
+    {
+      "day": -2,
+      "time": "18:40",
+      "learner": "Var(2X+5) = 4 Var(X) = 36",
+      "task_asked": "Var(X) = 9. Find Var(2X + 5).",
+      "shows": "Squares the scale and drops the shift.",
+      "attempt": {
+        "label": "variance of aX+b",
+        "kind": "VARSCALE",
+        "question": "Var(X) = 9. Find Var(2X + 5).",
+        "first_try": "right",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": -2,
+      "time": "19:00",
+      "learner": "mean 10*0.3 = 3, variance 10*0.3 = 3",
+      "task_asked": "X is Binomial(10, 0.3). Find its mean and variance.",
+      "shows": "Uses np for the variance.",
+      "attempt": {
+        "label": "binomial mean and variance",
+        "kind": "BINOM",
+        "question": "X is Binomial(10, 0.3). Find its mean and variance.",
+        "first_try": "wrong",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": -1,
+      "time": "20:00",
+      "learner": "Var = 2.6 - 1.21 = 1.39",
+      "task_asked": "X takes 0, 1 and 3 with probabilities 0.4, 0.3 and 0.3; E[X] = 1.2 and E[X²] = 3.0. Find Var(X).",
+      "shows": "Shortcut in the right order; squares the mean wrongly.",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "X takes 0, 1 and 3 with probabilities 0.4, 0.3 and 0.3; E[X] = 1.2 and E[X²] = 3.0. Find Var(X).",
+        "first_try": "partly",
+        "help": "none",
+        "cold": false
+      }
+    },
+    {
+      "day": -1,
+      "time": "20:20",
+      "learner": "np(1-p) = 10(.3)(.7) = 2.1",
+      "task_asked": "With the hint that the variance has a factor 1 − p, find Var(X) for X Binomial(10, 0.3).",
+      "shows": "Uses np(1 − p) after the hint.",
+      "attempt": {
+        "label": "binomial mean and variance",
+        "kind": "BINOM",
+        "question": "With the hint that the variance has a factor 1 − p, find Var(X) for X Binomial(10, 0.3).",
+        "first_try": "right",
+        "help": "hint",
+        "cold": false
+      }
+    },
+    {
+      "day": -1,
+      "time": "20:35",
+      "learner": "E = 1(.2)+2(.5)+3(.3) = 2.1",
+      "task_asked": "X takes 1, 2 and 3 with probabilities 0.2, 0.5 and 0.3. Find E[X].",
+      "shows": "Right on a later day, unaided.",
+      "attempt": {
+        "label": "expected value from a table",
+        "kind": "EXPVAL",
+        "question": "X takes 1, 2 and 3 with probabilities 0.2, 0.5 and 0.3. Find E[X].",
+        "first_try": "right",
+        "help": "none",
+        "cold": true
+      }
+    },
+    {
+      "day": 0,
+      "time": "09:00",
+      "learner": "3.0 - 1.44 = 1.56",
+      "task_asked": "Using E[X²] − (E[X])², with E[X²] = 3.0 and E[X] = 1.2 already worked out, find Var(X).",
+      "shows": "Right when the two moments are given.",
+      "attempt": {
+        "label": "variance shortcut",
+        "kind": "VARSHORT",
+        "question": "Using E[X²] − (E[X])², with E[X²] = 3.0 and E[X] = 1.2 already worked out, find Var(X).",
+        "first_try": "right",
+        "help": "step",
+        "cold": false
+      }
+    },
+    {
+      "day": 0,
+      "time": "09:20",
+      "learner": "fixed n, independent, same p",
+      "task_asked": "Name the three conditions for a binomial count.",
+      "shows": "All three conditions, unaided.",
+      "attempt": {
+        "label": "binomial conditions",
+        "kind": "BINOM",
+        "question": "Name the three conditions for a binomial count.",
+        "first_try": "right",
+        "help": "none",
+        "cold": true
+      }
+    }
+  ]
+}

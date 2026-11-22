@@ -23,6 +23,7 @@ def commands(scope: str) -> list[list[str]]:
         ],
         "python": [
             [python, "-m", "unittest", "discover", "-s", "ci", "-p", "test_*.py"],
+            [python, "-m", "unittest", "discover", "-s", "yardstick", "-t", "yardstick", "-p", "test_*.py"],
             [python, "workers/docling/tests/test_gate.py"],
             [python, "workers/docling/tests/test_worker.py"],
         ],

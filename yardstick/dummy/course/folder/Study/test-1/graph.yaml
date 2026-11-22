@@ -1,0 +1,53 @@
+# Course graph: test-1
+#
+# Agent-owned. Course structure only. Learner state lives in the gap log and the learner record.
+
+tags:
+  EXPVAL:
+    covers: expected value from a table
+    pages: Materials/Slides/unit-2-slides.md slides 1 to 3
+    kind: course
+    needs: []
+    key_need: []
+    contains: []
+    touches: []
+  LINEXP:
+    covers: linearity of expectation
+    pages: Materials/Slides/unit-2-slides.md slide 4
+    kind: course
+    needs: [EXPVAL]
+    key_need: [EXPVAL]
+    contains: []
+    touches: []
+  VARSHORT:
+    covers: variance from the definition and with the shortcut
+    pages: Materials/Slides/unit-2-slides.md slides 5 to 6
+    kind: course
+    needs: [EXPVAL]
+    key_need: [EXPVAL]
+    contains: [EXPVAL]
+    touches: []
+  VARSCALE:
+    covers: variance of aX + b
+    pages: Materials/Slides/unit-2-slides.md slides 7 to 8
+    kind: course
+    needs: [VARSHORT]
+    key_need: [VARSHORT]
+    contains: []
+    touches: []
+  BINOM:
+    covers: binomial conditions, mean and variance
+    pages: Materials/Slides/unit-2-slides.md slides 9 to 11
+    kind: course
+    needs: [EXPVAL, VARSHORT]
+    key_need: [EXPVAL]
+    contains: []
+    touches: [VARSHORT]
+  GEOM:
+    covers: geometric probabilities and mean
+    pages: Materials/Slides/unit-2-slides.md slide 12
+    kind: course
+    needs: [EXPVAL]
+    key_need: [EXPVAL]
+    contains: []
+    touches: []

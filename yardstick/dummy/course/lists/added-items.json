@@ -1,0 +1,52 @@
+{
+  "basis": "Ideas on the slides that no listed exercise asks. The plan that was used added a drill for each.",
+  "items": [
+    {
+      "id": "D1",
+      "idea": "E[X²] is not (E[X])²",
+      "slide_pages": [
+        3
+      ],
+      "terms": [
+        "E[X²]",
+        "(E[X])²"
+      ],
+      "in_used_plan_as": "drill 1"
+    },
+    {
+      "id": "D2",
+      "idea": "SD(aX + b) = |a| SD(X)",
+      "slide_pages": [
+        8
+      ],
+      "terms": [
+        "SD",
+        "standard deviation"
+      ],
+      "in_used_plan_as": "drill 2"
+    },
+    {
+      "id": "D4",
+      "idea": "Bernoulli mean p and variance p(1 − p)",
+      "slide_pages": [
+        9
+      ],
+      "terms": [
+        "Bernoulli"
+      ],
+      "in_used_plan_as": "drill 4"
+    },
+    {
+      "id": "D6",
+      "idea": "Var(X + Y) = Var(X) + Var(Y) for independent X and Y",
+      "slide_pages": [
+        16
+      ],
+      "terms": [
+        "Var(X + Y)",
+        "variance of a sum"
+      ],
+      "in_used_plan_as": "drill 6"
+    }
+  ]
+}
