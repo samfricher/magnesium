@@ -21,8 +21,16 @@ def judge_for(judge: Judge | None):
         return None
 
     def run(folder, lines, sections, uncovered, cut_lines):
-        answer = judge.ask(planscore.judge_prompt(folder, sections, uncovered), planscore.SCHEMA)
-        return planscore.read_judged(answer)
+        prompt = planscore.judge_prompt(folder, sections, uncovered)
+        answer = judge.ask(prompt, planscore.SCHEMA)
+        for _ in range(2):
+            if len(answer.get("sections") or []) == len(sections) and len(answer.get("carried") or []) == len(uncovered):
+                break
+            answer = judge.ask(prompt + f"\n\nGive exactly {len(sections)} entries under sections and {len(uncovered)} under carried, "
+                               "one for each item listed above, in that order.", planscore.SCHEMA)
+        judged = planscore.read_judged(answer)
+        judged["attempts_matched"] = len(answer.get("sections") or []) == len(sections)
+        return judged
 
     return run
 

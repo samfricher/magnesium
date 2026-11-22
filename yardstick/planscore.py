@@ -330,8 +330,8 @@ def longest_rising(values: list[int]) -> int:
 
 RUBRIC = """You are scoring a study plan against a fixed rubric. Read the plan files below and answer in the JSON schema.
 
-1. sections: for each course section listed under SECTIONS, say whether the plan gives that section its own small test on problems the learner has not seen (a short set of changed or new problems done without help), and quote the plan sentence or row it rests on. If the section has no such test, small_test is false and the quote is the closest row, or "" if none.
-2. carried: for each idea listed under IDEAS WITH NO PRACTICE ROW, say whether the plan names a larger problem or exercise that carries that idea (for example "carried by exercise 2.1"), and quote it.
+1. sections: one entry for every course section listed under SECTIONS, none left out. For each, say whether the plan gives that section its own small test on problems the learner has not seen (a short set of changed or new problems done without help), and quote the plan sentence or row it rests on. If the section has no such test, small_test is false and the quote is the closest row, or "" if none.
+2. carried: one entry for every idea listed under IDEAS WITH NO PRACTICE ROW. For each, say whether the plan names a larger problem or exercise that carries that idea (for example "carried by exercise 2.1"), and quote it.
 3. cuts: list every cut, drop or omission the plan states (including a "drop order"), and for each say whether it is named by its content (what is left out, in the course's terms) rather than only by a number, a block name or "the rest". Judge by the words of the cut's own sentence: a cut that names only numbers or block numbers is not named by content, even when those blocks are described elsewhere. Quote each.
 
 Judge only from the text. Do not reward intentions that the plan does not write down."""
