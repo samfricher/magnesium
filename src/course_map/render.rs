@@ -138,7 +138,7 @@ pub(crate) fn map_page(
             depth
         });
         let indent = "  ".repeat(depth);
-        let mut line = format!("{indent}- `{}` {}", item.id, item.title);
+        let mut line = format!("{indent}- `{}` {}", item.id, map.title(&item.id));
         if item.kind != "section" {
             let _ = write!(line, " ({})", item.kind);
         }
@@ -346,7 +346,7 @@ pub(crate) fn plan_page(
         let _ = writeln!(text, "\n## Tasks\n");
         for task in &tasks {
             let Some(item) = map.item(task) else { continue };
-            let mut line = format!("- `{}` {}", item.id, item.title);
+            let mut line = format!("- `{}` {}", item.id, map.title(&item.id));
             if let Some(file) = item.file.as_deref().and_then(|f| map.file(f)) {
                 let _ = write!(line, " (`{}`", file.path);
                 if let Some(start) = item.start {
@@ -397,7 +397,7 @@ pub(crate) fn plan_page(
             text,
             "| `{}` | {} | {} | {} | {} |",
             item.id,
-            cell(&item.title),
+            cell(&map.title(&item.id)),
             cell(&section),
             cell(&asked),
             evidence.phrase(id)

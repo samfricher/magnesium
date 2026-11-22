@@ -253,20 +253,33 @@ fn refresh_file(
     let Some(relative) = relative_path(path) else {
         return Ok(());
     };
-    let Some((row, sections)) = crate::retrieval::sections_at(source.index, &relative).map_err(fail)? else {
+    let Some((row, sections)) =
+        crate::retrieval::sections_at(source.index, &relative).map_err(fail)?
+    else {
         return Ok(());
     };
-    let now_readable = row.index_status == "indexed" && matches!(row.source_kind.as_str(), "text" | "pdf");
+    let now_readable =
+        row.index_status == "indexed" && matches!(row.source_kind.as_str(), "text" | "pdf");
     if !now_readable {
         return Ok(());
     }
-    let kind = if row.source_kind == "pdf" { "page" } else { "line" };
+    let kind = if row.source_kind == "pdf" {
+        "page"
+    } else {
+        "line"
+    };
     tx.execute(
         "UPDATE files SET readable = 1, content_sha256 = ?2, anchor_kind = ?3 WHERE code = ?1",
         params![code, row.content_sha256, kind],
     )
     .map_err(fail)?;
-    let count = insert_sections(tx, code, row.content_sha256.as_deref(), &sections.sections, source.now_ms)?;
+    let count = insert_sections(
+        tx,
+        code,
+        row.content_sha256.as_deref(),
+        &sections.sections,
+        source.now_ms,
+    )?;
     report.files_added.push(json!({
         "path": path,
         "code": code,
@@ -576,9 +589,10 @@ fn add_item(
             _ => "outline".to_owned(),
         },
     };
-    let id = match item.r#ref.as_deref() {
+    let reference = item.r#ref.as_deref().map(valid_ref).transpose()?;
+    let id = match reference.as_deref() {
         Some(reference) => {
-            let id = format!("{base}.{}", valid_ref(reference)?);
+            let id = format!("{base}.{reference}");
             if item_exists(tx, &id)? {
                 return Err(format!(
                     "item {id:?} is already on the map; give its id to change it"
@@ -606,9 +620,9 @@ fn add_item(
         .filter(|n| !n.is_empty());
     let (start, end) = anchors(item.anchor_start, item.anchor_end)?;
     tx.execute(
-        "INSERT INTO items(id, file, parent, kind, origin, title, note, anchor_start, anchor_end, position, content_sha256, added_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-        params![id, file, parent, kind.as_str(), origin, title, note, start, end, position, sha, source.now_ms],
+        "INSERT INTO items(id, file, parent, kind, origin, title, ref, note, anchor_start, anchor_end, position, content_sha256, added_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![id, file, parent, kind.as_str(), origin, title, reference, note, start, end, position, sha, source.now_ms],
     )
     .map_err(fail)?;
     report.items_added.push(json!({"id": id, "title": title}));

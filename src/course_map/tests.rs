@@ -149,7 +149,7 @@ fn items_read_by_eye_take_the_file_code_and_their_ref() {
         &mut store,
         &folder,
         json!({"action": "write", "items": [
-            {"file": "Materials/week8-list.png", "kind": "exercise", "title": "Exercise 6.63", "ref": "6.63"},
+            {"file": "Materials/week8-list.png", "kind": "exercise", "title": "the maximum of two uniforms", "ref": "6.63"},
             {"file": "Materials/week8-list.png", "kind": "exercise", "title": "Exercise 6.72"},
             {"parent": "lec08.5", "kind": "idea", "title": "Forget gate keeps or clears the cell"}
         ]}),
@@ -158,13 +158,18 @@ fn items_read_by_eye_take_the_file_code_and_their_ref() {
     assert_eq!(
         report["items_added"],
         json!([
-            {"id": "week8-list.6.63", "title": "Exercise 6.63"},
+            {"id": "week8-list.6.63", "title": "the maximum of two uniforms"},
             {"id": "week8-list.1", "title": "Exercise 6.72"},
             {"id": "lec08.5.1", "title": "Forget gate keeps or clears the cell"},
         ])
     );
     assert_eq!(report["files_added"][0]["code"], "week8-list");
     let map = Map::load(&store.conn).unwrap();
+    assert_eq!(
+        map.title("week8-list.6.63"),
+        "Exercise 6.63: the maximum of two uniforms"
+    );
+    assert_eq!(map.title("week8-list.1"), "Exercise 6.72");
     let after_math = map.items.iter().position(|i| i.id == "lec08.5.1").unwrap();
     assert_eq!(map.items[after_math - 1].id, "lec08.5");
     assert_eq!(map.items[after_math + 1].id, "lec08.6");
@@ -352,11 +357,23 @@ fn a_hand_edit_of_a_page_is_kept_as_a_backup_before_it_is_replaced() {
 #[test]
 fn file_codes_keep_the_first_and_last_words_of_a_long_name() {
     for (path, code) in [
-        ("Materials/Week09/Exercises/optional-exercises-w08.html", "optional-w08"),
+        (
+            "Materials/Week09/Exercises/optional-exercises-w08.html",
+            "optional-w08",
+        ),
         ("Materials/lecture-08.html", "lecture-08"),
-        ("Materials/Week09/Readings/exploding-vanishing-gradients-L07b.pdf", "exploding-l07b"),
-        ("Materials/Lecture Slides/week1-suggested.png", "week1-suggested"),
-        ("Materials/course101w18-test2-lec0101-V2.pdf", "course101w18-v2"),
+        (
+            "Materials/Week09/Readings/exploding-vanishing-gradients-L07b.pdf",
+            "exploding-l07b",
+        ),
+        (
+            "Materials/Lecture Slides/week1-suggested.png",
+            "week1-suggested",
+        ),
+        (
+            "Materials/course101w18-test2-lec0101-V2.pdf",
+            "course101w18-v2",
+        ),
     ] {
         assert_eq!(super::write::code_from_path(path), code, "{path}");
     }

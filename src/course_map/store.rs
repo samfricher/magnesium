@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS items(
     kind TEXT NOT NULL CHECK (kind IN ('section', 'idea', 'exercise', 'question', 'example', 'reading', 'foundation', 'task')),
     origin TEXT NOT NULL CHECK (origin IN ('extracted', 'read', 'outline', 'written', 'lesson')),
     title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    ref TEXT,
     note TEXT,
     anchor_start INTEGER CHECK (anchor_start IS NULL OR anchor_start >= 1),
     anchor_end INTEGER CHECK (anchor_end IS NULL OR anchor_end >= anchor_start),
@@ -173,6 +174,17 @@ impl MapStore {
             .map_err(error)?;
         crate::workspace::apply_sync_policy(&conn).map_err(error)?;
         conn.execute_batch(SCHEMA).map_err(error)?;
+        let has_ref: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('items') WHERE name = 'ref')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(error)?;
+        if !has_ref {
+            conn.execute_batch("ALTER TABLE items ADD COLUMN ref TEXT;")
+                .map_err(error)?;
+        }
         conn.execute(
             "INSERT OR IGNORE INTO meta(singleton, version, revision) VALUES (1, ?1, 0)",
             [STORE_VERSION],

@@ -23,6 +23,7 @@ pub(crate) struct Item {
     pub(crate) kind: String,
     pub(crate) origin: String,
     pub(crate) title: String,
+    pub(crate) reference: Option<String>,
     pub(crate) note: Option<String>,
     pub(crate) start: Option<u32>,
     pub(crate) end: Option<u32>,
@@ -123,7 +124,7 @@ impl Map {
         let mut statement = conn
             .prepare(
                 "SELECT items.id, items.file, items.parent, items.kind, items.origin, items.title, items.note,
-                        items.anchor_start, items.anchor_end, items.content_sha256
+                        items.anchor_start, items.anchor_end, items.content_sha256, items.ref
                  FROM items LEFT JOIN files ON files.code = items.file
                  ORDER BY files.path IS NULL, files.path, items.position, items.id",
             )
@@ -141,6 +142,7 @@ impl Map {
                     start: r.get(7)?,
                     end: r.get(8)?,
                     sha: r.get(9)?,
+                    reference: r.get(10)?,
                 })
             })
             .map_err(fail)?
@@ -290,8 +292,26 @@ impl Map {
     }
 
     pub(crate) fn title(&self, id: &str) -> String {
-        self.item(id)
-            .map_or_else(|| id.to_owned(), |item| item.title.clone())
+        let Some(item) = self.item(id) else {
+            return id.to_owned();
+        };
+        let word = match item.kind.as_str() {
+            "exercise" => "Exercise",
+            "question" => "Question",
+            "example" => "Example",
+            _ => return item.title.clone(),
+        };
+        let reference = item.reference.as_deref().unwrap_or("");
+        if reference.is_empty()
+            || !reference.chars().any(|c| c.is_ascii_digit())
+            || item
+                .title
+                .to_lowercase()
+                .contains(&reference.to_lowercase())
+        {
+            return item.title.clone();
+        }
+        format!("{word} {reference}: {}", item.title)
     }
 
     pub(crate) fn is_leaf(&self, id: &str) -> bool {
