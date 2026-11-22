@@ -42,7 +42,6 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--runs", type=int, default=3, help="scenes: runs per scene")
     p.add_argument("--scene", nargs="*", help="scenes: only these scene ids")
     p.add_argument("--parallel", type=int, default=3, help="scenes: live runs at a time")
-    p.add_argument("--sitting-wait", type=int, default=0, help="scenes: minutes to wait after seeding a scene that needs a new sitting (Magnesium opens one after 180)")
     p.add_argument("--rejudge", type=Path, help="scenes: apply the current rules to the runs saved in this result file, with no new live runs")
     p.add_argument("--host", help="turn-cost transcript mode: only the fixture's transcripts from this host (window or claude-code)")
     p.add_argument("--turn-timeout", type=float, default=1800, help="seconds to wait for one live reply")

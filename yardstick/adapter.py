@@ -6,8 +6,10 @@ import os
 import pwd
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -159,6 +161,11 @@ class Today:
 
     def progress(self, place: Place) -> dict:
         return self.cli_json(place, "progress", "--json") or {}
+
+    def last_learner_message_at(self, place: Place, at_ms: int):
+        store = place.folder / ".magnesium" / "sittings.sqlite"
+        with closing(sqlite3.connect(store)) as db, db:
+            db.execute("UPDATE meta SET last_learner_ms = ?", (at_ms,))
 
     def lesson(self, place: Place, conversation: str | None = None) -> dict | None:
         args = ["lesson", "--json"] + (["--conversation", conversation] if conversation else [])

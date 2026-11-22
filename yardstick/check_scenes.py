@@ -4,7 +4,7 @@ import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import transcript
@@ -29,15 +29,21 @@ def set_test_date(place, target: str | None, days: int, base=None):
     plan.write_text(text, encoding="utf-8")
 
 
-def seed(adapter, place, fixture: Fixture, spec: dict | None, live_at=None) -> dict:
+def seed(adapter, place, fixture: Fixture, spec: dict | None, new_sitting: bool = False) -> dict:
     if not spec:
         return {"kind": "none"}
     if spec["kind"] == "answers":
         if spec.get("test_in_days") is not None:
-            set_test_date(place, fixture.target, spec["test_in_days"], live_at)
-        done = adapter.seed(place, spec["turns"], end_sitting=spec.get("end_sitting", False), base=live_at)
-        return {"kind": "answers", "answers": len(done), "test_in_days": spec.get("test_in_days"),
-                "progress_due": adapter.progress(place).get("due")}
+            set_test_date(place, fixture.target, spec["test_in_days"])
+        done = adapter.seed(place, spec["turns"], end_sitting=spec.get("end_sitting", False))
+        seeded = {"kind": "answers", "answers": len(done), "test_in_days": spec.get("test_in_days")}
+        if new_sitting:
+            gap = int((now_local() - timedelta(minutes=SITTING_GAP_MINUTES)).timestamp() * 1000)
+            last = min(max(d["at_ms"] for d in done), gap)
+            adapter.last_learner_message_at(place, last)
+            seeded["last_learner_message"] = datetime.fromtimestamp(last / 1000).isoformat(timespec="minutes")
+        seeded["progress_due"] = adapter.progress(place).get("due")
+        return seeded
     if spec["kind"] == "lesson":
         turns = adapter.scripted_lesson(place, spec["script"], conversation="earlier-chat")
         return {"kind": "lesson", "turns": len(turns), "open_task": (adapter.lesson(place) or {}).get("lesson", {}).get("open_task")}
@@ -115,15 +121,7 @@ def one_run(args, adapter, fixture: Fixture, scene: dict, number: int, judge: Ju
     name = f"scene-{scene['id']}-{number}"
     started = time.monotonic()
     place = adapter.place(fixture.folder, name, live=True, surface="window")
-    wait = args.sitting_wait if scene.get("new_sitting") else 0
-    live_at = now_local() + timedelta(minutes=wait) if wait else None
-    seeded = seed(adapter, place, fixture, scene.get("seed"), live_at)
-    if wait:
-        seeded["waited_minutes"] = wait
-        while now_local() < live_at:
-            time.sleep(min(60, max(1, (live_at - now_local()).total_seconds())))
-        if (scene.get("seed") or {}).get("test_in_days") is not None:
-            set_test_date(place, fixture.target, scene["seed"]["test_in_days"])
+    seeded = seed(adapter, place, fixture, scene.get("seed"), bool(scene.get("new_sitting")))
     conversation = adapter.live(place, args.model, args.effort, place.root / "stream.jsonl")
     usage: dict = {}
     turns = []
@@ -200,8 +198,7 @@ def run(args, adapter) -> tuple[dict, str]:
         scenes = [s for s in scenes if s["id"] in kept]
     else:
         jobs = [(scene, n) for scene in scenes for n in range(1, args.runs + 1)]
-        workers = max(args.parallel, len(jobs)) if args.sitting_wait else args.parallel
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ThreadPoolExecutor(max_workers=args.parallel) as pool:
             futures = [pool.submit(one_run, args, adapter, fixture, scene, n, judge, sections) for scene, n in jobs]
             runs = [f.result() for f in futures]
     signed = [r for r in runs if r.get("signed_out")]
@@ -221,9 +218,6 @@ def run(args, adapter) -> tuple[dict, str]:
         note = (f"errors: {len(errors)}" if errors else "") + extra
         if unset:
             note += f"{'; ' if note else ''}{unset} not counted: the runtime stated no due checks (no new sitting)"
-        waited = [r["seed"].get("waited_minutes") for r in everything if r["seed"].get("waited_minutes")]
-        if waited:
-            note += f"{'; ' if note else ''}waited {waited[0]} min for a new sitting"
         rows.append([scene["id"], scene["title"], f"{passed} of {len(mine)}", " and ".join(how) or "none", note])
         summary.append({"scene": scene["id"], "title": scene["title"], "passed": passed, "runs": len(mine),
                         "runs_started": len(everything), "not_counted": unset, "how": how,
@@ -251,8 +245,8 @@ def run(args, adapter) -> tuple[dict, str]:
         "  planned items against parts marked: no data",
         "",
         "Limit: main has no clock control. 'Yesterday' is a model-reported learner message dated the day before the live chat. "
-        "Magnesium opens a new sitting only three hours after the last learner message, so a scene that needs one waits that long "
-        "in real time (--sitting-wait); without the wait the runtime states no due checks and the run is not counted.",
+        "Magnesium opens a new sitting three hours after the last learner message it stored, so a scene that needs one sets that "
+        "time in the scratch copy to its last seeded message; a run where the runtime still states no due checks is not counted.",
     ]
     result = {"check": "scenes", "fixture": fixture.name, "adapter": adapter.name, "model": args.model, "effort": args.effort,
               "runs_per_scene": args.runs, "summary": summary, "minutes": minutes, "tokens": tokens, "cost_usd": cost,
