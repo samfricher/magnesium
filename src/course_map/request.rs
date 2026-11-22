@@ -197,7 +197,7 @@ pub(crate) struct TargetFacts {
     pub(crate) words: Option<Vec<Quote>>,
     #[serde(default)]
     #[schemars(
-        description = "When the learner practises, one line each: \"If it is <days> at <HH:MM>, then I ...\", and one \"If I miss ...\". Replaces the list."
+        description = "When the learner practises, one line each: \"If it is <days> at <HH:MM>, then I ...\", with day names such as Monday to Friday, never dates, and one \"If I miss ...\". Replaces the list."
     )]
     pub(crate) sessions: Option<Vec<String>>,
 }

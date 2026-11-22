@@ -20,7 +20,7 @@ Topics come from all the material. Question styles come from past papers. The te
 
 Work in this order. Each step writes to the map, so a later run starts from what is there. Read the map first (`read` with target) and do not add an item that is already on it.
 
-1. **Facts.** Find the test's date, length and aids, and the instructor's own words about what it covers and what questions draw from. Look in the syllabus, announcements, emails and the course page files. Write them with `write` facts, each quote with its source and date. Hours available and sessions come from the tutor's brief; when they are missing, assume and say so in your report.
+1. **Facts.** Find the test's date, length and aids, and the instructor's own words about what it covers and what questions draw from. Look in the syllabus, announcements, emails and the course page files. Write them with `write` facts, each quote with its source and date. Hours available and sessions come from the tutor's brief; when they are missing, assume and say so in your report. Write each session line as "If it is <days> at <HH:MM>, then I ...", with day names such as Monday to Friday, never dates, and one line that starts "If I miss".
 
 2. **Scope.** `inventory` lists the folder by folder; list a folder's files with path_prefix. From the instructor's words, take everything the test covers: slides and lecture notes, readings, exercise lists, tutorials and their solutions, quizzes, assignments, and past tests. When in doubt, a file is in. Write scope rows (state in) in the instructor's order: week by week, lecture by lecture. The runtime adds each file and its sections from the file's own headings or outline, and says which files it could not section.
 
@@ -45,7 +45,7 @@ Work in this order. Each step writes to the map, so a later run starts from what
    - **New settings.** Before the test, each section gets one question in a new setting: the source's form with one thing changed, as the traces show.
    - **Full papers come last.** A full practice paper comes after the small sets, and samples the map in the form past papers use. Name it in its block; it is built when the learner reaches it.
    - **Written tasks.** Write each one, numbered, in `Study/<target>/drills.md`, with its answer under a fold or in `drills-key.md`. Put it on the map as kind task, file that drills file, ref d1, d2 and so on, with its use links. A block names listed exercises and past questions by their own item ids.
-   - **Time.** Give each block its minutes; the total must fit the hours. When it does not fit, cut by content: a scope row with state cut and a reason that names what is cut and why. Every cut needs the learner's agreement, so list each one in your report as a question. Write cuts as not yet agreed unless the brief says the learner agreed.
+   - **Time.** Give each block its minutes; the total must fit the hours. When it does not fit, cut by content: a scope row with state cut and a reason that names what is cut and why. Every cut needs the learner's agreement, so list each one in your report as a question. Write cuts as not yet agreed unless the brief says the learner agreed. A drop order in a note ("first to fold if short", "drop the lowest-value section") is a cut nobody agreed to: write none.
 
 7. **Check coverage.** `read` with target states, per file, how many items have never been asked, and lists every item that no planned task asks or carries. That list must be empty except for items you cut. Fix each one, then read again.
 
